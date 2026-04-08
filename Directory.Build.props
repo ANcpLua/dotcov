@@ -1,0 +1,35 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- Versioning: CI passes -p:Version=x.y.z -->
+  <PropertyGroup>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.0.1</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
+    <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
+    <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
+  </PropertyGroup>
+
+  <!-- Package metadata -->
+  <PropertyGroup>
+    <Authors>Alexander Nachtmann</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/ANcpLua/dotcov</RepositoryUrl>
+    <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+    <PackageTags>coverage;cobertura;testing;nuke;ci;dotnet-tool</PackageTags>
+  </PropertyGroup>
+
+  <!-- CI-specific settings -->
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DotCov.Nuke/DotCov.Nuke.csproj" />
+    <Project Path="src/DotCov.Tool/DotCov.Tool.csproj" />
+    <Project Path="src/DotCov/DotCov.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DotCov.Tests/DotCov.Tests.csproj" />
+  </Folder>
+</Solution>

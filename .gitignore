@@ -1,0 +1,15 @@
+bin/
+obj/
+artifacts/
+nupkgs/
+TestResults/
+*.trx
+*.user
+*.suo
+*.userprefs
+*.nupkg
+*.snupkg
+.DS_Store
+.idea/
+.vs/
+.vscode/

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DotCov</RootNamespace>
+    <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.</Description>
+  </PropertyGroup>
+
+</Project>

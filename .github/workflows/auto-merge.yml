@@ -1,0 +1,70 @@
+name: Auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot-auto-merge:
+    name: Dependabot auto-merge
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Auto-approve patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr review --approve "$PR_URL" || echo "::warning::Auto-approve skipped"
+      - name: Enable auto-merge for patch and minor
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+  ai-agent-auto-merge:
+    name: AI Agent auto-merge
+    runs-on: ubuntu-latest
+    if: |
+      (github.actor == 'copilot[bot]' || github.actor == 'jules[bot]' || github.actor == 'claude-code[bot]') &&
+      (
+        startsWith(github.event.pull_request.head.ref, 'copilot/') ||
+        startsWith(github.event.pull_request.head.ref, 'jules/') ||
+        startsWith(github.event.pull_request.head.ref, 'claude/')
+      )
+    steps:
+      - name: Identify AI agent
+        id: agent
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$BRANCH" == copilot/* ]]; then
+            echo "agent=Copilot" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH" == jules/* ]]; then
+            echo "agent=Jules" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH" == claude/* ]]; then
+            echo "agent=Claude" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Auto-approve AI agent PRs
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT: ${{ steps.agent.outputs.agent }}
+        run: gh pr review --approve "$PR_URL" --body "Auto-approved: $AGENT autonomous fix PR"
+      - name: Enable auto-merge for AI agent PRs
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"

@@ -1,0 +1,20 @@
+<Project>
+
+  <PropertyGroup>
+    <XunitVersion>2.9.3</XunitVersion>
+    <XunitRunnerVersion>2.8.2</XunitRunnerVersion>
+    <MicrosoftNetTestSdkVersion>18.4.0</MicrosoftNetTestSdkVersion>
+    <CoverletCollectorVersion>8.0.1</CoverletCollectorVersion>
+    <NukeCommonVersion>10.1.0</NukeCommonVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="xunit" Version="$(XunitVersion)" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="$(MicrosoftNetTestSdkVersion)" />
+    <PackageVersion Include="coverlet.collector" Version="$(CoverletCollectorVersion)" />
+    <PackageVersion Include="Nuke.Common" Version="$(NukeCommonVersion)" />
+    <PackageVersion Include="Nuke.Components" Version="$(NukeCommonVersion)" />
+  </ItemGroup>
+
+</Project>

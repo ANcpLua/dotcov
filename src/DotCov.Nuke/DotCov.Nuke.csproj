@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DotCov.Nuke</RootNamespace>
+    <Description>NUKE build extension for Cobertura coverage reporting and CI gating.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotCov\DotCov.csproj" />
+    <PackageReference Include="Nuke.Common" />
+    <PackageReference Include="Nuke.Components" />
+  </ItemGroup>
+
+</Project>
