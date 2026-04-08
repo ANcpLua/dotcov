@@ -2,7 +2,16 @@
 
   <PropertyGroup>
     <RootNamespace>DotCov.Nuke</RootNamespace>
-    <Description>NUKE build extension for Cobertura coverage reporting and CI gating.</Description>
+    <Description>NUKE build extension for Cobertura coverage reporting and CI gating.
+
+Installation:
+  nuke :add-package DotCov.Nuke
+
+Usage in Build.cs:
+  class Build : NukeBuild, ICoverageReport { }
+
+Run:
+  nuke ReportCoverage --coverage-min-line 80 --coverage-exclude-generated true</Description>
   </PropertyGroup>
 
   <ItemGroup>

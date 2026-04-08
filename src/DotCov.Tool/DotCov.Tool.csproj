@@ -5,7 +5,17 @@
     <RootNamespace>DotCov.Tool</RootNamespace>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotcov</ToolCommandName>
-    <Description>dotnet global tool for Cobertura coverage reporting, diffing, and CI gating.</Description>
+    <Description>dotnet global tool for Cobertura coverage reporting, diffing, and CI gating.
+
+Installation:
+  dotnet tool install -g DotCov.Tool
+
+Usage:
+  dotcov report TestResults/
+  dotcov report coverage.cobertura.xml --format json
+  dotcov check TestResults/ --min-line 80 --exclude-generated
+  dotcov diff before.xml after.xml --format md
+  dotcov snapshot TestResults/ --commit SHA --branch main --project MyApp</Description>
   </PropertyGroup>
 
   <ItemGroup>

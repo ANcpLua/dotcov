@@ -2,7 +2,13 @@
 
   <PropertyGroup>
     <RootNamespace>DotCov</RootNamespace>
-    <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.</Description>
+    <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.
+
+Parses Cobertura XML without loading the DOM (streaming XmlReader, 50MB+ safe).
+Produces structured coverage reports with per-file detail (uncovered lines, partial branches).
+
+For the CLI tool: dotnet tool install -g DotCov.Tool
+For NUKE builds: nuke :add-package DotCov.Nuke</Description>
   </PropertyGroup>
 
 </Project>
