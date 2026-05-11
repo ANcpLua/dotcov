@@ -6,7 +6,7 @@ namespace DotCov.Formatters;
 /// </summary>
 public readonly struct AnsiPen(bool enabled)
 {
-    private const string Esc = "\x1b[";
+    private const string Esc = "\e[";
 
     public bool Enabled => enabled;
 

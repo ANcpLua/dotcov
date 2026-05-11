@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -64,7 +65,13 @@ public static class Ansi
             || HasEnv("GITEA_ACTIONS");
     }
 
+    #region Windows VT bootstrap
+    // Excluded from coverage: reachable only on Windows runners. The Linux/macOS CI matrix
+    // can't exercise these paths, and they're thin Win32 wrappers — coverage tooling on
+    // non-Windows would otherwise penalise an unreachable platform branch.
+
     [SupportedOSPlatform("windows")]
+    [ExcludeFromCodeCoverage]
     private static void EnableWindowsVt()
     {
         const int StdOutputHandle = -11;
@@ -78,15 +85,20 @@ public static class Ansi
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [SupportedOSPlatform("windows")]
+    [ExcludeFromCodeCoverage]
     private static extern IntPtr GetStdHandle(int nStdHandle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
+    [ExcludeFromCodeCoverage]
     private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
+    [ExcludeFromCodeCoverage]
     private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+    #endregion
 }

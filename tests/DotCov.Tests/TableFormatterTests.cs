@@ -87,7 +87,7 @@ public sealed class TableFormatterTests
         var output = TableFormatter.Format(Reports.Mixed, color: true);
         var totalLine = output.Split('\n').Single(l => l.Contains("TOTAL"));
 
-        Assert.Contains("\x1b[1m", totalLine);
+        Assert.Contains("\e[1m", totalLine);
     }
 
     [Fact]
@@ -96,8 +96,8 @@ public sealed class TableFormatterTests
         var output = TableFormatter.Format(Reports.Mixed, color: true);
         var headerLine = output.Split('\n')[0];
 
-        Assert.Contains("\x1b[36m", headerLine);
-        Assert.Contains("\x1b[1m", headerLine);
+        Assert.Contains("\e[36m", headerLine);
+        Assert.Contains("\e[1m", headerLine);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(diff, color: true);
 
-        Assert.Contains("\x1b[31m", output); // red for the negative delta
+        Assert.Contains("\e[31m", output); // red for the negative delta
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(diff, color: true);
 
-        Assert.Contains("\x1b[32m", output);
+        Assert.Contains("\e[32m", output);
         Assert.Contains("Added", output);
     }
 
