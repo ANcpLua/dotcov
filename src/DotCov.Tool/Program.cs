@@ -1,6 +1,8 @@
 using DotCov;
 using DotCov.Formatters;
 
+Ansi.EnableOnWindows();
+var color = Ansi.IsSupported();
 var (command, options) = ParseArgs(args);
 
 return command switch
@@ -13,7 +15,7 @@ return command switch
     _ => Help()
 };
 
-static async Task<int> Report(Dictionary<string, string> opts)
+async Task<int> Report(Dictionary<string, string> opts)
 {
     if (!opts.TryGetValue("file", out var path))
     {
@@ -29,7 +31,7 @@ static async Task<int> Report(Dictionary<string, string> opts)
     {
         "json" => JsonFormatter.Format(report),
         "markdown" or "md" => MarkdownFormatter.Format(report, threshold),
-        _ => TableFormatter.Format(report)
+        _ => TableFormatter.Format(report, color)
     };
 
     Console.Write(output);
@@ -69,7 +71,7 @@ static async Task<int> Check(Dictionary<string, string> opts)
     return 1;
 }
 
-static int Diff(Dictionary<string, string> opts)
+int Diff(Dictionary<string, string> opts)
 {
     if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
     {
@@ -87,7 +89,7 @@ static int Diff(Dictionary<string, string> opts)
     {
         "json" => JsonFormatter.FormatDiff(result),
         "markdown" or "md" => MarkdownFormatter.FormatDiff(result),
-        _ => TableFormatter.FormatDiff(result)
+        _ => TableFormatter.FormatDiff(result, color)
     });
 
     return 0;

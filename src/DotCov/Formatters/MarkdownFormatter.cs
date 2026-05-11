@@ -14,8 +14,9 @@ public static class MarkdownFormatter
         sb.AppendLine($"## Coverage Report{(status is "pass" ? " ✅" : status is "fail" ? " ❌" : "")}");
         sb.AppendLine();
         sb.AppendLine($"**Line coverage:** {report.LineRate * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})");
-        sb.AppendLine(
-            $"**Branch coverage:** {report.BranchRate * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})");
+        sb.AppendLine(report.HasBranchData
+            ? $"**Branch coverage:** {report.BranchRate * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})"
+            : "**Branch coverage:** _no branch data emitted_");
 
         if (threshold.HasValue)
             sb.AppendLine($"**Threshold:** {threshold.Value:F0}%");

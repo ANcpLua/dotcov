@@ -12,6 +12,13 @@ public readonly record struct FileCoverage(
     public double LineRate => LinesTotal is 0 ? 1.0 : (double)LinesHit / LinesTotal;
     public double BranchRate => BranchesTotal is 0 ? 1.0 : (double)BranchesHit / BranchesTotal;
 
+    /// <summary>
+    /// True when the underlying report carries branch data for this file. Lets formatters
+    /// distinguish "100% branch coverage" from "no branch information was emitted" — relevant
+    /// for MTP's default Cobertura emitter, which omits per-branch hits.
+    /// </summary>
+    public bool HasBranchData => BranchesTotal > 0;
+
     /// <summary>Line numbers with zero hits. Populated by parser — useful for AI test generation.</summary>
     public IReadOnlyList<int> UncoveredLines { get; init; } = [];
 
@@ -45,6 +52,9 @@ public sealed class CoverageReport
 
     public double LineRate => TotalLines is 0 ? 1.0 : (double)TotalLinesHit / TotalLines;
     public double BranchRate => TotalBranches is 0 ? 1.0 : (double)TotalBranchesHit / TotalBranches;
+
+    /// <summary>True when any file in the report carries branch data.</summary>
+    public bool HasBranchData => TotalBranches > 0;
 
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
         Files.Where(f => f.LineRate * 100 < linePercent);

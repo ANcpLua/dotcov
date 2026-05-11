@@ -53,7 +53,8 @@ public static class JsonFormatter
     private static object FormatSummary(CoverageReport report) => new
     {
         lineRate = Pct(report.LineRate),
-        branchRate = Pct(report.BranchRate),
+        branchRate = report.HasBranchData ? Pct(report.BranchRate) : (double?)null,
+        hasBranchData = report.HasBranchData,
         totalLines = report.TotalLines,
         coveredLines = report.TotalLinesHit,
         totalBranches = report.TotalBranches,
@@ -64,7 +65,7 @@ public static class JsonFormatter
     {
         path = f.Path,
         lineRate = Pct(f.LineRate),
-        branchRate = Pct(f.BranchRate),
+        branchRate = f.HasBranchData ? Pct(f.BranchRate) : (double?)null,
         linesHit = f.LinesHit,
         linesTotal = f.LinesTotal,
         branchesHit = f.BranchesHit,

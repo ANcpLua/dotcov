@@ -128,15 +128,15 @@ public sealed class CoberturaParserTests
     [Fact]
     public void Parse_XmlWithDtd_Throws()
     {
-        var malicious = """
-            <?xml version="1.0"?>
-            <!DOCTYPE coverage [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-            <coverage><packages><package><classes>
-              <class name="X" filename="x.cs"><lines>
-                <line number="1" hits="1" branch="false"/>
-              </lines></class>
-            </classes></package></packages></coverage>
-            """;
+        const string malicious = """
+                                 <?xml version="1.0"?>
+                                 <!DOCTYPE coverage [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+                                 <coverage><packages><package><classes>
+                                   <class name="X" filename="x.cs"><lines>
+                                     <line number="1" hits="1" branch="false"/>
+                                   </lines></class>
+                                 </classes></package></packages></coverage>
+                                 """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
         Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream));
@@ -145,10 +145,10 @@ public sealed class CoberturaParserTests
     [Fact]
     public void Parse_EmptyPackages_ReturnsEmptyReport()
     {
-        var xml = """
-            <?xml version="1.0"?>
-            <coverage><packages></packages></coverage>
-            """;
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages></packages></coverage>
+                           """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
@@ -160,13 +160,13 @@ public sealed class CoberturaParserTests
     [Fact]
     public void Parse_ClassWithNoLines_ReportsZeroTotals()
     {
-        var xml = """
-            <?xml version="1.0"?>
-            <coverage><packages><package><classes>
-              <class name="Empty" filename="empty.cs" line-rate="0" branch-rate="0">
-              </class>
-            </classes></package></packages></coverage>
-            """;
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="Empty" filename="empty.cs" line-rate="0" branch-rate="0">
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
