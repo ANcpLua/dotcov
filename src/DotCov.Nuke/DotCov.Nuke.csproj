@@ -12,6 +12,8 @@ Usage in Build.cs:
 
 Run:
   nuke ReportCoverage --coverage-min-line 80 --coverage-exclude-generated true</Description>
+    <!-- Nuke 10.1.0 (latest) pulls vulnerable transitives (NuGet.Packaging 6.12.1, System.Security.Cryptography.Xml 9.0.0). Audit only direct refs until upstream Nuke bumps them. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
