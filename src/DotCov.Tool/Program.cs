@@ -139,7 +139,9 @@ static int Help()
           version                                                     Show version
 
         Global flags:
-          --exclude-generated       Skip generated files, migrations, state machines
+          --exclude-generated       Skip generated files, migrations, state machines, Program.cs
+          --keep <patterns>         Exempt comma-separated paths from --exclude-generated
+                                    (e.g. --keep Program.cs to measure a CLI tool's entry point)
           --upload <url>            POST JSON payload to any endpoint
           --github-summary          Write markdown to $GITHUB_STEP_SUMMARY
 
@@ -149,6 +151,7 @@ static int Help()
           dotcov report TestResults/
           dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
           dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
+          dotcov report TestResults/ --exclude-generated --keep Program.cs   # measure host bootstrap
           dotcov snapshot TestResults/ --commit abc123 --branch main --project MyApp --upload https://qyl/api/v1/coverage
           dotcov diff before.cobertura.xml after.cobertura.xml --format md
         """);
@@ -157,8 +160,16 @@ static int Help()
 
 // ── Shared helpers ──
 
-static CoverageReport ApplyExclusions(CoverageReport report, Dictionary<string, string> opts) =>
-    opts.ContainsKey("exclude-generated") ? report.Exclude(ExclusionRules.WellKnown) : report;
+static CoverageReport ApplyExclusions(CoverageReport report, Dictionary<string, string> opts)
+{
+    if (!opts.ContainsKey("exclude-generated")) return report;
+
+    var keep = opts.TryGetValue("keep", out var raw)
+        ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        : [];
+
+    return report.Exclude(ExclusionRules.WellKnown, keep);
+}
 
 static void WriteGitHubSummary(string markdown)
 {

@@ -15,6 +15,37 @@ public sealed class ExclusionAndReportTests
         Assert.Contains("/Migrations/", ExclusionRules.WellKnown);
         Assert.Contains("d__", ExclusionRules.WellKnown);
         Assert.Contains("GlobalUsings", ExclusionRules.WellKnown);
+        Assert.Contains("/Program.cs", ExclusionRules.WellKnown);
+    }
+
+    [Fact]
+    public void Exclude_WithKeep_RestoresFilesMatchingKeepPattern()
+    {
+        // `Program.cs` is in WellKnown, but a CLI tool whose entire surface lives there
+        // can opt back in with `--keep Program.cs`.
+        var report = new CoverageReport([
+            new FileCoverage("src/MyApp/Program.cs", 10, 12, 0, 0),
+            new FileCoverage("src/MyApp/Service.cs", 8, 10, 0, 0),
+            new FileCoverage("src/MyApp/obj/Generated.cs", 1, 1, 0, 0)
+        ]);
+
+        var filtered = report.Exclude(ExclusionRules.WellKnown, keep: ["Program.cs"]);
+
+        Assert.Contains(filtered.Files, f => f.Path.EndsWith("Program.cs"));    // exempted
+        Assert.Contains(filtered.Files, f => f.Path.EndsWith("Service.cs"));    // never excluded
+        Assert.DoesNotContain(filtered.Files, f => f.Path.Contains("/obj/"));   // still excluded
+    }
+
+    [Fact]
+    public void Exclude_KeepNotMatched_LeavesExclusionInPlace()
+    {
+        var report = new CoverageReport([
+            new FileCoverage("src/MyApp/Program.cs", 10, 12, 0, 0)
+        ]);
+
+        var filtered = report.Exclude(ExclusionRules.WellKnown, keep: ["Worker.cs"]);
+
+        Assert.Empty(filtered.Files);
     }
 
     [Fact]

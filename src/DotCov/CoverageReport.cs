@@ -91,13 +91,27 @@ public sealed class CoverageReport
         LineRate * 100 >= minLinePercent && BranchRate * 100 >= minBranchPercent;
 
     /// <summary>Remove files matching exclusion patterns. Returns a new report.</summary>
-    public CoverageReport Exclude(IEnumerable<string> patterns)
+    public CoverageReport Exclude(IEnumerable<string> patterns) =>
+        Exclude(patterns, keep: []);
+
+    /// <summary>
+    /// Remove files matching <paramref name="patterns"/>, then exempt any file whose path
+    /// matches one of <paramref name="keep"/>. Useful when a default ruleset is too aggressive
+    /// for a particular project — e.g. <c>--exclude-generated</c> drops <c>Program.cs</c> by
+    /// default, but a top-level CLI tool's entire surface lives in <c>Program.cs</c> and the
+    /// user wants to measure it.
+    /// </summary>
+    public CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
     {
         var rules = patterns.ToList();
         if (rules.Count is 0) return this;
 
+        var keepRules = keep.ToList();
+
         var filtered = Files
-            .Where(f => !rules.Any(p => f.Path.Contains(p, StringComparison.OrdinalIgnoreCase)))
+            .Where(f =>
+                keepRules.Any(k => f.Path.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
+                !rules.Any(p => f.Path.Contains(p, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
         return new CoverageReport(filtered);
@@ -133,5 +147,6 @@ public static class ExclusionRules
         "/Migrations/",   // EF Core migrations
         "d__",            // async state machine classes (e.g. +<MethodName>d__0)
         "GlobalUsings",   // auto-generated global usings
+        "/Program.cs",    // ASP.NET Core / generic host bootstrap — opt back in with --keep Program.cs
     ];
 }
