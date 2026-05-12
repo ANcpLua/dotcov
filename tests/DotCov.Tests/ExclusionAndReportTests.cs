@@ -95,24 +95,28 @@ public sealed class ExclusionAndReportTests
     }
 
     [Fact]
-    public void FileCoverage_MergeWith_AppendsUncoveredLinesAndPartialBranches()
+    public void FileCoverage_MergeWith_UnionsLinesAndAppendsPartialBranches()
     {
-        var a = new FileCoverage("a.cs", 1, 5, 1, 2)
+        // `a` covers line 5, misses 10. `b` covers lines 20 and 30 (their hit count = 1),
+        // misses 25. Merging keeps the highest hit count per line and recomputes the
+        // uncovered-line list from the resulting union.
+        var a = new FileCoverage("a.cs", LinesHit: 1, LinesTotal: 2, BranchesHit: 1, BranchesTotal: 2)
         {
-            UncoveredLines = [10],
+            LineHits = new Dictionary<int, int> { [5] = 3, [10] = 0 },
             PartialBranches = [new BranchDetail(15, 1, 2)]
         };
-        var b = new FileCoverage("a.cs", 2, 5, 1, 2)
+        var b = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 3, BranchesHit: 1, BranchesTotal: 2)
         {
-            UncoveredLines = [20, 30],
+            LineHits = new Dictionary<int, int> { [20] = 1, [25] = 0, [30] = 1 },
             PartialBranches = [new BranchDetail(25, 0, 2)]
         };
 
         var merged = a.MergeWith(b);
 
-        Assert.Equal([10, 20, 30], merged.UncoveredLines);
+        Assert.Equal([10, 25], merged.UncoveredLines);
         Assert.Equal(2, merged.PartialBranches.Count);
-        Assert.Equal(3, merged.LinesHit);
+        Assert.Equal(3, merged.LinesHit);     // 5, 20, 30
+        Assert.Equal(5, merged.LinesTotal);   // 5, 10, 20, 25, 30
         Assert.Equal(2, merged.BranchesHit);
     }
 

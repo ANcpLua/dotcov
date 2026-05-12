@@ -190,16 +190,24 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void Merge_SameFile_AggregatesCounts()
+    public void Merge_SameFile_DedupesLinesByNumberTakingMaxHits()
     {
-        var a = new CoverageReport([new FileCoverage("a.cs", 3, 10, 1, 2)]);
-        var b = new CoverageReport([new FileCoverage("a.cs", 5, 8, 2, 4)]);
+        // Lines 1-3 covered by both reports; line 4 only by `a`; line 5 only by `b`.
+        // Line 2 has hits=0 in `a` and hits=4 in `b` — the union counts it as covered.
+        var a = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 4, BranchesHit: 1, BranchesTotal: 2)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 }
+        };
+        var b = new FileCoverage("a.cs", LinesHit: 3, LinesTotal: 4, BranchesHit: 2, BranchesTotal: 4)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 4, [3] = 2, [5] = 7 }
+        };
 
-        var merged = CoverageReport.Merge(a, b);
+        var merged = CoverageReport.Merge(new CoverageReport([a]), new CoverageReport([b]));
 
         Assert.Single(merged.Files);
-        Assert.Equal(8, merged.Files[0].LinesHit);
-        Assert.Equal(18, merged.Files[0].LinesTotal);
+        Assert.Equal(5, merged.Files[0].LinesTotal);   // union {1,2,3,4,5}
+        Assert.Equal(4, merged.Files[0].LinesHit);     // {1,2,3,5} covered; 4 still 0
         Assert.Equal(3, merged.Files[0].BranchesHit);
         Assert.Equal(6, merged.Files[0].BranchesTotal);
     }
@@ -217,5 +225,93 @@ public sealed class CoberturaParserTests
     public void ParsePath_WithNonexistentPath_Throws()
     {
         Assert.Throws<FileNotFoundException>(() => CoberturaParser.ParsePath("nonexistent"));
+    }
+
+    // ── Real-world MTP shape ─────────────────────────────────────────────────
+    //
+    // Microsoft.Testing.Platform's CodeCoverage extension emits the same line numbers
+    // under each `<method><lines>` and once more under the class-level `<lines>`. A
+    // source file with nested types or async state machines produces several `<class>`
+    // blocks with the same `filename` attribute, each carrying overlapping line numbers.
+    //
+    // Before #fix-cobertura-method-block-and-line-dedup the parser only saw the first
+    // method's `<lines>` of the first class block, dramatically under-counting any file
+    // with records, async/await, or expression-trees. The fixtures below mirror what
+    // MTP actually produces for `record`-heavy files and let us assert the corrected
+    // per-source-line semantics directly.
+
+    [Fact]
+    public void Parse_LinesNestedUnderMethods_AreCounted()
+    {
+        const string xml = """
+                           <?xml version="1.0" encoding="utf-8"?>
+                           <coverage line-rate="0" branch-rate="0" version="1.0" timestamp="0">
+                             <packages><package name="P"><classes>
+                               <class name="A" filename="src/A.cs">
+                                 <methods>
+                                   <method name="Foo" signature="()">
+                                     <lines>
+                                       <line number="10" hits="2" branch="false" />
+                                       <line number="11" hits="2" branch="false" />
+                                     </lines>
+                                   </method>
+                                   <method name="Bar" signature="()">
+                                     <lines>
+                                       <line number="20" hits="0" branch="false" />
+                                     </lines>
+                                   </method>
+                                 </methods>
+                                 <lines>
+                                   <line number="10" hits="2" branch="false" />
+                                   <line number="11" hits="2" branch="false" />
+                                   <line number="20" hits="0" branch="false" />
+                                 </lines>
+                               </class>
+                             </classes></package></packages>
+                           </coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var file = CoberturaParser.Parse(stream).Files.Single();
+
+        Assert.Equal(3, file.LinesTotal);
+        Assert.Equal(2, file.LinesHit);
+        Assert.Equal([20], file.UncoveredLines);
+    }
+
+    [Fact]
+    public void Parse_MultipleClassBlocksSameFile_UnionLinesWithMaxHits()
+    {
+        // Two `<class>` blocks (e.g., the record and its compiler-generated state-machine
+        // counterpart) share `filename="src/Dto.cs"`. Line 10 is hit=0 in the first block
+        // and hit=5 in the second — the union must report it as covered.
+        const string xml = """
+                           <?xml version="1.0" encoding="utf-8"?>
+                           <coverage line-rate="0" branch-rate="0" version="1.0" timestamp="0">
+                             <packages><package name="P"><classes>
+                               <class name="Dto" filename="src/Dto.cs">
+                                 <lines>
+                                   <line number="10" hits="0" branch="false" />
+                                   <line number="11" hits="3" branch="false" />
+                                 </lines>
+                               </class>
+                               <class name="Dto+&lt;&gt;d__0" filename="src/Dto.cs">
+                                 <lines>
+                                   <line number="10" hits="5" branch="false" />
+                                   <line number="12" hits="0" branch="false" />
+                                 </lines>
+                               </class>
+                             </classes></package></packages>
+                           </coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var file = CoberturaParser.Parse(stream).Files.Single();
+
+        Assert.Equal("src/Dto.cs", file.Path);
+        Assert.Equal(3, file.LinesTotal);                  // union {10, 11, 12}
+        Assert.Equal(2, file.LinesHit);                    // 10 (max hits = 5), 11
+        Assert.Equal([12], file.UncoveredLines);
+        Assert.Equal(5, file.LineHits[10]);                // max-of-block-hits per line
     }
 }

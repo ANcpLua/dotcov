@@ -94,9 +94,11 @@ public sealed class CoberturaParserAsyncTests
     }
 
     [Fact]
-    public void Parse_LineWithoutNumber_StillCountsLine()
+    public void Parse_LineWithoutNumber_IsSkipped()
     {
-        // Number missing → parser falls back to 0, line still counted in totals
+        // Cobertura `<line>` without a `number` attribute cannot be deduplicated against
+        // other class blocks for the same file — skip it rather than collapse every
+        // numberless line into a single bucket, which would silently lose data.
         var xml = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
             .ToString();
@@ -104,7 +106,8 @@ public sealed class CoberturaParserAsyncTests
 
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Equal(1, report.Files[0].LinesTotal);
+        Assert.Single(report.Files);
+        Assert.Equal(0, report.Files[0].LinesTotal);
     }
 
     [Fact]

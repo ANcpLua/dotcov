@@ -25,16 +25,44 @@ public readonly record struct FileCoverage(
     /// <summary>Branch lines with partial coverage. Shows exactly which conditions need tests.</summary>
     public IReadOnlyList<BranchDetail> PartialBranches { get; init; } = [];
 
-    public FileCoverage MergeWith(FileCoverage other) => new(
-        Path,
-        LinesHit + other.LinesHit,
-        LinesTotal + other.LinesTotal,
-        BranchesHit + other.BranchesHit,
-        BranchesTotal + other.BranchesTotal)
+    /// <summary>
+    /// Per-line hit counts (line number → hits). Cobertura emits the same line number under
+    /// `&lt;methods&gt;&lt;method&gt;&lt;lines&gt;`, again under the class-level `&lt;lines&gt;`,
+    /// and once more for every nested type or compiler-synthesized state-machine class sharing
+    /// the filename. The parser merges those into a single set keyed by line number with the
+    /// highest hit count seen, matching the per-line semantics every other Cobertura consumer
+    /// (Codecov, ReportGenerator, Cobertura's own report.py) uses.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> LineHits { get; init; } =
+        new Dictionary<int, int>();
+
+    public FileCoverage MergeWith(FileCoverage other)
     {
-        UncoveredLines = [.. UncoveredLines, .. other.UncoveredLines],
-        PartialBranches = [.. PartialBranches, .. other.PartialBranches]
-    };
+        var merged = new Dictionary<int, int>(LineHits);
+        foreach (var (line, hits) in other.LineHits)
+            merged[line] = merged.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
+
+        var linesHit = 0;
+        var uncovered = new List<int>();
+        foreach (var (line, hits) in merged)
+        {
+            if (hits > 0) linesHit++;
+            else uncovered.Add(line);
+        }
+        uncovered.Sort();
+
+        return new FileCoverage(
+            Path,
+            linesHit,
+            merged.Count,
+            BranchesHit + other.BranchesHit,
+            BranchesTotal + other.BranchesTotal)
+        {
+            LineHits = merged,
+            UncoveredLines = uncovered,
+            PartialBranches = [.. PartialBranches, .. other.PartialBranches]
+        };
+    }
 }
 
 public sealed class CoverageReport

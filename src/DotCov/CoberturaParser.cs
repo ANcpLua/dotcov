@@ -66,25 +66,43 @@ public static partial class CoberturaParser
         Async = async
     };
 
+    // ── Aggregation primitive ─────────────────────────────────────────────────
+    //
+    // Cobertura emits one `<class>` block per IL type. A single source file routinely
+    // produces several: the source class itself, each compiler-synthesized state-machine
+    // class for async methods, each nested record's Equals/GetHashCode shim, and so on.
+    // Within one block, every `<method><lines>` and the class-level summary `<lines>`
+    // repeat the same line numbers with the same or different hit counts.
+    //
+    // To produce per-source-line coverage we collect into Dictionary<filename, Dictionary<line, hits>>
+    // and take the highest hit count seen for any (file, line) pair.
+
+    private sealed class LineAccumulator
+    {
+        public readonly Dictionary<int, int> LineHits = new();
+        public int BranchesHit;
+        public int BranchesTotal;
+        public readonly List<BranchDetail> PartialBranches = new();
+    }
+
     private static CoverageReport ParseCore(XmlReader reader)
     {
-        var files = new List<FileCoverage>();
+        var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
 
         while (reader.Read())
         {
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            if (ParseClass(reader) is { } coverage)
-                files.Add(coverage);
+            ConsumeClass(reader, files);
         }
 
-        return new CoverageReport(files);
+        return Materialize(files);
     }
 
     private static async Task<CoverageReport> ParseCoreAsync(XmlReader reader, CancellationToken ct)
     {
-        var files = new List<FileCoverage>();
+        var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
 
         while (await reader.ReadAsync())
         {
@@ -93,51 +111,74 @@ public static partial class CoberturaParser
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            if (ParseClass(reader) is { } coverage)
-                files.Add(coverage);
+            ConsumeClass(reader, files);
         }
 
-        return new CoverageReport(files);
+        return Materialize(files);
     }
 
-    private static FileCoverage? ParseClass(XmlReader reader)
+    private static void ConsumeClass(XmlReader reader, Dictionary<string, LineAccumulator> files)
     {
         var filename = reader.GetAttribute("filename");
-        if (filename is null) return null;
+        if (filename is null) return;
 
-        int linesHit = 0, linesTotal = 0, branchesHit = 0, branchesTotal = 0;
-        var uncoveredLines = new List<int>();
-        var partialBranches = new List<BranchDetail>();
-
-        if (reader.ReadToDescendant("line"))
+        if (!files.TryGetValue(filename, out var acc))
         {
-            do
-            {
-                linesTotal++;
-                var lineNum = int.TryParse(reader.GetAttribute("number"), out var n) ? n : 0;
-                var hits = 0;
-
-                if (int.TryParse(reader.GetAttribute("hits"), out var h))
-                    hits = h;
-
-                if (hits > 0)
-                    linesHit++;
-                else if (lineNum > 0)
-                    uncoveredLines.Add(lineNum);
-
-                if (reader.GetAttribute("branch") is "true" &&
-                    reader.GetAttribute("condition-coverage") is { } cond)
-                {
-                    ParseCondition(cond, lineNum, ref branchesHit, ref branchesTotal, partialBranches);
-                }
-            } while (reader.ReadToNextSibling("line"));
+            acc = new LineAccumulator();
+            files[filename] = acc;
         }
 
-        return new FileCoverage(filename, linesHit, linesTotal, branchesHit, branchesTotal)
+        // Walk the entire `<class>` subtree so that lines emitted under
+        // `<methods><method><lines>` AND under the trailing `<lines>` summary
+        // both contribute. ReadSubtree leaves the outer reader positioned on
+        // the closing `</class>` tag when we're done.
+        using var sub = reader.ReadSubtree();
+        sub.MoveToContent();
+
+        while (sub.Read())
         {
-            UncoveredLines = uncoveredLines,
-            PartialBranches = partialBranches
-        };
+            if (sub is not { NodeType: XmlNodeType.Element, LocalName: "line" })
+                continue;
+
+            if (!int.TryParse(sub.GetAttribute("number"), out var lineNum))
+                continue;
+
+            var hits = int.TryParse(sub.GetAttribute("hits"), out var h) ? h : 0;
+
+            acc.LineHits[lineNum] = acc.LineHits.TryGetValue(lineNum, out var existing)
+                ? Math.Max(existing, hits)
+                : hits;
+
+            if (sub.GetAttribute("branch") is "true" &&
+                sub.GetAttribute("condition-coverage") is { } cond)
+            {
+                ParseCondition(cond, lineNum, ref acc.BranchesHit, ref acc.BranchesTotal, acc.PartialBranches);
+            }
+        }
+    }
+
+    private static CoverageReport Materialize(Dictionary<string, LineAccumulator> files)
+    {
+        var result = new List<FileCoverage>(files.Count);
+        foreach (var (filename, acc) in files)
+        {
+            var linesHit = 0;
+            var uncovered = new List<int>();
+            foreach (var (line, hits) in acc.LineHits)
+            {
+                if (hits > 0) linesHit++;
+                else uncovered.Add(line);
+            }
+            uncovered.Sort();
+
+            result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, acc.BranchesHit, acc.BranchesTotal)
+            {
+                LineHits = acc.LineHits,
+                UncoveredLines = uncovered,
+                PartialBranches = acc.PartialBranches
+            });
+        }
+        return new CoverageReport(result);
     }
 
     private static void ParseCondition(
