@@ -132,16 +132,12 @@ public sealed class ExclusionAndReportTests
         // `b` covers lines 20 and 30, misses 25, has a partial branch on line 25 (0/2).
         // Merging keeps the highest hit count per line and derives PartialBranches from the
         // unioned BranchesByLine dict (disjoint partial-branch lines → both surface).
-        var a = new FileCoverage("a.cs", LinesHit: 1, LinesTotal: 2, BranchesHit: 1, BranchesTotal: 2)
-        {
-            LineHits = new Dictionary<int, int> { [5] = 3, [10] = 0 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [15] = (1, 2) }
-        };
-        var b = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 3, BranchesHit: 0, BranchesTotal: 2)
-        {
-            LineHits = new Dictionary<int, int> { [20] = 1, [25] = 0, [30] = 1 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [25] = (0, 2) }
-        };
+        var a = FileCoverage.WithComputedClassification("a.cs", linesHit: 1, linesTotal: 2, branchesHit: 1, branchesTotal: 2,
+            lineHits: new Dictionary<int, int> { [5] = 3, [10] = 0 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [15] = (1, 2) });
+        var b = FileCoverage.WithComputedClassification("a.cs", linesHit: 2, linesTotal: 3, branchesHit: 0, branchesTotal: 2,
+            lineHits: new Dictionary<int, int> { [20] = 1, [25] = 0, [30] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [25] = (0, 2) });
 
         var merged = a.MergeWith(b);
 
@@ -159,15 +155,12 @@ public sealed class ExclusionAndReportTests
         // `a` has the same line tracked but no branch data for it; `b` carries the branches.
         // The merge must keep `b`'s BranchesByLine entry — a regression that overwrote with
         // the empty dict would silently flip the merged line from Partial back to Hit.
-        var a = new FileCoverage("a.cs", 1, 1, 0, 0)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 1 }
-        };
-        var b = new FileCoverage("a.cs", 1, 1, 1, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 1 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
-        };
+        var a = FileCoverage.WithComputedClassification("a.cs", 1, 1, 0, 0,
+            lineHits: new Dictionary<int, int> { [10] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)>());
+        var b = FileCoverage.WithComputedClassification("a.cs", 1, 1, 1, 2,
+            lineHits: new Dictionary<int, int> { [10] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) });
 
         var merged = a.MergeWith(b);
 
@@ -180,10 +173,9 @@ public sealed class ExclusionAndReportTests
     [Fact]
     public void GetLineStatus_FullyCoveredLineWithoutBranches_IsHit()
     {
-        var f = new FileCoverage("a.cs", 1, 1, 0, 0)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 3 }
-        };
+        var f = FileCoverage.WithComputedClassification("a.cs", 1, 1, 0, 0,
+            lineHits: new Dictionary<int, int> { [10] = 3 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)>());
 
         Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
     }
@@ -191,11 +183,9 @@ public sealed class ExclusionAndReportTests
     [Fact]
     public void GetLineStatus_FullyCoveredLineWithAllBranchesExercised_IsHit()
     {
-        var f = new FileCoverage("a.cs", 1, 1, 2, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 3 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) }
-        };
+        var f = FileCoverage.WithComputedClassification("a.cs", 1, 1, 2, 2,
+            lineHits: new Dictionary<int, int> { [10] = 3 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) });
 
         Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
     }
@@ -203,11 +193,9 @@ public sealed class ExclusionAndReportTests
     [Fact]
     public void GetLineStatus_ExecutedLineWithIncompleteBranches_IsPartial()
     {
-        var f = new FileCoverage("a.cs", 1, 1, 1, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 3 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
-        };
+        var f = FileCoverage.WithComputedClassification("a.cs", 1, 1, 1, 2,
+            lineHits: new Dictionary<int, int> { [10] = 3 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) });
 
         Assert.Equal(LineStatus.Partial, f.GetLineStatus(10));
     }
@@ -215,11 +203,9 @@ public sealed class ExclusionAndReportTests
     [Fact]
     public void GetLineStatus_ZeroHits_IsMissEvenWithBranchData()
     {
-        var f = new FileCoverage("a.cs", 0, 1, 0, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 0 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (0, 2) }
-        };
+        var f = FileCoverage.WithComputedClassification("a.cs", 0, 1, 0, 2,
+            lineHits: new Dictionary<int, int> { [10] = 0 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (0, 2) });
 
         Assert.Equal(LineStatus.Miss, f.GetLineStatus(10));
     }
@@ -238,11 +224,9 @@ public sealed class ExclusionAndReportTests
         // 3 lines tracked: line 1 fully hit (no branches), line 2 hit but with partial branches,
         // line 3 missed. Standard LineRate = 2/3 ≈ 66.7% (lines 1 and 2 are "hit").
         // Strict LineRate = 1/3 ≈ 33.3% (only line 1 is fully Hit; line 2 is Partial, line 3 is Miss).
-        var f = new FileCoverage("a.cs", 2, 3, 1, 2)
-        {
-            LineHits = new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 0 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) }
-        };
+        var f = FileCoverage.WithComputedClassification("a.cs", 2, 3, 1, 2,
+            lineHits: new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 0 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) });
 
         Assert.Equal(2.0 / 3.0, f.LineRate, 4);
         Assert.Equal(1.0 / 3.0, f.StrictLineRate, 4);
@@ -255,15 +239,13 @@ public sealed class ExclusionAndReportTests
     {
         // Boundary: every tracked line has unfinished branches → StrictLineRate must be 0,
         // even though LineRate stays at 1.0 (every line was executed).
-        var f = new FileCoverage("a.cs", 2, 2, 2, 4)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)>
+        var f = FileCoverage.WithComputedClassification("a.cs", 2, 2, 2, 4,
+            lineHits: new Dictionary<int, int> { [10] = 1, [20] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)>
             {
                 [10] = (1, 2),
                 [20] = (1, 2)
-            }
-        };
+            });
 
         Assert.Equal(1.0, f.LineRate);
         Assert.Equal(0.0, f.StrictLineRate);
@@ -294,15 +276,12 @@ public sealed class ExclusionAndReportTests
         // File B: 2 strict-hits → 2/2 strict.
         // Combined: 3 strict-hits across 5 total lines → 60%.
         var report = new CoverageReport([
-            new FileCoverage("a.cs", 2, 3, 1, 2)
-            {
-                LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1, [3] = 0 },
-                BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) }
-            },
-            new FileCoverage("b.cs", 2, 2, 0, 0)
-            {
-                LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 }
-            }
+            FileCoverage.WithComputedClassification("a.cs", 2, 3, 1, 2,
+                lineHits: new Dictionary<int, int> { [1] = 1, [2] = 1, [3] = 0 },
+                branchesByLine: new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) }),
+            FileCoverage.WithComputedClassification("b.cs", 2, 2, 0, 0,
+                lineHits: new Dictionary<int, int> { [10] = 1, [20] = 1 },
+                branchesByLine: new Dictionary<int, (int Covered, int Total)>())
         ]);
 
         Assert.Equal(0.6, report.StrictLineRate, 4);
@@ -324,5 +303,127 @@ public sealed class ExclusionAndReportTests
         Assert.Single(diff.Improvements);
         Assert.Single(diff.Regressions);
         Assert.Equal("up.cs", diff.Improvements.Single().Path);
+    }
+
+    // ── Single-pass classification: precomputed counts vs. previous getter logic ──
+
+    public static TheoryData<Dictionary<int, int>, Dictionary<int, (int Covered, int Total)>, int, int> ClassificationFixtures()
+        => new()
+        {
+            // Mixed: hit-no-branches, hit-partial-branches, hit-fully-branched, missed.
+            {
+                new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 7, [4] = 0 },
+                new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2), [3] = (4, 4) },
+                /* strict */ 2, /* partial */ 1
+            },
+            // All hit, no branches at all.
+            {
+                new Dictionary<int, int> { [1] = 1, [2] = 1, [3] = 1 },
+                new Dictionary<int, (int Covered, int Total)>(),
+                3, 0
+            },
+            // Every line partial.
+            {
+                new Dictionary<int, int> { [10] = 1, [20] = 1 },
+                new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2), [20] = (0, 2) },
+                0, 2
+            },
+            // Every line missed (hits == 0).
+            {
+                new Dictionary<int, int> { [1] = 0, [2] = 0 },
+                new Dictionary<int, (int Covered, int Total)>(),
+                0, 0
+            },
+            // Empty dict.
+            {
+                new Dictionary<int, int>(),
+                new Dictionary<int, (int Covered, int Total)>(),
+                0, 0
+            },
+            // Branch entry exists but Covered == Total — still counts as strict.
+            {
+                new Dictionary<int, int> { [1] = 1 },
+                new Dictionary<int, (int Covered, int Total)> { [1] = (2, 2) },
+                1, 0
+            },
+            // Branch entry for a missed line — never reaches the branch check.
+            {
+                new Dictionary<int, int> { [1] = 0 },
+                new Dictionary<int, (int Covered, int Total)> { [1] = (0, 2) },
+                0, 0
+            }
+        };
+
+    [Theory]
+    [MemberData(nameof(ClassificationFixtures))]
+    public void ClassifyLines_SinglePass_MatchesPreviousGetterLogic(
+        Dictionary<int, int> lineHits,
+        Dictionary<int, (int Covered, int Total)> branchesByLine,
+        int expectedStrict,
+        int expectedPartial)
+    {
+        // Build via the factory — exercises the production path that the parser and MergeWith
+        // both go through, and pins the public contract that strict + partial == the same
+        // numbers the original getter-based logic produced.
+        var f = FileCoverage.WithComputedClassification("x.cs", 0, lineHits.Count, 0, 0,
+            lineHits: lineHits, branchesByLine: branchesByLine);
+
+        Assert.Equal(expectedStrict, f.StrictlyHitLines);
+        Assert.Equal(expectedPartial, f.PartiallyHitLines);
+
+        // Cross-check: counts derived from GetLineStatus over LineHits.Keys must agree —
+        // that was the exact body of the previous getter.
+        var strictViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Hit);
+        var partialViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Partial);
+        Assert.Equal(strictViaStatus, f.StrictlyHitLines);
+        Assert.Equal(partialViaStatus, f.PartiallyHitLines);
+    }
+
+    [Fact]
+    public void MergeWith_PrecomputedCountsMatchClassifyLines()
+    {
+        // MergeWith must compute the counts once over the merged dicts. The output struct's
+        // StrictlyHitLines/PartiallyHitLines must agree with what a fresh classification
+        // pass over the merged LineHits + BranchesByLine would produce — otherwise the
+        // cached counts have drifted from the underlying data.
+        var a = FileCoverage.WithComputedClassification("a.cs", 1, 2, 1, 2,
+            lineHits: new Dictionary<int, int> { [1] = 3, [2] = 0 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [1] = (1, 2) });
+        var b = FileCoverage.WithComputedClassification("a.cs", 2, 3, 2, 4,
+            lineHits: new Dictionary<int, int> { [2] = 5, [3] = 1, [4] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [3] = (2, 2), [4] = (1, 2) });
+
+        var merged = a.MergeWith(b);
+
+        // Independently classify the merged dicts and compare. This is the "did MergeWith do
+        // the same work the factory would have done?" check.
+        var reference = FileCoverage.WithComputedClassification(merged.Path,
+            merged.LinesHit, merged.LinesTotal, merged.BranchesHit, merged.BranchesTotal,
+            lineHits: merged.LineHits, branchesByLine: merged.BranchesByLine);
+
+        Assert.Equal(reference.StrictlyHitLines, merged.StrictlyHitLines);
+        Assert.Equal(reference.PartiallyHitLines, merged.PartiallyHitLines);
+
+        // Concrete sanity numbers: lines 1 (partial after merge), 2 (strict — hits=5, no branch
+        // for that line), 3 (strict — branch 2/2), 4 (partial — branch 1/2).
+        // Line 2 had a branch entry in `a` but it was for a different line; line 2 itself never
+        // had branch data, so post-merge it's strict.
+        Assert.Equal(2, merged.StrictlyHitLines);
+        Assert.Equal(2, merged.PartiallyHitLines);
+    }
+
+    [Fact]
+    public void WithComputedClassification_OmitsOptionalLists_DefaultsToEmpty()
+    {
+        // Sanity: the factory's optional UncoveredLines/PartialBranches default to empty
+        // collections, matching the direct-constructor field initializers.
+        var f = FileCoverage.WithComputedClassification("a.cs", 1, 1, 0, 0,
+            lineHits: new Dictionary<int, int> { [1] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)>());
+
+        Assert.Empty(f.UncoveredLines);
+        Assert.Empty(f.PartialBranches);
+        Assert.Equal(1, f.StrictlyHitLines);
+        Assert.Equal(0, f.PartiallyHitLines);
     }
 }

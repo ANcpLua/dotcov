@@ -160,13 +160,24 @@ public readonly record struct FileCoverage(
 {
     double LineRate, BranchRate, StrictLineRate;
     bool HasBranchData;
-    int StrictlyHitLines, PartiallyHitLines;
+    int StrictlyHitLines { get; init; }     // init-only — set by parser / MergeWith / factory
+    int PartiallyHitLines { get; init; }    // init-only — set by parser / MergeWith / factory
     IReadOnlyList<int> UncoveredLines { get; init; }
     IReadOnlyList<BranchDetail> PartialBranches { get; init; }
     IReadOnlyDictionary<int, int> LineHits { get; init; }
     IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; }
     LineStatus GetLineStatus(int line);   // Hit / Partial / Miss
     FileCoverage MergeWith(FileCoverage other);
+
+    // Hand-build a FileCoverage with strict/partial counts computed in one pass.
+    // Use this instead of the direct constructor when you supply LineHits + BranchesByLine —
+    // the direct constructor leaves StrictlyHitLines/PartiallyHitLines at 0.
+    static FileCoverage WithComputedClassification(
+        string path, int linesHit, int linesTotal, int branchesHit, int branchesTotal,
+        IReadOnlyDictionary<int, int> lineHits,
+        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine,
+        IReadOnlyList<int>? uncoveredLines = null,
+        IReadOnlyList<BranchDetail>? partialBranches = null);
 }
 
 public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state

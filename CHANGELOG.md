@@ -142,3 +142,68 @@ Explicitly skipped (each would have required new public API or breaking changes)
   (`ComputeLineChanges`), enforced by tests rather than the type.
 - `O(n²)` cache on `StrictlyHitLines` + `PartiallyHitLines` (correctness-neutral; defer
   until a 50 MB+ report actually shows up in a benchmark).
+
+## Task 7 — 2026-05-15 — Strict/Partial classification cached at construction (single-pass)
+
+Closes the punch-list item from Task 3: `FileCoverage.StrictlyHitLines` and `PartiallyHitLines`
+were getters that each re-walked `LineHits.Keys` invoking `GetLineStatus(line)` per entry, and
+`CoverageReport.StrictLineRate` did a third walk via `f.StrictlyHitLines` per file. Three
+independent O(n) passes over the same dict — wasted CPU on 50 MB+ reports where every walk
+costs millions of lookups. Replaced with a single classification pass at construction time.
+Breaking change to the public surface: both properties are now init-only (user authorized
+breaking changes for this task).
+
+Changed:
+- `FileCoverage.StrictlyHitLines` / `PartiallyHitLines` flipped from computed getters to
+  `{ get; init; }`. XML docs spell out: "init-only; use `WithComputedClassification` factory
+  or set explicitly when hand-building" — a default of `0` will silently disagree with the
+  keyspace of `LineHits` otherwise.
+- New `FileCoverage.ClassifyLines(lineHits, branchesByLine)` internal helper performs the
+  single pass that bins each executed line into the strict or partial bucket — same logic
+  the old getters used, but called once instead of three times.
+- New public `FileCoverage.WithComputedClassification(path, ..., lineHits, branchesByLine,
+  uncoveredLines = null, partialBranches = null)` factory. Wraps the direct constructor with
+  a single `ClassifyLines` call so hand-built records stay self-consistent — the only safe
+  way for in-tree callers to build a `FileCoverage` from raw line/branch dicts now.
+- `CoberturaParser.Materialize` and `FileCoverage.MergeWith` both call `ClassifyLines` once
+  after assembling the merged dicts, then pass the counts into the init block.
+- `CoverageReport.StrictLineRate` collapses to a one-liner that sums the precomputed per-file
+  `StrictlyHitLines` instead of re-walking every file's `LineHits` dict.
+- Dropped the optional `ComputeIfMissing` fallback the requirements floated — every in-tree
+  test now uses the factory, so a fallback would be dead code. Future external consumers who
+  build `FileCoverage` records by hand get the documented footgun in the XML doc and a
+  consistent counts-mismatch failure rather than silently-correct-by-accident behavior.
+
+Tests:
+- Updated every `new FileCoverage(...) { LineHits = ..., BranchesByLine = ... }` site in
+  `ExclusionAndReportTests.cs` and `CoberturaParserTests.cs` to call
+  `FileCoverage.WithComputedClassification(...)`. Tests in other files (`TableFormatter`,
+  `JsonFormatter`, `MarkdownFormatter`, `CoverageDiff`, `Reports` infra) don't read the
+  strict counts, so they were left untouched.
+- Added `ClassifyLines_SinglePass_MatchesPreviousGetterLogic` — a `[Theory]` over seven
+  fixtures (mixed, all-hit-no-branches, all-partial, all-missed, empty, branch-Total-equals-
+  Covered, branch-on-missed-line). Each row asserts both the precomputed `StrictlyHitLines`/
+  `PartiallyHitLines` AND the count derived by re-running `GetLineStatus` over
+  `LineHits.Keys` — the body of the original getter — so a regression in either path would
+  surface immediately.
+- Added `MergeWith_PrecomputedCountsMatchClassifyLines` — merges two files with overlapping
+  + disjoint branched lines, then asserts the merged struct's cached counts equal what a
+  fresh `WithComputedClassification` call over the merged dicts would produce (the "did
+  MergeWith do the same work the factory would have done?" round-trip).
+- Added `WithComputedClassification_OmitsOptionalLists_DefaultsToEmpty` — pins the optional
+  `uncoveredLines`/`partialBranches` defaulting to empty collections, matching the direct
+  constructor's field initialisers.
+
+Verified:
+- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` →
+  **206/206 passing** (test count grew by 3 over Task 3's 203).
+- `dotcov report tests/DotCov.Tests/TestResults --exclude-generated` reports
+  **Lines 580/580 (100%)** / **Branches 288/288 (100%)** across the suite, with
+  `CoverageReport.cs` at **122/122 lines / 56/56 branches** and `CoberturaParser.cs` at
+  **119/119 lines / 56/56 branches** — both files clean at 100% per the acceptance criteria.
+
+Notes:
+- README's "Public API surface" block updated: `StrictlyHitLines`/`PartiallyHitLines` are
+  flagged init-only and the `WithComputedClassification` factory signature is added.
+- Numbering gap (4-6) is intentional: parallel-agent work in sibling worktrees owns those
+  task numbers; integration-time merge will sequence them.

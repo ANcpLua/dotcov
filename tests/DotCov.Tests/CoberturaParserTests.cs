@@ -359,16 +359,12 @@ public sealed class CoberturaParserTests
         // Line 2 has hits=0 in `a` and hits=4 in `b` — the union counts it as covered.
         // Branches are on disjoint lines across the two reports, so the per-line union ends
         // up summing them (no overlap to dedupe).
-        var a = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 4, BranchesHit: 1, BranchesTotal: 2)
-        {
-            LineHits = new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [1] = (1, 2) }
-        };
-        var b = new FileCoverage("a.cs", LinesHit: 3, LinesTotal: 4, BranchesHit: 2, BranchesTotal: 4)
-        {
-            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 4, [3] = 2, [5] = 7 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [3] = (1, 2), [5] = (1, 2) }
-        };
+        var a = FileCoverage.WithComputedClassification("a.cs", linesHit: 2, linesTotal: 4, branchesHit: 1, branchesTotal: 2,
+            lineHits: new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [1] = (1, 2) });
+        var b = FileCoverage.WithComputedClassification("a.cs", linesHit: 3, linesTotal: 4, branchesHit: 2, branchesTotal: 4,
+            lineHits: new Dictionary<int, int> { [1] = 1, [2] = 4, [3] = 2, [5] = 7 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [3] = (1, 2), [5] = (1, 2) });
 
         var merged = CoverageReport.Merge(new CoverageReport([a]), new CoverageReport([b]));
 
@@ -384,16 +380,12 @@ public sealed class CoberturaParserTests
     {
         // Both reports carry branch data for the same source line — Codecov-style
         // union-with-max prevents double-counting that would inflate BranchesTotal.
-        var a = new FileCoverage("a.cs", 1, 1, 1, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 1 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
-        };
-        var b = new FileCoverage("a.cs", 1, 1, 2, 2)
-        {
-            LineHits = new Dictionary<int, int> { [10] = 5 },
-            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) }
-        };
+        var a = FileCoverage.WithComputedClassification("a.cs", 1, 1, 1, 2,
+            lineHits: new Dictionary<int, int> { [10] = 1 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) });
+        var b = FileCoverage.WithComputedClassification("a.cs", 1, 1, 2, 2,
+            lineHits: new Dictionary<int, int> { [10] = 5 },
+            branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) });
 
         var merged = a.MergeWith(b);
 

@@ -80,28 +80,78 @@ public readonly record struct FileCoverage(
         return LineStatus.Hit;
     }
 
-    /// <summary>Lines that were executed AND had all their branches exercised.</summary>
-    public int StrictlyHitLines
+    /// <summary>
+    /// Lines that were executed AND had all their branches exercised. Init-only; the parser's
+    /// <c>Materialize</c> step and <see cref="MergeWith"/> compute it via the single-pass
+    /// <see cref="ClassifyLines"/> helper. Hand-built records must set this explicitly or use
+    /// <see cref="WithComputedClassification"/> — a default of <c>0</c> will silently disagree
+    /// with the keyspace of <see cref="LineHits"/>.
+    /// </summary>
+    public int StrictlyHitLines { get; init; }
+
+    /// <summary>
+    /// Lines that were executed but had at least one unexercised branch. Init-only; the parser's
+    /// <c>Materialize</c> step and <see cref="MergeWith"/> compute it via the single-pass
+    /// <see cref="ClassifyLines"/> helper. Hand-built records must set this explicitly or use
+    /// <see cref="WithComputedClassification"/> — a default of <c>0</c> will silently disagree
+    /// with the keyspace of <see cref="LineHits"/>.
+    /// </summary>
+    public int PartiallyHitLines { get; init; }
+
+    /// <summary>
+    /// Single pass over <paramref name="lineHits"/> that bins each executed line into the
+    /// strictly-hit or partially-hit bucket. Replaces three independent walks of the same
+    /// dict (one per call to <c>StrictlyHitLines</c>, <c>PartiallyHitLines</c>, and
+    /// <c>CoverageReport.StrictLineRate</c>) with one — the difference is observable on
+    /// 50 MB+ reports where every walk costs millions of <see cref="LineStatus"/> lookups.
+    /// </summary>
+    internal static (int strict, int partial) ClassifyLines(
+        IReadOnlyDictionary<int, int> lineHits,
+        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine)
     {
-        get
+        var strict = 0;
+        var partial = 0;
+        foreach (var (line, hits) in lineHits)
         {
-            var count = 0;
-            foreach (var line in LineHits.Keys)
-                if (GetLineStatus(line) is LineStatus.Hit) count++;
-            return count;
+            if (hits == 0) continue;
+            if (branchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
+                partial++;
+            else
+                strict++;
         }
+        return (strict, partial);
     }
 
-    /// <summary>Lines that were executed but had at least one unexercised branch.</summary>
-    public int PartiallyHitLines
+    /// <summary>
+    /// Builds a <see cref="FileCoverage"/> with <see cref="StrictlyHitLines"/> /
+    /// <see cref="PartiallyHitLines"/> computed in a single pass over <paramref name="lineHits"/>
+    /// and <paramref name="branchesByLine"/>. Use this whenever you hand-build a
+    /// <see cref="FileCoverage"/> from raw line/branch dicts — the direct constructor leaves the
+    /// strict counts at <c>0</c>, which silently disagrees with the keyspace of
+    /// <see cref="LineHits"/>. The parser's <c>Materialize</c> and <see cref="MergeWith"/> both
+    /// go through this helper.
+    /// </summary>
+    public static FileCoverage WithComputedClassification(
+        string path,
+        int linesHit,
+        int linesTotal,
+        int branchesHit,
+        int branchesTotal,
+        IReadOnlyDictionary<int, int> lineHits,
+        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine,
+        IReadOnlyList<int>? uncoveredLines = null,
+        IReadOnlyList<BranchDetail>? partialBranches = null)
     {
-        get
+        var (strict, partial) = ClassifyLines(lineHits, branchesByLine);
+        return new FileCoverage(path, linesHit, linesTotal, branchesHit, branchesTotal)
         {
-            var count = 0;
-            foreach (var line in LineHits.Keys)
-                if (GetLineStatus(line) is LineStatus.Partial) count++;
-            return count;
-        }
+            LineHits = lineHits,
+            BranchesByLine = branchesByLine,
+            UncoveredLines = uncoveredLines ?? [],
+            PartialBranches = partialBranches ?? [],
+            StrictlyHitLines = strict,
+            PartiallyHitLines = partial
+        };
     }
 
     /// <summary>
@@ -157,12 +207,15 @@ public readonly record struct FileCoverage(
                 partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
         }
 
+        var (strict, partial) = ClassifyLines(mergedHits, mergedBranches);
         return new FileCoverage(Path, linesHit, mergedHits.Count, branchesHit, branchesTotal)
         {
             LineHits = mergedHits,
             BranchesByLine = mergedBranches,
             UncoveredLines = uncovered,
-            PartialBranches = partialBranches
+            PartialBranches = partialBranches,
+            StrictlyHitLines = strict,
+            PartiallyHitLines = partial
         };
     }
 }
@@ -188,18 +241,11 @@ public sealed class CoverageReport
 
     /// <summary>
     /// Codecov-style strict ratio across the whole report. A line counts only when its
-    /// branches are all exercised — partials and misses both depress the rate.
+    /// branches are all exercised — partials and misses both depress the rate. Sums the
+    /// precomputed per-file <see cref="FileCoverage.StrictlyHitLines"/> rather than re-walking
+    /// every <see cref="FileCoverage.LineHits"/> dict.
     /// </summary>
-    public double StrictLineRate
-    {
-        get
-        {
-            if (TotalLines is 0) return 1.0;
-            var strictHit = 0;
-            foreach (var f in Files) strictHit += f.StrictlyHitLines;
-            return (double)strictHit / TotalLines;
-        }
-    }
+    public double StrictLineRate => TotalLines is 0 ? 1.0 : (double)Files.Sum(f => f.StrictlyHitLines) / TotalLines;
 
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
         Files.Where(f => f.LineRate * 100 < linePercent);
