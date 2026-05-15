@@ -70,8 +70,10 @@ public static class MarkdownFormatter
         var affected = diff.WithLineChanges.ToList();
         if (affected.Count is 0) return;
 
+        var lineWord = diff.TotalLineChanges == 1 ? "line" : "lines";
+        var fileWord = affected.Count == 1 ? "file" : "files";
         sb.AppendLine();
-        sb.AppendLine($"### Indirect changes ({diff.TotalLineChanges} lines across {affected.Count} files)");
+        sb.AppendLine($"### Indirect changes ({diff.TotalLineChanges} {lineWord} across {affected.Count} {fileWord})");
         sb.AppendLine();
 
         foreach (var d in affected)

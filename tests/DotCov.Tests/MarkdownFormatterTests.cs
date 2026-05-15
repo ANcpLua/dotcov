@@ -153,9 +153,26 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("### Indirect changes", md);
+        Assert.Contains("### Indirect changes (1 line across 1 file)", md);
         Assert.Contains("1 newly missed", md);
         Assert.Contains("`a.cs`", md);
+    }
+
+    [Fact]
+    public void FormatDiff_MultipleLinesAndFiles_HeadingUsesPluralForBoth()
+    {
+        var before = new CoverageReport([
+            new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1 } },
+            new FileCoverage("b.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 1 } }
+        ]);
+        var after = new CoverageReport([
+            new FileCoverage("a.cs", 0, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 0 } },
+            new FileCoverage("b.cs", 0, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 0 } }
+        ]);
+
+        var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+
+        Assert.Contains("### Indirect changes (2 lines across 2 files)", md);
     }
 
     [Fact]

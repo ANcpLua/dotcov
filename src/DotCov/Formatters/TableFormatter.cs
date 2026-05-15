@@ -91,8 +91,10 @@ public static class TableFormatter
         if (diff.TotalLineChanges > 0)
         {
             var affected = diff.Files.Count(f => f.LineChanges.Count > 0);
+            var lineWord = diff.TotalLineChanges == 1 ? "line" : "lines";
+            var fileWord = affected == 1 ? "file" : "files";
             sb.AppendLine(pen.Dim(
-                $"Indirect changes: {diff.TotalLineChanges} lines flipped across {affected} file{(affected == 1 ? "" : "s")}"));
+                $"Indirect changes: {diff.TotalLineChanges} {lineWord} flipped across {affected} {fileWord}"));
         }
 
         return sb.ToString();

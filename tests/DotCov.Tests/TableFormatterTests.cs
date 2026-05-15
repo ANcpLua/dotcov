@@ -178,7 +178,7 @@ public sealed class TableFormatterTests
     }
 
     [Fact]
-    public void FormatDiff_IndirectLineChanges_TrailerLineAppears()
+    public void FormatDiff_OneLineFlippedAcrossOneFile_TrailerUsesSingularForBoth()
     {
         var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -191,7 +191,7 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("Indirect changes: 1 lines flipped across 1 file", output);
+        Assert.Contains("Indirect changes: 1 line flipped across 1 file", output);
     }
 
     [Fact]
@@ -207,9 +207,9 @@ public sealed class TableFormatterTests
     }
 
     [Fact]
-    public void FormatDiff_MultipleFilesAffected_TrailerUsesPlural()
+    public void FormatDiff_MultipleLinesAndFilesAffected_TrailerUsesPluralForBoth()
     {
-        // Pluralization branch: "files" vs "file" depending on affected file count.
+        // Pluralization branches: both "lines"/"line" and "files"/"file" toggle on count.
         var before = new CoverageReport([
             new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1 } },
             new FileCoverage("b.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 1 } }
@@ -221,7 +221,7 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("across 2 files", output);
+        Assert.Contains("Indirect changes: 2 lines flipped across 2 files", output);
     }
 
     [Fact]

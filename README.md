@@ -146,16 +146,55 @@ public sealed class CoverageReport
     static readonly CoverageReport Empty;
     IReadOnlyList<FileCoverage> Files;
     double LineRate, BranchRate;
+    double StrictLineRate;           // Codecov-style: partials and misses both depress the rate
+    bool HasBranchData;
     bool MeetsThreshold(double minLinePercent, double minBranchPercent = 0);
     IEnumerable<FileCoverage> BelowPercent(double linePercent);
     CoverageReport Exclude(IEnumerable<string> patterns);
+    CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep);
     static CoverageReport Merge(CoverageReport a, CoverageReport b);
 }
+
+public readonly record struct FileCoverage(
+    string Path, int LinesHit, int LinesTotal, int BranchesHit, int BranchesTotal)
+{
+    double LineRate, BranchRate, StrictLineRate;
+    bool HasBranchData;
+    int StrictlyHitLines, PartiallyHitLines;
+    IReadOnlyList<int> UncoveredLines { get; init; }
+    IReadOnlyList<BranchDetail> PartialBranches { get; init; }
+    IReadOnlyDictionary<int, int> LineHits { get; init; }
+    IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; }
+    LineStatus GetLineStatus(int line);   // Hit / Partial / Miss
+    FileCoverage MergeWith(FileCoverage other);
+}
+
+public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state
+public readonly record struct BranchDetail(int Line, int Covered, int Total);
 
 public static class CoverageDiff
 {
     CoverageDiffResult Compare(CoverageReport before, CoverageReport after);
 }
+
+public sealed class CoverageDiffResult
+{
+    IReadOnlyList<FileDelta> Files;
+    double BeforeRate, AfterRate, Delta;
+    IEnumerable<FileDelta> Regressions, Improvements, Added, Removed;
+    IEnumerable<FileDelta> WithLineChanges;   // files with at least one line-level flip
+    int TotalLineChanges;
+}
+
+public readonly record struct FileDelta(
+    string Path, double? Before, double? After, double Delta, FileChangeKind Change)
+{
+    IReadOnlyList<LineDelta> LineChanges { get; init; }   // Codecov-style indirect changes
+}
+
+public enum FileChangeKind { Unchanged, Added, Removed, Modified }
+public readonly record struct LineDelta(int Line, int? BeforeHits, int? AfterHits, LineChangeKind Change);
+public enum LineChangeKind { Added, Removed, NewlyHit, NewlyMissed }
 
 public sealed record CoverageSnapshot(
     string CommitSha, string Branch, string Project,

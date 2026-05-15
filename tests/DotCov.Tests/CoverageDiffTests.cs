@@ -152,26 +152,40 @@ public sealed class CoverageDiffTests
         var lineDelta = Assert.Single(result.Files[0].LineChanges);
 
         Assert.Equal(LineChangeKind.NewlyHit, lineDelta.Change);
+        // Pin the LineDelta payload, not just the kind — guards against parameter-order
+        // regressions in ComputeLineChanges where Before/After hit counts could swap.
+        Assert.Equal(0, lineDelta.BeforeHits);
+        Assert.Equal(5, lineDelta.AfterHits);
     }
 
     [Fact]
-    public void Compare_AddedAndRemovedLines_AppearWithRespectiveKinds()
+    public void Compare_AddedAndRemovedLines_AppearWithRespectiveKindsAndPayloads()
     {
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
-            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 }
+            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 4 }
         });
         var after = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
-            LineHits = new Dictionary<int, int> { [10] = 1, [30] = 2 }
+            LineHits = new Dictionary<int, int> { [10] = 1, [30] = 7 }
         });
 
         var result = CoverageDiff.Compare(before, after);
         var changes = result.Files[0].LineChanges;
 
         Assert.Equal(2, changes.Count);
-        Assert.Equal(LineChangeKind.Removed, changes.Single(c => c.Line == 20).Change);
-        Assert.Equal(LineChangeKind.Added, changes.Single(c => c.Line == 30).Change);
+
+        // Removed: BeforeHits carries the dropped hit count, AfterHits is null.
+        var removed = changes.Single(c => c.Line == 20);
+        Assert.Equal(LineChangeKind.Removed, removed.Change);
+        Assert.Equal(4, removed.BeforeHits);
+        Assert.Null(removed.AfterHits);
+
+        // Added: AfterHits carries the new hit count, BeforeHits is null.
+        var added = changes.Single(c => c.Line == 30);
+        Assert.Equal(LineChangeKind.Added, added.Change);
+        Assert.Null(added.BeforeHits);
+        Assert.Equal(7, added.AfterHits);
     }
 
     [Fact]

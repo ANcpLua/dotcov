@@ -210,6 +210,38 @@ public sealed class CoberturaParserTests
         Assert.Equal(1, file.BranchesHit);
     }
 
+    [Fact]
+    public void Parse_BranchedLines_PopulatesBranchesByLineFromXml()
+    {
+        // Round-trip the public BranchesByLine surface through the parser. Without this, a
+        // regression that silently set BranchesByLine to an empty dict would still produce the
+        // correct aggregate BranchesHit/Total numbers — but every downstream consumer of
+        // GetLineStatus / StrictLineRate would degrade to "always Hit".
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <lines>
+                                 <line number="10" hits="3" branch="True" condition-coverage="50% (1/2)" />
+                                 <line number="20" hits="3" branch="True" condition-coverage="100% (4/4)" />
+                                 <line number="30" hits="1" branch="False" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var file = Assert.Single(CoberturaParser.Parse(stream).Files);
+
+        Assert.Equal(2, file.BranchesByLine.Count);
+        Assert.Equal((1, 2), file.BranchesByLine[10]);
+        Assert.Equal((4, 4), file.BranchesByLine[20]);
+        Assert.False(file.BranchesByLine.ContainsKey(30));   // non-branched line stays out
+        Assert.Equal(LineStatus.Partial, file.GetLineStatus(10));
+        Assert.Equal(LineStatus.Hit, file.GetLineStatus(20));
+        Assert.Equal(LineStatus.Hit, file.GetLineStatus(30));
+    }
+
     // Regression: Coverlet writes `branch="True"` (PascalCase via XmlConvert.ToString(bool)),
     // original Cobertura/JaCoCo write `branch="true"`. Earlier code used a literal-pattern compare
     // and silently dropped every Coverlet branch line — surfaced as a fake 100% branch coverage.

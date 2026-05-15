@@ -153,6 +153,28 @@ public sealed class ExclusionAndReportTests
         Assert.Equal(4, merged.BranchesTotal); // 2 + 2
     }
 
+    [Fact]
+    public void FileCoverage_MergeWith_BranchesOnlyInOther_PreservesEntry()
+    {
+        // `a` has the same line tracked but no branch data for it; `b` carries the branches.
+        // The merge must keep `b`'s BranchesByLine entry — a regression that overwrote with
+        // the empty dict would silently flip the merged line from Partial back to Hit.
+        var a = new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        };
+        var b = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+
+        var merged = a.MergeWith(b);
+
+        Assert.Equal((1, 2), merged.BranchesByLine[10]);
+        Assert.Equal(LineStatus.Partial, merged.GetLineStatus(10));
+    }
+
     // ── Codecov-style strict line classification (Hit / Partial / Miss) ──
 
     [Fact]
@@ -226,6 +248,27 @@ public sealed class ExclusionAndReportTests
         Assert.Equal(1.0 / 3.0, f.StrictLineRate, 4);
         Assert.Equal(1, f.StrictlyHitLines);
         Assert.Equal(1, f.PartiallyHitLines);
+    }
+
+    [Fact]
+    public void StrictLineRate_AllLinesPartial_IsZero()
+    {
+        // Boundary: every tracked line has unfinished branches → StrictLineRate must be 0,
+        // even though LineRate stays at 1.0 (every line was executed).
+        var f = new FileCoverage("a.cs", 2, 2, 2, 4)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)>
+            {
+                [10] = (1, 2),
+                [20] = (1, 2)
+            }
+        };
+
+        Assert.Equal(1.0, f.LineRate);
+        Assert.Equal(0.0, f.StrictLineRate);
+        Assert.Equal(0, f.StrictlyHitLines);
+        Assert.Equal(2, f.PartiallyHitLines);
     }
 
     [Fact]

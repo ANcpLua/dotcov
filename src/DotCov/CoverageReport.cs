@@ -54,6 +54,12 @@ public readonly record struct FileCoverage(
     ///      reported as <see cref="LineStatus.Partial"/>, not <see cref="LineStatus.Hit"/>.
     /// Tuple semantics: (Covered, Total) per line. Lines with no branches are absent from the
     /// dictionary entirely (so a non-branched line is unambiguously not partial).
+    /// <para>
+    /// Merge semantics: <see cref="MergeWith"/> reconciles entries with <c>Math.Max</c> per
+    /// component. A mismatched <c>Total</c> for the same line across reports usually means
+    /// the reports came from different compile targets (e.g. one CI job built Release, another
+    /// Debug) — the merge keeps the larger total without flagging the divergence.
+    /// </para>
     /// </summary>
     public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; } =
         new Dictionary<int, (int Covered, int Total)>();
@@ -61,7 +67,9 @@ public readonly record struct FileCoverage(
     /// <summary>
     /// Codecov-style three-state classification for a single source line. Returns
     /// <see cref="LineStatus.Miss"/> for unknown lines so callers can iterate over any line
-    /// range without first checking <see cref="LineHits"/> membership.
+    /// range without first checking <see cref="LineHits"/> membership — note this conflates
+    /// "tracked but zero hits" with "not tracked at all"; pre-filter via
+    /// <c>LineHits.ContainsKey(line)</c> if the distinction matters.
     /// </summary>
     public LineStatus GetLineStatus(int line)
     {
@@ -97,11 +105,16 @@ public readonly record struct FileCoverage(
     }
 
     /// <summary>
-    /// Codecov's coverage formula: <c>hits / (hits + partials + misses)</c> where partials
-    /// count as miss. Stricter than <see cref="LineRate"/> — a line with <c>if (x &amp;&amp; y)</c>
-    /// that only saw <c>x=true, y=true</c> is reported as not-fully-covered here, even though
-    /// the line executed. Use this when you want the pessimistic-but-honest number; use
-    /// <see cref="LineRate"/> when you need parity with Cobertura/Coverlet/ReportGenerator.
+    /// Codecov-style strict line rate: <see cref="StrictlyHitLines"/> divided by
+    /// <see cref="LinesTotal"/>. Stricter than <see cref="LineRate"/> — a line with
+    /// <c>if (x &amp;&amp; y)</c> that only saw <c>x=true, y=true</c> is reported as
+    /// not-fully-covered here, even though the line executed. Use this when you want the
+    /// pessimistic-but-honest number; use <see cref="LineRate"/> when you need parity with
+    /// Cobertura/Coverlet/ReportGenerator. Matches Codecov's <c>hits/(hits+partials+misses)</c>
+    /// formula under the parser's invariant <c>LineHits.Count == LinesTotal</c>; hand-built
+    /// <see cref="FileCoverage"/> records whose <see cref="LinesTotal"/> does not match the
+    /// keyspace of <see cref="LineHits"/> diverge from the Codecov formula by exactly that
+    /// gap.
     /// </summary>
     public double StrictLineRate => LinesTotal is 0 ? 1.0 : (double)StrictlyHitLines / LinesTotal;
 

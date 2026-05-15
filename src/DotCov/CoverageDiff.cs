@@ -20,9 +20,20 @@ public enum FileChangeKind { Unchanged, Added, Removed, Modified }
 
 /// <summary>
 /// Per-line change between two coverage reports. Only emitted when the state actually
-/// changed — equal-on-both-sides lines are dropped so callers can iterate <see cref="LineDelta"/>
-/// lists without filtering. Hit counts are preserved because a 100 → 1 transition is still
-/// informative even though both ends classify as "hit".
+/// changed — equal-on-both-sides lines (same hit/miss boolean) are dropped so callers can
+/// iterate <see cref="LineDelta"/> lists without filtering.
+/// <para>
+/// Invariants by <see cref="Change"/> (enforced by <see cref="CoverageDiff.Compare"/>, not
+/// by the type itself — careless construction can produce illegal combinations):
+/// </para>
+/// <list type="bullet">
+///   <item><c>Added</c>: <c>BeforeHits is null</c>, <c>AfterHits is not null</c>.</item>
+///   <item><c>Removed</c>: <c>BeforeHits is not null</c>, <c>AfterHits is null</c>.</item>
+///   <item><c>NewlyHit</c> / <c>NewlyMissed</c>: both hit counts present;
+///     <c>BeforeHits == 0</c> XOR <c>AfterHits == 0</c>.</item>
+/// </list>
+/// Hit-count-still-hit transitions (100 → 1) are NOT emitted — Codecov treats the
+/// hit/miss boolean as the change signal, not the magnitude.
 /// </summary>
 public readonly record struct LineDelta(int Line, int? BeforeHits, int? AfterHits, LineChangeKind Change);
 
@@ -111,9 +122,8 @@ public static class CoverageDiff
         // dropped" — that's noisy and rarely actionable. Codecov's UI applies the same
         // hit-vs-miss boolean when classifying indirect changes.
         //
-        // Structured as guard-then-classify (no compound `&&`) so coverlet sees one branch
-        // per decision point instead of conflating short-circuit arms with unreachable
-        // (false, false) combinations that the union loop already rules out.
+        // Structured as early-return guards (Added → Removed → state-flip) for readability;
+        // the (false, false) combination is unreachable because allLines is the union.
         var allLines = before.LineHits.Keys.Union(after.LineHits.Keys);
         var changes = new List<LineDelta>();
 
