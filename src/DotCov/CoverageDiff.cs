@@ -40,6 +40,8 @@ public static class CoverageDiff
         var afterLookup = after.Files.ToDictionary(f => f.Path, StringComparer.OrdinalIgnoreCase);
         var allPaths = beforeLookup.Keys.Union(afterLookup.Keys, StringComparer.OrdinalIgnoreCase);
 
+        // Union guarantees every path is in at least one lookup — the wildcard arm catches the
+        // remaining `(false, true)` case, so no unreachable `_ => throw` arm is needed.
         var deltas = allPaths.Select(path =>
         {
             var hasBefore = beforeLookup.TryGetValue(path, out var b);
@@ -49,9 +51,8 @@ public static class CoverageDiff
             {
                 (true, true) => new FileDelta(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
                     Math.Abs(a.LineRate - b.LineRate) < 0.0001 ? FileChangeKind.Unchanged : FileChangeKind.Modified),
-                (false, true) => new FileDelta(path, null, a.LineRate, a.LineRate, FileChangeKind.Added),
                 (true, false) => new FileDelta(path, b.LineRate, null, -b.LineRate, FileChangeKind.Removed),
-                _ => throw new InvalidOperationException()
+                _ => new FileDelta(path, null, a.LineRate, a.LineRate, FileChangeKind.Added)
             };
         })
         .OrderBy(d => d.Delta)

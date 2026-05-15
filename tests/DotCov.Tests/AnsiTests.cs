@@ -126,6 +126,14 @@ public sealed class AnsiTests
     }
 
     [Fact]
+    public void IsSupported_NoArgOverload_DelegatesToConsoleRedirectionState()
+    {
+        using var _ = EnvScope.Clear(AllVars);
+
+        Assert.Equal(Ansi.IsSupported(Console.IsOutputRedirected), Ansi.IsSupported());
+    }
+
+    [Fact]
     public void EnableOnWindows_DoesNotThrow_OnAnyPlatform()
     {
         // We don't assert side-effects: on non-Windows it's a no-op, on Windows it may or may not

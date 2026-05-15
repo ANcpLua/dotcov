@@ -80,6 +80,10 @@ public static partial class CoberturaParser
     private sealed class LineAccumulator
     {
         public readonly Dictionary<int, int> LineHits = new();
+        // Branch deduplication is keyed on source line number: Coverlet emits the same
+        // branch line under `<methods>/<method>/<lines>` AND `<class>/<lines>`, and without
+        // this guard `ParseCondition` would double-count every branch in real-world output.
+        public readonly HashSet<int> BranchLinesSeen = new();
         public int BranchesHit;
         public int BranchesTotal;
         public readonly List<BranchDetail> PartialBranches = new();
@@ -149,8 +153,13 @@ public static partial class CoberturaParser
                 ? Math.Max(existing, hits)
                 : hits;
 
-            if (sub.GetAttribute("branch") is "true" &&
-                sub.GetAttribute("condition-coverage") is { } cond)
+            // Cobertura emitters disagree on casing: original Cobertura/JaCoCo write
+            // `branch="true"`, Coverlet writes `branch="True"` (XmlConvert.ToString(bool)).
+            // A literal-pattern compare silently dropped Coverlet branches and rendered
+            // branch coverage as a fake 100% (with TotalBranches=0).
+            if (string.Equals(sub.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase) &&
+                sub.GetAttribute("condition-coverage") is { } cond &&
+                acc.BranchLinesSeen.Add(lineNum))
             {
                 ParseCondition(cond, lineNum, ref acc.BranchesHit, ref acc.BranchesTotal, acc.PartialBranches);
             }

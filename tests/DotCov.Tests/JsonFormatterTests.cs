@@ -132,6 +132,21 @@ public sealed class JsonFormatterTests
     }
 
     [Fact]
+    public void FormatDiff_NullAfter_IsOmittedFromOutput()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]),
+            CoverageReport.Empty);
+
+        var json = JsonFormatter.FormatDiff(diff);
+        var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
+
+        Assert.False(file.TryGetProperty("after", out _));
+        Assert.Equal(80.0, file.GetProperty("before").GetDouble());
+        Assert.Equal("removed", file.GetProperty("change").GetString());
+    }
+
+    [Fact]
     public void FormatSnapshot_IncludesAllMetadata()
     {
         var snapshot = new CoverageSnapshot(

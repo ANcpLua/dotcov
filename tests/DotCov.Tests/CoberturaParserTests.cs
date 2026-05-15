@@ -157,6 +157,112 @@ public sealed class CoberturaParserTests
         Assert.Equal(1.0, report.LineRate);
     }
 
+    // Regression: Coverlet emits each `<line>` twice — once under
+    // `<class>/<methods>/<method>/<lines>` and once under `<class>/<lines>` (class-level
+    // aggregate). The earlier parser used `ReadToDescendant("line")` + sibling iteration,
+    // which landed inside the first method and silently dropped every subsequent method plus
+    // the class-level block. Verified against real `dotnet test --collect:"XPlat Code
+    // Coverage"` output: pre-fix branch count was ~24% of actual.
+    [Fact]
+    public void Parse_CoverletLayout_DedupesMethodsAndClassLines()
+    {
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage>
+                             <packages>
+                               <package>
+                                 <classes>
+                                   <class name="X" filename="x.cs">
+                                     <methods>
+                                       <method name="A" signature="()">
+                                         <lines>
+                                           <line number="10" hits="3" branch="False" />
+                                           <line number="11" hits="3" branch="True" condition-coverage="50% (1/2)" />
+                                         </lines>
+                                       </method>
+                                       <method name="B" signature="()">
+                                         <lines>
+                                           <line number="20" hits="0" branch="False" />
+                                           <line number="21" hits="0" branch="True" condition-coverage="0% (0/2)" />
+                                         </lines>
+                                       </method>
+                                     </methods>
+                                     <lines>
+                                       <line number="10" hits="3" branch="False" />
+                                       <line number="11" hits="3" branch="True" condition-coverage="50% (1/2)" />
+                                       <line number="20" hits="0" branch="False" />
+                                       <line number="21" hits="0" branch="True" condition-coverage="0% (0/2)" />
+                                     </lines>
+                                   </class>
+                                 </classes>
+                               </package>
+                             </packages>
+                           </coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+        var file = Assert.Single(report.Files);
+
+        Assert.Equal(4, file.LinesTotal);
+        Assert.Equal(2, file.LinesHit);
+        Assert.Equal(4, file.BranchesTotal);
+        Assert.Equal(1, file.BranchesHit);
+    }
+
+    // Regression: Coverlet writes `branch="True"` (PascalCase via XmlConvert.ToString(bool)),
+    // original Cobertura/JaCoCo write `branch="true"`. Earlier code used a literal-pattern compare
+    // and silently dropped every Coverlet branch line — surfaced as a fake 100% branch coverage.
+    [Fact]
+    public void Parse_LineWithMissingHitsAttribute_TreatsAsZero()
+    {
+        // Guards the `int.TryParse(sub.GetAttribute("hits"), ...) ? h : 0` fallback —
+        // the false leg fires when `hits` is missing or malformed.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <lines>
+                                 <line number="1" branch="False" />
+                                 <line number="2" hits="not-a-number" branch="False" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+        var file = Assert.Single(report.Files);
+
+        Assert.Equal(2, file.LinesTotal);
+        Assert.Equal(0, file.LinesHit);
+        Assert.Equal([1, 2], file.UncoveredLines);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("True")]
+    [InlineData("TRUE")]
+    public void Parse_BranchAttribute_IsCaseInsensitive(string branchValue)
+    {
+        var xml = $"""
+                   <?xml version="1.0"?>
+                   <coverage><packages><package><classes>
+                     <class name="X" filename="x.cs">
+                       <lines>
+                         <line number="1" hits="1" branch="{branchValue}" condition-coverage="50% (1/2)" />
+                       </lines>
+                     </class>
+                   </classes></package></packages></coverage>
+                   """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+
+        Assert.Equal(2, report.TotalBranches);
+        Assert.Equal(1, report.TotalBranchesHit);
+    }
+
     [Fact]
     public void Parse_ClassWithNoLines_ReportsZeroTotals()
     {

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!--
+            Exclude compiler-generated async state machines and iterator classes from coverage.
+            They emit phantom branches (rethrow/cancellation glue) that no user-level test can
+            exercise, which would otherwise cap branch coverage below 100% with no recourse.
+            Run-of-the-mill business logic inside the async method body is still tracked — only
+            the compiler-injected scaffolding is suppressed.
+          -->
+          <ExcludeByAttribute>System.Runtime.CompilerServices.CompilerGeneratedAttribute</ExcludeByAttribute>
+          <ExcludeByAttribute>System.CodeDom.Compiler.GeneratedCodeAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/obj/**/*.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

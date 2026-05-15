@@ -136,6 +136,58 @@ public sealed class TableFormatterTests
     }
 
     [Fact]
+    public void FormatDiff_RemovedFile_BeforeShownAfterDashed()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]),
+            CoverageReport.Empty);
+
+        var output = TableFormatter.FormatDiff(diff, color: true);
+
+        Assert.Contains("gone.cs", output);
+        Assert.Contains("Removed", output);
+        Assert.Contains("80.0%", output);   // before column populated
+        Assert.Matches(@"\s-\s", output);    // after column dashed
+    }
+
+    [Fact]
+    public void FormatDiff_AddedFile_BeforeDashedAfterShown()
+    {
+        var diff = CoverageDiff.Compare(
+            CoverageReport.Empty,
+            new CoverageReport([new FileCoverage("fresh.cs", 7, 10, 0, 0)]));
+
+        var output = TableFormatter.FormatDiff(diff);
+
+        Assert.Contains("fresh.cs", output);
+        Assert.Contains("70.0%", output);
+        Assert.Matches(@"\s-\s", output);
+    }
+
+    [Fact]
+    public void FormatDiff_UnchangedFile_NeutralIndicator()
+    {
+        var diff = CoverageDiff.Compare(
+            Reports.Single("same.cs", hit: 5, total: 10),
+            Reports.Single("same.cs", hit: 5, total: 10));
+
+        var output = TableFormatter.FormatDiff(diff, color: true);
+
+        Assert.Contains("Unchanged", output);
+        Assert.Contains("\e[2m", output);  // dim color for unchanged
+    }
+
+    [Fact]
+    public void FormatDiff_EmptyDiff_RendersHeaderOnly()
+    {
+        var output = TableFormatter.FormatDiff(
+            CoverageDiff.Compare(CoverageReport.Empty, CoverageReport.Empty));
+
+        Assert.Contains("File", output);
+        Assert.Contains("TOTAL", output);
+    }
+
+    [Fact]
     public void Format_PathColumnWidth_AdjustsToLongestPath()
     {
         var report = new CoverageReport([

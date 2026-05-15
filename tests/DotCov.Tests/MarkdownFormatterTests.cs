@@ -125,4 +125,16 @@ public sealed class MarkdownFormatterTests
 
         Assert.Matches(@"\|\s+`new\.cs`\s+\|\s+-\s+\|", md);
     }
+
+    [Fact]
+    public void FormatDiff_RemovedFile_AfterIsDash()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]),
+            CoverageReport.Empty);
+
+        var md = MarkdownFormatter.FormatDiff(diff);
+
+        Assert.Matches(@"\|\s+`gone\.cs`\s+\|\s+80\.0%\s+\|\s+-\s+\|", md);
+    }
 }

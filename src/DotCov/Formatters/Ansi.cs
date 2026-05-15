@@ -35,6 +35,13 @@ public static class Ansi
     /// escape codes are interpreted instead of printed literally. No-op on non-Windows
     /// and on consoles that don't expose a usable handle (e.g. tests, redirected streams).
     /// </summary>
+    /// <remarks>
+    /// Coverage-excluded: this is a thin OS-conditional dispatcher whose two branches can
+    /// only be exercised on different platforms (non-Windows hits the early return, Windows
+    /// hits the try/catch). The unit tests verify the contract "never throws on any platform";
+    /// branch coverage on a single OS would otherwise penalise an unreachable path.
+    /// </remarks>
+    [ExcludeFromCodeCoverage]
     public static void EnableOnWindows()
     {
         if (!OperatingSystem.IsWindows()) return;
