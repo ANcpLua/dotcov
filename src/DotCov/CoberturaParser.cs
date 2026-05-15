@@ -191,12 +191,15 @@ public static partial class CoberturaParser
                     partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
             }
 
+            var (strict, partial) = FileCoverage.ClassifyLines(acc.LineHits, acc.BranchesByLine);
             result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, branchesHit, branchesTotal)
             {
                 LineHits = acc.LineHits,
                 BranchesByLine = acc.BranchesByLine,
                 UncoveredLines = uncovered,
-                PartialBranches = partialBranches
+                PartialBranches = partialBranches,
+                StrictlyHitLines = strict,
+                PartiallyHitLines = partial
             });
         }
         return new CoverageReport(result);
