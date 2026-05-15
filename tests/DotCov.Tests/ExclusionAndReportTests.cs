@@ -233,6 +233,54 @@ public sealed class ExclusionAndReportTests
     }
 
     [Fact]
+    public void TryGetLineStatus_TrackedHitLine_ReturnsTrueAndHit()
+    {
+        var f = new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 }
+        };
+
+        Assert.True(f.TryGetLineStatus(10, out var status));
+        Assert.Equal(LineStatus.Hit, status);
+    }
+
+    [Fact]
+    public void TryGetLineStatus_TrackedZeroHitLine_ReturnsTrueAndMiss()
+    {
+        // The key contract: line IS tracked but had zero hits. Distinct from untracked.
+        var f = new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        };
+
+        Assert.True(f.TryGetLineStatus(10, out var status));
+        Assert.Equal(LineStatus.Miss, status);
+    }
+
+    [Fact]
+    public void TryGetLineStatus_TrackedPartialBranchLine_ReturnsTrueAndPartial()
+    {
+        var f = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+
+        Assert.True(f.TryGetLineStatus(10, out var status));
+        Assert.Equal(LineStatus.Partial, status);
+    }
+
+    [Fact]
+    public void TryGetLineStatus_UnknownLine_ReturnsFalseAndMiss()
+    {
+        // The other key contract: false signals "not tracked", out param is Miss for ergonomics.
+        var f = new FileCoverage("a.cs", 0, 0, 0, 0);
+
+        Assert.False(f.TryGetLineStatus(999, out var status));
+        Assert.Equal(LineStatus.Miss, status);
+    }
+
+    [Fact]
     public void StrictLineRate_DowngradesPartialBranches()
     {
         // 3 lines tracked: line 1 fully hit (no branches), line 2 hit but with partial branches,

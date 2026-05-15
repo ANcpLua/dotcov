@@ -142,3 +142,26 @@ Explicitly skipped (each would have required new public API or breaking changes)
   (`ComputeLineChanges`), enforced by tests rather than the type.
 - `O(n²)` cache on `StrictlyHitLines` + `PartiallyHitLines` (correctness-neutral; defer
   until a 50 MB+ report actually shows up in a benchmark).
+
+## Task 6 — 2026-05-15 — `TryGetLineStatus` sibling (additive)
+
+Changed:
+- `FileCoverage.TryGetLineStatus(int line, out LineStatus status)` — try-pattern sibling of
+  `GetLineStatus`. Returns `false` (with `status = Miss`) for lines absent from `LineHits`;
+  `true` (with the actual classification) when the line is tracked. Resolves the
+  "tracked but zero hits" vs "not tracked at all" ambiguity that `GetLineStatus` collapses,
+  without changing the iterate-any-range ergonomics callers rely on.
+- `GetLineStatus` XML doc updated to drop the caveat (now resolved by the sibling) and point
+  at `TryGetLineStatus` instead. `README.md` Public API surface block updated to list the
+  new method on `FileCoverage`.
+
+Verified:
+- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` followed by
+  `dotcov report TestResults/ --exclude-generated` reports **Lines 575/575 (100%)** /
+  **Branches 288/288 (100%)** across 201 tests (+4 over Task 3). `CoverageReport.cs` itself
+  is 120/120 lines and 56/56 branches.
+
+Notes:
+- Picked up the deferred item from Task 3's "explicitly skipped" list — a subsequent code
+  review classified the unknown-line conflation as a HIGH severity API trap, so the
+  additive try-pattern landing here.
