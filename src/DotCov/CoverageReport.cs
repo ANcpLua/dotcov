@@ -66,10 +66,9 @@ public readonly record struct FileCoverage(
 
     /// <summary>
     /// Codecov-style three-state classification for a single source line. Returns
-    /// <see cref="LineStatus.Miss"/> for unknown lines so callers can iterate over any line
-    /// range without first checking <see cref="LineHits"/> membership — note this conflates
-    /// "tracked but zero hits" with "not tracked at all"; pre-filter via
-    /// <c>LineHits.ContainsKey(line)</c> if the distinction matters.
+    /// <see cref="LineStatus.Miss"/> for any line not in <see cref="LineHits"/> so callers
+    /// can iterate over an arbitrary line range without first checking membership; use
+    /// <see cref="TryGetLineStatus"/> when the tracked-vs-untracked distinction matters.
     /// </summary>
     public LineStatus GetLineStatus(int line)
     {
@@ -78,6 +77,23 @@ public readonly record struct FileCoverage(
         if (BranchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
             return LineStatus.Partial;
         return LineStatus.Hit;
+    }
+
+    /// <summary>
+    /// Try-pattern variant of <see cref="GetLineStatus"/> that distinguishes "tracked but
+    /// zero hits" from "not tracked at all". Returns <c>false</c> with <paramref name="status"/>
+    /// set to <see cref="LineStatus.Miss"/> when the line is absent from <see cref="LineHits"/>;
+    /// returns <c>true</c> with the actual status when the line is tracked.
+    /// </summary>
+    public bool TryGetLineStatus(int line, out LineStatus status)
+    {
+        if (!LineHits.ContainsKey(line))
+        {
+            status = LineStatus.Miss;
+            return false;
+        }
+        status = GetLineStatus(line);
+        return true;
     }
 
     /// <summary>Lines that were executed AND had all their branches exercised.</summary>

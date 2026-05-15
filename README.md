@@ -166,6 +166,7 @@ public readonly record struct FileCoverage(
     IReadOnlyDictionary<int, int> LineHits { get; init; }
     IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; }
     LineStatus GetLineStatus(int line);   // Hit / Partial / Miss
+    bool TryGetLineStatus(int line, out LineStatus status);   // false = not tracked
     FileCoverage MergeWith(FileCoverage other);
 }
 
