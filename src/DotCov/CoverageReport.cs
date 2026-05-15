@@ -11,6 +11,44 @@ public readonly record struct BranchDetail(int Line, int Covered, int Total);
 /// </summary>
 public enum LineStatus { Miss, Partial, Hit }
 
+/// <summary>
+/// Kind of anomaly observed by the parser or merger that would otherwise be swallowed
+/// silently. Surfacing these via <see cref="CoverageReport.Warnings"/> lets consumers
+/// (CI gates, observability sinks, AI test generators) react to malformed inputs and
+/// divergent multi-job uploads without the library having to throw.
+/// </summary>
+public enum CoverageWarningKind
+{
+    /// <summary>
+    /// Two reports disagreed on the branch <c>Total</c> for the same source line (e.g.
+    /// one CI job built Release, the other Debug). <see cref="FileCoverage.MergeWithWarnings"/>
+    /// keeps the larger total via <c>Math.Max</c>; this warning records the divergence.
+    /// </summary>
+    BranchTotalMismatch,
+
+    /// <summary>
+    /// A Cobertura <c>&lt;line&gt;</c> carried <c>branch="true"</c> but its
+    /// <c>condition-coverage</c> attribute didn't match the <c>(covered/total)</c>
+    /// shape, or the numbers overflowed <see cref="int"/>. The parser drops the branch
+    /// entry; this warning makes the omission observable so emitter regressions
+    /// (e.g. malformed Coverlet output) don't silently zero out branch coverage.
+    /// </summary>
+    MalformedConditionCoverage
+}
+
+/// <summary>
+/// Structured anomaly record surfaced via <see cref="CoverageReport.Warnings"/>.
+/// </summary>
+/// <param name="Kind">Anomaly classification — see <see cref="CoverageWarningKind"/>.</param>
+/// <param name="File">Cobertura <c>filename</c> the anomaly applies to.</param>
+/// <param name="Line">Source line the anomaly applies to. Zero when the anomaly is file-scoped.</param>
+/// <param name="Detail">Human-readable context: divergent values, the raw malformed string, etc.</param>
+public readonly record struct CoverageWarning(
+    CoverageWarningKind Kind,
+    string File,
+    int Line,
+    string Detail);
+
 public readonly record struct FileCoverage(
     string Path,
     int LinesHit,
@@ -184,7 +222,18 @@ public readonly record struct FileCoverage(
     /// </summary>
     public double StrictLineRate => LinesTotal is 0 ? 1.0 : (double)StrictlyHitLines / LinesTotal;
 
-    public FileCoverage MergeWith(FileCoverage other)
+    public FileCoverage MergeWith(FileCoverage other) => MergeWithWarnings(other).Merged;
+
+    /// <summary>
+    /// Merge semantics identical to <see cref="MergeWith"/>, plus a structured warnings
+    /// list for anomalies the silent <c>Math.Max</c> reconciliation would otherwise hide.
+    /// Currently emits one <see cref="CoverageWarningKind.BranchTotalMismatch"/> per line
+    /// whose <c>Total</c> disagrees between the two sides — usually a sign that the
+    /// reports came from different compile targets (e.g. Release vs. Debug builds in
+    /// different CI jobs). Use this overload when you want the divergence observable;
+    /// <see cref="MergeWith"/> stays as the lossy convenience for callers that don't care.
+    /// </summary>
+    public (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWithWarnings(FileCoverage other)
     {
         var mergedHits = new Dictionary<int, int>(LineHits);
         foreach (var (line, hits) in other.LineHits)
@@ -196,11 +245,26 @@ public readonly record struct FileCoverage(
         // the upper bound. Summing instead would double-count when the same file shows up in
         // multiple uploads (unit + integration test runs from the same CI workflow).
         var mergedBranches = new Dictionary<int, (int Covered, int Total)>(BranchesByLine);
+        var warnings = new List<CoverageWarning>();
         foreach (var (line, b) in other.BranchesByLine)
         {
-            mergedBranches[line] = mergedBranches.TryGetValue(line, out var existing)
-                ? (Math.Max(existing.Covered, b.Covered), Math.Max(existing.Total, b.Total))
-                : b;
+            if (mergedBranches.TryGetValue(line, out var existing))
+            {
+                if (existing.Total != b.Total)
+                {
+                    var keep = Math.Max(existing.Total, b.Total);
+                    warnings.Add(new CoverageWarning(
+                        CoverageWarningKind.BranchTotalMismatch,
+                        Path,
+                        line,
+                        $"Total {existing.Total} vs {b.Total} — keeping {keep}"));
+                }
+                mergedBranches[line] = (Math.Max(existing.Covered, b.Covered), Math.Max(existing.Total, b.Total));
+            }
+            else
+            {
+                mergedBranches[line] = b;
+            }
         }
 
         var linesHit = 0;
@@ -224,7 +288,7 @@ public readonly record struct FileCoverage(
         }
 
         var (strict, partial) = ClassifyLines(mergedHits, mergedBranches);
-        return new FileCoverage(Path, linesHit, mergedHits.Count, branchesHit, branchesTotal)
+        var merged = new FileCoverage(Path, linesHit, mergedHits.Count, branchesHit, branchesTotal)
         {
             LineHits = mergedHits,
             BranchesByLine = mergedBranches,
@@ -233,6 +297,7 @@ public readonly record struct FileCoverage(
             StrictlyHitLines = strict,
             PartiallyHitLines = partial
         };
+        return (merged, warnings);
     }
 }
 
@@ -243,6 +308,15 @@ public sealed class CoverageReport
     public CoverageReport(IReadOnlyList<FileCoverage> files) => Files = files;
 
     public IReadOnlyList<FileCoverage> Files { get; }
+
+    /// <summary>
+    /// Structured anomalies the parser/merger observed while producing this report.
+    /// Empty when the source XML was well-formed and there were no cross-report
+    /// divergences during merging. Init-only so consumers can rely on the value being
+    /// stable for the report's lifetime. See <see cref="CoverageWarningKind"/> for the
+    /// taxonomy and <see cref="CoverageWarning"/> for the payload shape.
+    /// </summary>
+    public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 
     public int TotalLines => Files.Sum(f => f.LinesTotal);
     public int TotalLinesHit => Files.Sum(f => f.LinesHit);
@@ -293,21 +367,33 @@ public sealed class CoverageReport
                 !rules.Any(p => f.Path.Contains(p, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-        return new CoverageReport(filtered);
+        return new CoverageReport(filtered) { Warnings = Warnings };
     }
 
     public static CoverageReport Merge(CoverageReport a, CoverageReport b)
     {
         var merged = new Dictionary<string, FileCoverage>(StringComparer.OrdinalIgnoreCase);
+        // Carry forward whatever the two sides already observed; new divergences from
+        // the per-file MergeWithWarnings calls below are appended in order.
+        var warnings = new List<CoverageWarning>(a.Warnings.Count + b.Warnings.Count);
+        warnings.AddRange(a.Warnings);
+        warnings.AddRange(b.Warnings);
 
         foreach (var file in a.Files.Concat(b.Files))
         {
-            merged[file.Path] = merged.TryGetValue(file.Path, out var existing)
-                ? existing.MergeWith(file)
-                : file;
+            if (merged.TryGetValue(file.Path, out var existing))
+            {
+                var (mergedFile, mergeWarnings) = existing.MergeWithWarnings(file);
+                merged[file.Path] = mergedFile;
+                warnings.AddRange(mergeWarnings);
+            }
+            else
+            {
+                merged[file.Path] = file;
+            }
         }
 
-        return new CoverageReport(merged.Values.ToList());
+        return new CoverageReport(merged.Values.ToList()) { Warnings = warnings };
     }
 }
 

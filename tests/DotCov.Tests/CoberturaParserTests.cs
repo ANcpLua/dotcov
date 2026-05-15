@@ -461,6 +461,110 @@ public sealed class CoberturaParserTests
         Assert.Equal([20], file.UncoveredLines);
     }
 
+    // ── Warnings: malformed condition-coverage strings surface as structured signals ──
+
+    [Fact]
+    public void Parse_WellFormedXml_EmitsNoWarnings()
+    {
+        // Baseline: a fully valid Cobertura document should produce zero warnings.
+        // Guards against the parser fabricating false-positive anomalies for normal input.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <lines>
+                                 <line number="1" hits="1" branch="True" condition-coverage="100% (2/2)" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+
+        Assert.Empty(report.Warnings);
+    }
+
+    [Fact]
+    public void Parse_MalformedConditionString_EmitsWarning()
+    {
+        // The "garbage" form that previously silently dropped the branch now becomes an
+        // observable signal. Real-world failure mode: a Coverlet regression emitting
+        // malformed condition strings that would otherwise zero out branch coverage.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="src/A.cs">
+                               <lines>
+                                 <line number="42" hits="1" branch="True" condition-coverage="garbage" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+
+        Assert.Equal(0, report.Files[0].BranchesTotal);
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
+        Assert.Equal("src/A.cs", w.File);
+        Assert.Equal(42, w.Line);
+        Assert.Contains("garbage", w.Detail);
+    }
+
+    [Theory]
+    [InlineData("50% (99999999999999/2)")]  // Groups[1] overflows int
+    [InlineData("50% (1/99999999999999)")]  // Groups[2] overflows int
+    public void Parse_ConditionCoverageWithIntOverflow_EmitsWarning(string condition)
+    {
+        // Twin to Parse_ConditionCoverageWithIntOverflow_SkipsBranchSilently — the silent
+        // skip is preserved (branch dropped) AND now becomes observable. Both regex-miss
+        // and int-overflow paths emit the same warning kind.
+        var xml = $"""
+                   <?xml version="1.0"?>
+                   <coverage><packages><package><classes>
+                     <class name="X" filename="x.cs">
+                       <lines>
+                         <line number="1" hits="1" branch="True" condition-coverage="{condition}" />
+                       </lines>
+                     </class>
+                   </classes></package></packages></coverage>
+                   """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
+        Assert.Contains(condition, w.Detail);
+    }
+
+    [Fact]
+    public async Task ParseAsync_MalformedConditionString_EmitsWarning()
+    {
+        // Async parser path threads the same warnings collector — sanity-checks parity
+        // with the sync path so a future refactor that drops the collector from one side
+        // gets caught immediately.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <lines>
+                                 <line number="3" hits="1" branch="True" condition-coverage="???" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = await CoberturaParser.ParseAsync(stream);
+
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
+        Assert.Equal(3, w.Line);
+    }
+
     [Fact]
     public void Parse_MultipleClassBlocksSameFile_UnionLinesWithMaxHits()
     {

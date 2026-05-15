@@ -90,21 +90,23 @@ public static partial class CoberturaParser
     private static CoverageReport ParseCore(XmlReader reader)
     {
         var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var warnings = new List<CoverageWarning>();
 
         while (reader.Read())
         {
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            ConsumeClass(reader, files);
+            ConsumeClass(reader, files, warnings);
         }
 
-        return Materialize(files);
+        return Materialize(files, warnings);
     }
 
     private static async Task<CoverageReport> ParseCoreAsync(XmlReader reader, CancellationToken ct)
     {
         var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var warnings = new List<CoverageWarning>();
 
         while (await reader.ReadAsync())
         {
@@ -113,13 +115,16 @@ public static partial class CoberturaParser
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            ConsumeClass(reader, files);
+            ConsumeClass(reader, files, warnings);
         }
 
-        return Materialize(files);
+        return Materialize(files, warnings);
     }
 
-    private static void ConsumeClass(XmlReader reader, Dictionary<string, LineAccumulator> files)
+    private static void ConsumeClass(
+        XmlReader reader,
+        Dictionary<string, LineAccumulator> files,
+        List<CoverageWarning> warnings)
     {
         var filename = reader.GetAttribute("filename");
         if (filename is null) return;
@@ -156,17 +161,31 @@ public static partial class CoberturaParser
             // A literal-pattern compare silently dropped Coverlet branches and rendered
             // branch coverage as a fake 100% (with TotalBranches=0).
             if (string.Equals(sub.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase) &&
-                sub.GetAttribute("condition-coverage") is { } cond &&
-                TryParseConditionCoverage(cond, out var covered, out var total))
+                sub.GetAttribute("condition-coverage") is { } cond)
             {
-                acc.BranchesByLine[lineNum] = acc.BranchesByLine.TryGetValue(lineNum, out var existingBranch)
-                    ? (Math.Max(existingBranch.Covered, covered), Math.Max(existingBranch.Total, total))
-                    : (covered, total);
+                if (TryParseConditionCoverage(cond, out var covered, out var total))
+                {
+                    acc.BranchesByLine[lineNum] = acc.BranchesByLine.TryGetValue(lineNum, out var existingBranch)
+                        ? (Math.Max(existingBranch.Covered, covered), Math.Max(existingBranch.Total, total))
+                        : (covered, total);
+                }
+                else
+                {
+                    // Surface emitter regressions (malformed condition strings, overflow) as
+                    // structured warnings instead of silently dropping the branch entry.
+                    warnings.Add(new CoverageWarning(
+                        CoverageWarningKind.MalformedConditionCoverage,
+                        filename,
+                        lineNum,
+                        $"condition-coverage='{cond}' could not be parsed"));
+                }
             }
         }
     }
 
-    private static CoverageReport Materialize(Dictionary<string, LineAccumulator> files)
+    private static CoverageReport Materialize(
+        Dictionary<string, LineAccumulator> files,
+        List<CoverageWarning> warnings)
     {
         var result = new List<FileCoverage>(files.Count);
         foreach (var (filename, acc) in files)
@@ -202,7 +221,7 @@ public static partial class CoberturaParser
                 PartiallyHitLines = partial
             });
         }
-        return new CoverageReport(result);
+        return new CoverageReport(result) { Warnings = warnings };
     }
 
     private static bool TryParseConditionCoverage(string cond, out int covered, out int total)

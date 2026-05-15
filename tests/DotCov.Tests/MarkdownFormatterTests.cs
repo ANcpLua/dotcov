@@ -209,4 +209,40 @@ public sealed class MarkdownFormatterTests
         Assert.Contains("1 added", md);
         Assert.Contains("1 removed", md);
     }
+
+    // ── Warnings section: additive — silent when empty, structured when populated ──
+
+    [Fact]
+    public void Format_NoWarnings_OmitsWarningsSection()
+    {
+        // Default reports should render identically to pre-warnings output; absence of
+        // the `### Warnings` heading is the clean-report signal.
+        var md = MarkdownFormatter.Format(Reports.Mixed);
+
+        Assert.DoesNotContain("### Warnings", md);
+    }
+
+    [Fact]
+    public void Format_WithWarnings_RendersHeadingAndEntries()
+    {
+        // Both warning kinds should round-trip with file:line context and the Detail
+        // string. Pin the exact bullet shape so consumers parsing the markdown can rely
+        // on it.
+        var report = new CoverageReport([new FileCoverage("src/A.cs", 1, 1, 0, 0)])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 12,
+                    "Total 5 vs 7 — keeping 7"),
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "src/B.cs", 30,
+                    "condition-coverage='???' could not be parsed")
+            ]
+        };
+
+        var md = MarkdownFormatter.Format(report);
+
+        Assert.Contains("### Warnings", md);
+        Assert.Contains("- `src/A.cs:12` — BranchTotalMismatch: Total 5 vs 7 — keeping 7", md);
+        Assert.Contains("- `src/B.cs:30` — MalformedConditionCoverage: condition-coverage='???' could not be parsed", md);
+    }
 }

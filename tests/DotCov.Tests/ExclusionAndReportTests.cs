@@ -474,4 +474,195 @@ public sealed class ExclusionAndReportTests
         Assert.Equal(1, f.StrictlyHitLines);
         Assert.Equal(0, f.PartiallyHitLines);
     }
+
+    // ── Coverage warnings: BranchTotalMismatch from cross-report MergeWithWarnings ──
+
+    [Fact]
+    public void Warnings_DefaultEmptyOnFreshReport()
+    {
+        // The init-only contract: a freshly-constructed CoverageReport has an empty Warnings
+        // collection, not a null. Lets consumers safely iterate without null-checking.
+        var report = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)]);
+
+        Assert.Empty(report.Warnings);
+    }
+
+    [Fact]
+    public void Empty_HasEmptyWarnings()
+    {
+        Assert.Empty(CoverageReport.Empty.Warnings);
+    }
+
+    [Fact]
+    public void MergeWith_LegacyConvenience_DropsWarningsButPreservesMergedCounts()
+    {
+        // `MergeWith` is the lossy convenience that returns just the merged FileCoverage.
+        // Numbers must still match `MergeWithWarnings(other).Merged` so existing callers
+        // see no behavioral drift; only the warnings are unobservable through this overload.
+        var a = new FileCoverage("a.cs", 1, 1, 1, 5)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (3, 5) }
+        };
+        var b = new FileCoverage("a.cs", 1, 1, 2, 7)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (4, 7) }
+        };
+
+        var legacy = a.MergeWith(b);
+        var (tupled, _) = a.MergeWithWarnings(b);
+
+        Assert.Equal(tupled.BranchesByLine[10], legacy.BranchesByLine[10]);
+        Assert.Equal(tupled.BranchesHit, legacy.BranchesHit);
+        Assert.Equal(tupled.BranchesTotal, legacy.BranchesTotal);
+    }
+
+    [Fact]
+    public void MergeWithWarnings_BranchTotalMismatch_EmitsWarningAndKeepsMax()
+    {
+        // Two CI jobs disagree on the branch Total for line 10 — usually Release vs. Debug
+        // builds. The merge keeps the larger total (Math.Max) and surfaces the divergence
+        // as a structured warning so it stops being a silent bug.
+        var a = new FileCoverage("src/Calculator.cs", 1, 1, 3, 5)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (3, 5) }
+        };
+        var b = new FileCoverage("src/Calculator.cs", 1, 1, 4, 7)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (4, 7) }
+        };
+
+        var (merged, warnings) = a.MergeWithWarnings(b);
+
+        Assert.Equal((4, 7), merged.BranchesByLine[10]);
+        var w = Assert.Single(warnings);
+        Assert.Equal(CoverageWarningKind.BranchTotalMismatch, w.Kind);
+        Assert.Equal("src/Calculator.cs", w.File);
+        Assert.Equal(10, w.Line);
+        Assert.Contains("Total 5 vs 7", w.Detail);
+        Assert.Contains("keeping 7", w.Detail);
+    }
+
+    [Fact]
+    public void MergeWithWarnings_MatchingTotals_EmitsNoWarning()
+    {
+        // Identical totals are a normal multi-upload — Math.Max on Covered, no divergence
+        // to flag. Guards against false-positive noise on perfectly-aligned CI runs.
+        var a = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+        var b = new FileCoverage("a.cs", 1, 1, 2, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) }
+        };
+
+        var (merged, warnings) = a.MergeWithWarnings(b);
+
+        Assert.Empty(warnings);
+        Assert.Equal((2, 2), merged.BranchesByLine[10]);
+    }
+
+    [Fact]
+    public void MergeWithWarnings_DisjointBranchLines_EmitsNoWarning()
+    {
+        // Different lines branched on each side — nothing to compare, nothing to warn about.
+        var a = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+        var b = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [20] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [20] = (1, 2) }
+        };
+
+        var (_, warnings) = a.MergeWithWarnings(b);
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void CoverageReport_Merge_PropagatesPerSideWarningsAndAppendsNew()
+    {
+        // a.Warnings + b.Warnings must carry through, and any new BranchTotalMismatch
+        // surfaced by the per-file MergeWithWarnings call gets appended on top.
+        var aFile = new FileCoverage("a.cs", 1, 1, 3, 5)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (3, 5) }
+        };
+        var bFile = new FileCoverage("a.cs", 1, 1, 4, 7)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (4, 7) }
+        };
+
+        var a = new CoverageReport([aFile])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "x.cs", 1, "from-a")
+            ]
+        };
+        var b = new CoverageReport([bFile])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "y.cs", 2, "from-b")
+            ]
+        };
+
+        var merged = CoverageReport.Merge(a, b);
+
+        Assert.Equal(3, merged.Warnings.Count);
+        Assert.Equal("from-a", merged.Warnings[0].Detail);
+        Assert.Equal("from-b", merged.Warnings[1].Detail);
+        Assert.Equal(CoverageWarningKind.BranchTotalMismatch, merged.Warnings[2].Kind);
+        Assert.Equal(10, merged.Warnings[2].Line);
+    }
+
+    [Fact]
+    public void CoverageReport_Merge_DistinctFiles_PropagatesWarningsWithoutNewOnes()
+    {
+        // No path overlap → no per-file MergeWithWarnings call → only the carried-over
+        // warnings come through. Guards against the merge fabricating false anomalies.
+        var a = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)])
+        {
+            Warnings = [new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "a.cs", 5, "raw")]
+        };
+        var b = new CoverageReport([new FileCoverage("b.cs", 1, 1, 0, 0)]);
+
+        var merged = CoverageReport.Merge(a, b);
+
+        var w = Assert.Single(merged.Warnings);
+        Assert.Equal("a.cs", w.File);
+    }
+
+    [Fact]
+    public void Exclude_PreservesWarnings_EvenWhenSourceFileFilteredOut()
+    {
+        // Filtering files for display doesn't change the fact that the parser observed an
+        // anomaly. Warnings should stay observable on the filtered report so downstream
+        // gates can still react to malformed inputs.
+        var report = new CoverageReport([new FileCoverage("src/obj/Generated.cs", 1, 1, 0, 0)])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage,
+                    "src/obj/Generated.cs", 7, "raw")
+            ]
+        };
+
+        var filtered = report.Exclude(ExclusionRules.WellKnown);
+
+        Assert.Empty(filtered.Files);
+        Assert.Single(filtered.Warnings);
+    }
 }
