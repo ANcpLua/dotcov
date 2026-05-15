@@ -74,19 +74,17 @@ public static partial class CoberturaParser
     // Within one block, every `<method><lines>` and the class-level summary `<lines>`
     // repeat the same line numbers with the same or different hit counts.
     //
-    // To produce per-source-line coverage we collect into Dictionary<filename, Dictionary<line, hits>>
-    // and take the highest hit count seen for any (file, line) pair.
+    // We collect into Dictionary<filename, LineAccumulator> and reconcile each per-line
+    // datum with Math.Max — both for hit counts and for branch (Covered, Total) pairs.
 
     private sealed class LineAccumulator
     {
         public readonly Dictionary<int, int> LineHits = new();
-        // Branch deduplication is keyed on source line number: Coverlet emits the same
-        // branch line under `<methods>/<method>/<lines>` AND `<class>/<lines>`, and without
-        // this guard `ParseCondition` would double-count every branch in real-world output.
-        public readonly HashSet<int> BranchLinesSeen = new();
-        public int BranchesHit;
-        public int BranchesTotal;
-        public readonly List<BranchDetail> PartialBranches = new();
+        // Per-line branch dedup: Coverlet emits the same branched line under
+        // <methods>/<method>/<lines> AND <class>/<lines>, and a single source line may be
+        // re-emitted under separate <class> blocks (record + state machine + partials).
+        // Keying on line number with Math.Max prevents double-counting in all of those.
+        public readonly Dictionary<int, (int Covered, int Total)> BranchesByLine = new();
     }
 
     private static CoverageReport ParseCore(XmlReader reader)
@@ -159,9 +157,11 @@ public static partial class CoberturaParser
             // branch coverage as a fake 100% (with TotalBranches=0).
             if (string.Equals(sub.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase) &&
                 sub.GetAttribute("condition-coverage") is { } cond &&
-                acc.BranchLinesSeen.Add(lineNum))
+                TryParseConditionCoverage(cond, out var covered, out var total))
             {
-                ParseCondition(cond, lineNum, ref acc.BranchesHit, ref acc.BranchesTotal, acc.PartialBranches);
+                acc.BranchesByLine[lineNum] = acc.BranchesByLine.TryGetValue(lineNum, out var existingBranch)
+                    ? (Math.Max(existingBranch.Covered, covered), Math.Max(existingBranch.Total, total))
+                    : (covered, total);
             }
         }
     }
@@ -180,30 +180,37 @@ public static partial class CoberturaParser
             }
             uncovered.Sort();
 
-            result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, acc.BranchesHit, acc.BranchesTotal)
+            var branchesHit = 0;
+            var branchesTotal = 0;
+            var partialBranches = new List<BranchDetail>();
+            foreach (var (line, b) in acc.BranchesByLine.OrderBy(kv => kv.Key))
+            {
+                branchesHit += b.Covered;
+                branchesTotal += b.Total;
+                if (b.Covered < b.Total)
+                    partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
+            }
+
+            result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, branchesHit, branchesTotal)
             {
                 LineHits = acc.LineHits,
+                BranchesByLine = acc.BranchesByLine,
                 UncoveredLines = uncovered,
-                PartialBranches = acc.PartialBranches
+                PartialBranches = partialBranches
             });
         }
         return new CoverageReport(result);
     }
 
-    private static void ParseCondition(
-        string cond, int lineNum, ref int hit, ref int total, List<BranchDetail> partials)
+    private static bool TryParseConditionCoverage(string cond, out int covered, out int total)
     {
+        covered = 0;
+        total = 0;
         var match = ConditionPattern().Match(cond);
-        if (!match.Success) return;
-
-        if (!int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out var covered)) return;
-        if (!int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out var branchTotal)) return;
-
-        hit += covered;
-        total += branchTotal;
-
-        if (covered < branchTotal && lineNum > 0)
-            partials.Add(new BranchDetail(lineNum, covered, branchTotal));
+        if (!match.Success) return false;
+        if (!int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out covered)) return false;
+        if (!int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total)) return false;
+        return true;
     }
 
     [GeneratedRegex(@"\((\d+)/(\d+)\)")]

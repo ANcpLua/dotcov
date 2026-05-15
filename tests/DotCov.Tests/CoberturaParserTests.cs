@@ -213,6 +213,31 @@ public sealed class CoberturaParserTests
     // Regression: Coverlet writes `branch="True"` (PascalCase via XmlConvert.ToString(bool)),
     // original Cobertura/JaCoCo write `branch="true"`. Earlier code used a literal-pattern compare
     // and silently dropped every Coverlet branch line — surfaced as a fake 100% branch coverage.
+    [Theory]
+    [InlineData("50% (99999999999999/2)")]  // Groups[1] overflows int
+    [InlineData("50% (1/99999999999999)")]  // Groups[2] overflows int
+    public void Parse_ConditionCoverageWithIntOverflow_SkipsBranchSilently(string condition)
+    {
+        // Defensive: the regex `\(\d+/\d+\)` matches any-length digit sequences, so a
+        // pathological emitter could write a number that overflows int. We skip the branch
+        // entry instead of throwing — keeps the parser robust on hostile/old XML.
+        var xml = $"""
+                   <?xml version="1.0"?>
+                   <coverage><packages><package><classes>
+                     <class name="X" filename="x.cs">
+                       <lines>
+                         <line number="1" hits="1" branch="True" condition-coverage="{condition}" />
+                       </lines>
+                     </class>
+                   </classes></package></packages></coverage>
+                   """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+
+        Assert.Equal(0, report.Files[0].BranchesTotal);
+    }
+
     [Fact]
     public void Parse_LineWithMissingHitsAttribute_TreatsAsZero()
     {
@@ -300,13 +325,17 @@ public sealed class CoberturaParserTests
     {
         // Lines 1-3 covered by both reports; line 4 only by `a`; line 5 only by `b`.
         // Line 2 has hits=0 in `a` and hits=4 in `b` — the union counts it as covered.
+        // Branches are on disjoint lines across the two reports, so the per-line union ends
+        // up summing them (no overlap to dedupe).
         var a = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 4, BranchesHit: 1, BranchesTotal: 2)
         {
-            LineHits = new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 }
+            LineHits = new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [1] = (1, 2) }
         };
         var b = new FileCoverage("a.cs", LinesHit: 3, LinesTotal: 4, BranchesHit: 2, BranchesTotal: 4)
         {
-            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 4, [3] = 2, [5] = 7 }
+            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 4, [3] = 2, [5] = 7 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [3] = (1, 2), [5] = (1, 2) }
         };
 
         var merged = CoverageReport.Merge(new CoverageReport([a]), new CoverageReport([b]));
@@ -314,8 +343,31 @@ public sealed class CoberturaParserTests
         Assert.Single(merged.Files);
         Assert.Equal(5, merged.Files[0].LinesTotal);   // union {1,2,3,4,5}
         Assert.Equal(4, merged.Files[0].LinesHit);     // {1,2,3,5} covered; 4 still 0
-        Assert.Equal(3, merged.Files[0].BranchesHit);
-        Assert.Equal(6, merged.Files[0].BranchesTotal);
+        Assert.Equal(3, merged.Files[0].BranchesHit);   // lines 1, 3, 5 — disjoint
+        Assert.Equal(6, merged.Files[0].BranchesTotal); // 2+2+2
+    }
+
+    [Fact]
+    public void Merge_SameFile_OverlappingBranchLines_DedupesViaMathMax()
+    {
+        // Both reports carry branch data for the same source line — Codecov-style
+        // union-with-max prevents double-counting that would inflate BranchesTotal.
+        var a = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+        var b = new FileCoverage("a.cs", 1, 1, 2, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) }
+        };
+
+        var merged = a.MergeWith(b);
+
+        Assert.Equal(1, merged.LinesTotal);
+        Assert.Equal(2, merged.BranchesHit);    // max(1, 2)
+        Assert.Equal(2, merged.BranchesTotal);  // max(2, 2) — not 4
     }
 
     // ── ParsePath ──

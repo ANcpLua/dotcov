@@ -109,4 +109,164 @@ public sealed class CoverageDiffTests
         Assert.Single(result.Files);
         Assert.NotNull(result.Files[0].Before);
     }
+
+    // ── Codecov-style indirect coverage changes (line-level diff) ──
+
+    [Fact]
+    public void Compare_LineFlippedFromHitToMiss_SurfacesAsNewlyMissed()
+    {
+        // Same file on both sides; line 10 was hit before, missed after — the canonical
+        // "tests were removed / something upstream changed" indirect coverage change.
+        var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 }
+        });
+        var after = Make(new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+        var fileDelta = Assert.Single(result.Files);
+        var lineDelta = Assert.Single(fileDelta.LineChanges);
+
+        Assert.Equal(10, lineDelta.Line);
+        Assert.Equal(LineChangeKind.NewlyMissed, lineDelta.Change);
+        Assert.Equal(3, lineDelta.BeforeHits);
+        Assert.Equal(0, lineDelta.AfterHits);
+    }
+
+    [Fact]
+    public void Compare_LineFlippedFromMissToHit_SurfacesAsNewlyHit()
+    {
+        var before = Make(new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        });
+        var after = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+        var lineDelta = Assert.Single(result.Files[0].LineChanges);
+
+        Assert.Equal(LineChangeKind.NewlyHit, lineDelta.Change);
+    }
+
+    [Fact]
+    public void Compare_AddedAndRemovedLines_AppearWithRespectiveKinds()
+    {
+        var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 }
+        });
+        var after = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1, [30] = 2 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+        var changes = result.Files[0].LineChanges;
+
+        Assert.Equal(2, changes.Count);
+        Assert.Equal(LineChangeKind.Removed, changes.Single(c => c.Line == 20).Change);
+        Assert.Equal(LineChangeKind.Added, changes.Single(c => c.Line == 30).Change);
+    }
+
+    [Fact]
+    public void Compare_UnchangedHitCount_ProducesNoLineChange()
+    {
+        var both = new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 }
+        };
+
+        var result = CoverageDiff.Compare(Make(both), Make(both));
+
+        Assert.Empty(result.Files[0].LineChanges);
+    }
+
+    [Fact]
+    public void Compare_HitCountChangedButStillHit_ProducesNoLineChange()
+    {
+        // 100 hits → 1 hit is informative but not a state flip; Codecov treats this the
+        // same way (hit/miss boolean, not delta on hit count).
+        var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 100 }
+        });
+        var after = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Empty(result.Files[0].LineChanges);
+    }
+
+    [Fact]
+    public void CoverageDiffResult_WithLineChanges_FiltersFilesWithFlippedLines()
+    {
+        var before = Make(
+            new FileCoverage("flipped.cs", 1, 1, 0, 0)
+            {
+                LineHits = new Dictionary<int, int> { [10] = 1 }
+            },
+            new FileCoverage("stable.cs", 1, 1, 0, 0)
+            {
+                LineHits = new Dictionary<int, int> { [20] = 1 }
+            });
+        var after = Make(
+            new FileCoverage("flipped.cs", 0, 1, 0, 0)
+            {
+                LineHits = new Dictionary<int, int> { [10] = 0 }
+            },
+            new FileCoverage("stable.cs", 1, 1, 0, 0)
+            {
+                LineHits = new Dictionary<int, int> { [20] = 1 }
+            });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var affected = Assert.Single(result.WithLineChanges);
+        Assert.Equal("flipped.cs", affected.Path);
+        Assert.Equal(1, result.TotalLineChanges);
+    }
+
+    [Fact]
+    public void Compare_AddedOrRemovedFile_HasNoLineChanges()
+    {
+        // Added/Removed file deltas don't get line-level breakdowns — the whole file is
+        // either gone or new, so individual line classifications are redundant.
+        var before = Make(new FileCoverage("gone.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        });
+        var after = Make(new FileCoverage("fresh.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [20] = 1 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.All(result.Files, f => Assert.Empty(f.LineChanges));
+    }
+
+    [Fact]
+    public void Compare_LineMissedOnBothSides_ProducesNoLineChange()
+    {
+        // Both reports track the same line at zero hits — covered-by-test-suite state didn't
+        // change. The line classifier must not emit a delta for it (otherwise every uncovered
+        // line in every file would spam "indirect changes" output).
+        var both = new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        };
+
+        var result = CoverageDiff.Compare(Make(both), Make(both));
+
+        Assert.Empty(result.Files[0].LineChanges);
+    }
 }

@@ -26,7 +26,8 @@ public static class JsonFormatter
             {
                 before = Pct(diff.BeforeRate),
                 after = Pct(diff.AfterRate),
-                delta = Pct(diff.Delta)
+                delta = Pct(diff.Delta),
+                indirectLineChanges = diff.TotalLineChanges
             },
             files = diff.Files.Select(d => new
             {
@@ -34,7 +35,16 @@ public static class JsonFormatter
                 before = d.Before.HasValue ? Pct(d.Before.Value) : (double?)null,
                 after = d.After.HasValue ? Pct(d.After.Value) : (double?)null,
                 delta = Pct(d.Delta),
-                change = d.Change.ToString().ToLowerInvariant()
+                change = d.Change.ToString().ToLowerInvariant(),
+                lineChanges = d.LineChanges.Count > 0
+                    ? d.LineChanges.Select(c => new
+                    {
+                        line = c.Line,
+                        beforeHits = c.BeforeHits,
+                        afterHits = c.AfterHits,
+                        change = c.Change.ToString().ToLowerInvariant()
+                    })
+                    : null
             })
         }, Options);
 

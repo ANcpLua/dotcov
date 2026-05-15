@@ -57,6 +57,37 @@ public static class MarkdownFormatter
             sb.AppendLine($"| `{d.Path}` | {before} | {after} | {sign}{d.Delta * 100:F1}% | {d.Change} |");
         }
 
+        AppendIndirectChanges(sb, diff);
+
         return sb.ToString();
+    }
+
+    private static void AppendIndirectChanges(StringBuilder sb, CoverageDiffResult diff)
+    {
+        // Codecov-style "indirect changes" surface: lines whose hit/miss state flipped
+        // inside files that exist on both sides of the diff. Most often signals removed
+        // tests, dependency upgrades that change execution paths, or upstream regressions.
+        var affected = diff.WithLineChanges.ToList();
+        if (affected.Count is 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine($"### Indirect changes ({diff.TotalLineChanges} lines across {affected.Count} files)");
+        sb.AppendLine();
+
+        foreach (var d in affected)
+        {
+            var newlyHit = d.LineChanges.Count(c => c.Change is LineChangeKind.NewlyHit);
+            var newlyMissed = d.LineChanges.Count(c => c.Change is LineChangeKind.NewlyMissed);
+            var added = d.LineChanges.Count(c => c.Change is LineChangeKind.Added);
+            var removed = d.LineChanges.Count(c => c.Change is LineChangeKind.Removed);
+
+            var fragments = new List<string>(4);
+            if (newlyMissed > 0) fragments.Add($"{newlyMissed} newly missed");
+            if (newlyHit > 0) fragments.Add($"{newlyHit} newly hit");
+            if (added > 0) fragments.Add($"{added} added");
+            if (removed > 0) fragments.Add($"{removed} removed");
+
+            sb.AppendLine($"- `{d.Path}`: {string.Join(", ", fragments)}");
+        }
     }
 }

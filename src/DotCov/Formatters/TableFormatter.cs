@@ -86,6 +86,15 @@ public static class TableFormatter
             $"{pen.Bold($"{diff.AfterRate * 100,7:F1}%")}  " +
             $"{pen.Bold(pen.Delta(totalDeltaText, diff.Delta))}");
 
+        // Codecov-style indirect-change summary: one line, only when there's anything to show.
+        // Detailed per-file breakdown lives in the markdown formatter where it fits better.
+        if (diff.TotalLineChanges > 0)
+        {
+            var affected = diff.Files.Count(f => f.LineChanges.Count > 0);
+            sb.AppendLine(pen.Dim(
+                $"Indirect changes: {diff.TotalLineChanges} lines flipped across {affected} file{(affected == 1 ? "" : "s")}"));
+        }
+
         return sb.ToString();
     }
 

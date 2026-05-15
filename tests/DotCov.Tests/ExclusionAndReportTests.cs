@@ -128,27 +128,141 @@ public sealed class ExclusionAndReportTests
     [Fact]
     public void FileCoverage_MergeWith_UnionsLinesAndAppendsPartialBranches()
     {
-        // `a` covers line 5, misses 10. `b` covers lines 20 and 30 (their hit count = 1),
-        // misses 25. Merging keeps the highest hit count per line and recomputes the
-        // uncovered-line list from the resulting union.
+        // `a` covers line 5, misses 10, has a partial branch on line 15 (1/2).
+        // `b` covers lines 20 and 30, misses 25, has a partial branch on line 25 (0/2).
+        // Merging keeps the highest hit count per line and derives PartialBranches from the
+        // unioned BranchesByLine dict (disjoint partial-branch lines → both surface).
         var a = new FileCoverage("a.cs", LinesHit: 1, LinesTotal: 2, BranchesHit: 1, BranchesTotal: 2)
         {
             LineHits = new Dictionary<int, int> { [5] = 3, [10] = 0 },
-            PartialBranches = [new BranchDetail(15, 1, 2)]
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [15] = (1, 2) }
         };
-        var b = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 3, BranchesHit: 1, BranchesTotal: 2)
+        var b = new FileCoverage("a.cs", LinesHit: 2, LinesTotal: 3, BranchesHit: 0, BranchesTotal: 2)
         {
             LineHits = new Dictionary<int, int> { [20] = 1, [25] = 0, [30] = 1 },
-            PartialBranches = [new BranchDetail(25, 0, 2)]
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [25] = (0, 2) }
         };
 
         var merged = a.MergeWith(b);
 
         Assert.Equal([10, 25], merged.UncoveredLines);
         Assert.Equal(2, merged.PartialBranches.Count);
-        Assert.Equal(3, merged.LinesHit);     // 5, 20, 30
-        Assert.Equal(5, merged.LinesTotal);   // 5, 10, 20, 25, 30
-        Assert.Equal(2, merged.BranchesHit);
+        Assert.Equal(3, merged.LinesHit);      // 5, 20, 30
+        Assert.Equal(5, merged.LinesTotal);    // 5, 10, 20, 25, 30
+        Assert.Equal(1, merged.BranchesHit);   // 1 (line 15) + 0 (line 25)
+        Assert.Equal(4, merged.BranchesTotal); // 2 + 2
+    }
+
+    // ── Codecov-style strict line classification (Hit / Partial / Miss) ──
+
+    [Fact]
+    public void GetLineStatus_FullyCoveredLineWithoutBranches_IsHit()
+    {
+        var f = new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 }
+        };
+
+        Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
+    }
+
+    [Fact]
+    public void GetLineStatus_FullyCoveredLineWithAllBranchesExercised_IsHit()
+    {
+        var f = new FileCoverage("a.cs", 1, 1, 2, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) }
+        };
+
+        Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
+    }
+
+    [Fact]
+    public void GetLineStatus_ExecutedLineWithIncompleteBranches_IsPartial()
+    {
+        var f = new FileCoverage("a.cs", 1, 1, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
+        };
+
+        Assert.Equal(LineStatus.Partial, f.GetLineStatus(10));
+    }
+
+    [Fact]
+    public void GetLineStatus_ZeroHits_IsMissEvenWithBranchData()
+    {
+        var f = new FileCoverage("a.cs", 0, 1, 0, 2)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (0, 2) }
+        };
+
+        Assert.Equal(LineStatus.Miss, f.GetLineStatus(10));
+    }
+
+    [Fact]
+    public void GetLineStatus_UnknownLine_IsMiss()
+    {
+        var f = new FileCoverage("a.cs", 0, 0, 0, 0);
+
+        Assert.Equal(LineStatus.Miss, f.GetLineStatus(999));
+    }
+
+    [Fact]
+    public void StrictLineRate_DowngradesPartialBranches()
+    {
+        // 3 lines tracked: line 1 fully hit (no branches), line 2 hit but with partial branches,
+        // line 3 missed. Standard LineRate = 2/3 ≈ 66.7% (lines 1 and 2 are "hit").
+        // Strict LineRate = 1/3 ≈ 33.3% (only line 1 is fully Hit; line 2 is Partial, line 3 is Miss).
+        var f = new FileCoverage("a.cs", 2, 3, 1, 2)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 0 },
+            BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) }
+        };
+
+        Assert.Equal(2.0 / 3.0, f.LineRate, 4);
+        Assert.Equal(1.0 / 3.0, f.StrictLineRate, 4);
+        Assert.Equal(1, f.StrictlyHitLines);
+        Assert.Equal(1, f.PartiallyHitLines);
+    }
+
+    [Fact]
+    public void StrictLineRate_EmptyReport_ReturnsOne()
+    {
+        Assert.Equal(1.0, CoverageReport.Empty.StrictLineRate);
+    }
+
+    [Fact]
+    public void FileCoverage_StrictLineRate_EmptyLines_ReturnsOne()
+    {
+        // Empty FileCoverage (no LineHits at all) — strict rate is vacuously 1.0 per the
+        // same convention as LineRate, so callers don't have to special-case empty files.
+        var f = new FileCoverage("a.cs", 0, 0, 0, 0);
+
+        Assert.Equal(1.0, f.StrictLineRate);
+    }
+
+    [Fact]
+    public void CoverageReport_StrictLineRate_SumsAcrossFiles()
+    {
+        // File A: 1 strict-hit + 1 partial + 1 miss → 1/3 strict.
+        // File B: 2 strict-hits → 2/2 strict.
+        // Combined: 3 strict-hits across 5 total lines → 60%.
+        var report = new CoverageReport([
+            new FileCoverage("a.cs", 2, 3, 1, 2)
+            {
+                LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1, [3] = 0 },
+                BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) }
+            },
+            new FileCoverage("b.cs", 2, 2, 0, 0)
+            {
+                LineHits = new Dictionary<int, int> { [10] = 1, [20] = 1 }
+            }
+        ]);
+
+        Assert.Equal(0.6, report.StrictLineRate, 4);
     }
 
     [Fact]

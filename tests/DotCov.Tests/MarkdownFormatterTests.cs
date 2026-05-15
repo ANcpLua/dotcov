@@ -137,4 +137,59 @@ public sealed class MarkdownFormatterTests
 
         Assert.Matches(@"\|\s+`gone\.cs`\s+\|\s+80\.0%\s+\|\s+-\s+\|", md);
     }
+
+    [Fact]
+    public void FormatDiff_IndirectLineChanges_RenderedAsSeparateSection()
+    {
+        // Same file on both sides; line 10 was hit, now missed → Codecov-style indirect change.
+        var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        }]);
+
+        var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+
+        Assert.Contains("### Indirect changes", md);
+        Assert.Contains("1 newly missed", md);
+        Assert.Contains("`a.cs`", md);
+    }
+
+    [Fact]
+    public void FormatDiff_NoIndirectChanges_OmitsSection()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]));
+
+        var md = MarkdownFormatter.FormatDiff(diff);
+
+        Assert.DoesNotContain("Indirect changes", md);
+    }
+
+    [Fact]
+    public void FormatDiff_AllLineChangeKinds_RenderEachFragment()
+    {
+        // Exercises every fragment-add arm in AppendIndirectChanges: newlyMissed, newlyHit,
+        // added, removed. The four-line file flips line 10 (hit→miss), line 20 (miss→hit),
+        // drops line 30, and adds line 40 — one occurrence of each LineChangeKind.
+        var before = new CoverageReport([new FileCoverage("a.cs", 2, 3, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5, [20] = 0, [30] = 1 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 2, 3, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0, [20] = 3, [40] = 1 }
+        }]);
+
+        var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+
+        Assert.Contains("1 newly missed", md);
+        Assert.Contains("1 newly hit", md);
+        Assert.Contains("1 added", md);
+        Assert.Contains("1 removed", md);
+    }
 }

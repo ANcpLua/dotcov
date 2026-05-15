@@ -178,6 +178,53 @@ public sealed class TableFormatterTests
     }
 
     [Fact]
+    public void FormatDiff_IndirectLineChanges_TrailerLineAppears()
+    {
+        var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        }]);
+
+        var output = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+
+        Assert.Contains("Indirect changes: 1 lines flipped across 1 file", output);
+    }
+
+    [Fact]
+    public void FormatDiff_NoIndirectChanges_OmitsTrailerLine()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]));
+
+        var output = TableFormatter.FormatDiff(diff);
+
+        Assert.DoesNotContain("Indirect changes", output);
+    }
+
+    [Fact]
+    public void FormatDiff_MultipleFilesAffected_TrailerUsesPlural()
+    {
+        // Pluralization branch: "files" vs "file" depending on affected file count.
+        var before = new CoverageReport([
+            new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1 } },
+            new FileCoverage("b.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 1 } }
+        ]);
+        var after = new CoverageReport([
+            new FileCoverage("a.cs", 0, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 0 } },
+            new FileCoverage("b.cs", 0, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 0 } }
+        ]);
+
+        var output = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+
+        Assert.Contains("across 2 files", output);
+    }
+
+    [Fact]
     public void FormatDiff_EmptyDiff_RendersHeaderOnly()
     {
         var output = TableFormatter.FormatDiff(

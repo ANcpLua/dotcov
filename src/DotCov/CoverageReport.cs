@@ -2,6 +2,15 @@ namespace DotCov;
 
 public readonly record struct BranchDetail(int Line, int Covered, int Total);
 
+/// <summary>
+/// Codecov-style three-state line classification. A line that was executed but whose
+/// conditional branches were not all exercised is <see cref="Partial"/> — distinct from
+/// <see cref="Hit"/> (fully exercised) and <see cref="Miss"/> (not executed at all).
+/// Used for the strict coverage view; the canonical <see cref="FileCoverage.LineRate"/>
+/// keeps treating partials as hit to stay aligned with the Cobertura source-of-truth.
+/// </summary>
+public enum LineStatus { Miss, Partial, Hit }
+
 public readonly record struct FileCoverage(
     string Path,
     int LinesHit,
@@ -36,31 +45,111 @@ public readonly record struct FileCoverage(
     public IReadOnlyDictionary<int, int> LineHits { get; init; } =
         new Dictionary<int, int>();
 
+    /// <summary>
+    /// Per-line branch hit/total counts. Needed for two things:
+    ///   1. Cross-report merge: Codecov-style union-with-max on branches, instead of summing
+    ///      across uploads (which double-counts when the same file is covered by both unit and
+    ///      integration test runs).
+    ///   2. Strict line classification: a line whose branches are not all exercised should be
+    ///      reported as <see cref="LineStatus.Partial"/>, not <see cref="LineStatus.Hit"/>.
+    /// Tuple semantics: (Covered, Total) per line. Lines with no branches are absent from the
+    /// dictionary entirely (so a non-branched line is unambiguously not partial).
+    /// </summary>
+    public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; } =
+        new Dictionary<int, (int Covered, int Total)>();
+
+    /// <summary>
+    /// Codecov-style three-state classification for a single source line. Returns
+    /// <see cref="LineStatus.Miss"/> for unknown lines so callers can iterate over any line
+    /// range without first checking <see cref="LineHits"/> membership.
+    /// </summary>
+    public LineStatus GetLineStatus(int line)
+    {
+        if (!LineHits.TryGetValue(line, out var hits) || hits == 0)
+            return LineStatus.Miss;
+        if (BranchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
+            return LineStatus.Partial;
+        return LineStatus.Hit;
+    }
+
+    /// <summary>Lines that were executed AND had all their branches exercised.</summary>
+    public int StrictlyHitLines
+    {
+        get
+        {
+            var count = 0;
+            foreach (var line in LineHits.Keys)
+                if (GetLineStatus(line) is LineStatus.Hit) count++;
+            return count;
+        }
+    }
+
+    /// <summary>Lines that were executed but had at least one unexercised branch.</summary>
+    public int PartiallyHitLines
+    {
+        get
+        {
+            var count = 0;
+            foreach (var line in LineHits.Keys)
+                if (GetLineStatus(line) is LineStatus.Partial) count++;
+            return count;
+        }
+    }
+
+    /// <summary>
+    /// Codecov's coverage formula: <c>hits / (hits + partials + misses)</c> where partials
+    /// count as miss. Stricter than <see cref="LineRate"/> — a line with <c>if (x &amp;&amp; y)</c>
+    /// that only saw <c>x=true, y=true</c> is reported as not-fully-covered here, even though
+    /// the line executed. Use this when you want the pessimistic-but-honest number; use
+    /// <see cref="LineRate"/> when you need parity with Cobertura/Coverlet/ReportGenerator.
+    /// </summary>
+    public double StrictLineRate => LinesTotal is 0 ? 1.0 : (double)StrictlyHitLines / LinesTotal;
+
     public FileCoverage MergeWith(FileCoverage other)
     {
-        var merged = new Dictionary<int, int>(LineHits);
+        var mergedHits = new Dictionary<int, int>(LineHits);
         foreach (var (line, hits) in other.LineHits)
-            merged[line] = merged.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
+            mergedHits[line] = mergedHits.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
+
+        // Branch dedup across reports: without per-branch location IDs (Cobertura's
+        // `condition-coverage="n/m"` doesn't expose them), the safest defensible union is
+        // Math.Max per line — at least N branches were exercised by some run, and Total is
+        // the upper bound. Summing instead would double-count when the same file shows up in
+        // multiple uploads (unit + integration test runs from the same CI workflow).
+        var mergedBranches = new Dictionary<int, (int Covered, int Total)>(BranchesByLine);
+        foreach (var (line, b) in other.BranchesByLine)
+        {
+            mergedBranches[line] = mergedBranches.TryGetValue(line, out var existing)
+                ? (Math.Max(existing.Covered, b.Covered), Math.Max(existing.Total, b.Total))
+                : b;
+        }
 
         var linesHit = 0;
         var uncovered = new List<int>();
-        foreach (var (line, hits) in merged)
+        foreach (var (line, hits) in mergedHits)
         {
             if (hits > 0) linesHit++;
             else uncovered.Add(line);
         }
         uncovered.Sort();
 
-        return new FileCoverage(
-            Path,
-            linesHit,
-            merged.Count,
-            BranchesHit + other.BranchesHit,
-            BranchesTotal + other.BranchesTotal)
+        var branchesHit = 0;
+        var branchesTotal = 0;
+        var partialBranches = new List<BranchDetail>();
+        foreach (var (line, b) in mergedBranches.OrderBy(kv => kv.Key))
         {
-            LineHits = merged,
+            branchesHit += b.Covered;
+            branchesTotal += b.Total;
+            if (b.Covered < b.Total)
+                partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
+        }
+
+        return new FileCoverage(Path, linesHit, mergedHits.Count, branchesHit, branchesTotal)
+        {
+            LineHits = mergedHits,
+            BranchesByLine = mergedBranches,
             UncoveredLines = uncovered,
-            PartialBranches = [.. PartialBranches, .. other.PartialBranches]
+            PartialBranches = partialBranches
         };
     }
 }
@@ -83,6 +172,21 @@ public sealed class CoverageReport
 
     /// <summary>True when any file in the report carries branch data.</summary>
     public bool HasBranchData => TotalBranches > 0;
+
+    /// <summary>
+    /// Codecov-style strict ratio across the whole report. A line counts only when its
+    /// branches are all exercised — partials and misses both depress the rate.
+    /// </summary>
+    public double StrictLineRate
+    {
+        get
+        {
+            if (TotalLines is 0) return 1.0;
+            var strictHit = 0;
+            foreach (var f in Files) strictHit += f.StrictlyHitLines;
+            return (double)strictHit / TotalLines;
+        }
+    }
 
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
         Files.Where(f => f.LineRate * 100 < linePercent);

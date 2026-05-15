@@ -147,6 +147,43 @@ public sealed class JsonFormatterTests
     }
 
     [Fact]
+    public void FormatDiff_IndirectLineChanges_AppearInJsonPayload()
+    {
+        var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 5 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        }]);
+
+        var json = JsonFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+        var root = JsonDocument.Parse(json).RootElement;
+
+        Assert.Equal(1, root.GetProperty("summary").GetProperty("indirectLineChanges").GetInt32());
+
+        var lineChange = root.GetProperty("files")[0].GetProperty("lineChanges")[0];
+        Assert.Equal(10, lineChange.GetProperty("line").GetInt32());
+        Assert.Equal("newlymissed", lineChange.GetProperty("change").GetString());
+        Assert.Equal(5, lineChange.GetProperty("beforeHits").GetInt32());
+        Assert.Equal(0, lineChange.GetProperty("afterHits").GetInt32());
+    }
+
+    [Fact]
+    public void FormatDiff_NoIndirectChanges_LineChangesAbsent()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0)]));
+
+        var json = JsonFormatter.FormatDiff(diff);
+        var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
+
+        Assert.False(file.TryGetProperty("lineChanges", out _));
+    }
+
+    [Fact]
     public void FormatSnapshot_IncludesAllMetadata()
     {
         var snapshot = new CoverageSnapshot(
