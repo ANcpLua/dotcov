@@ -142,3 +142,71 @@ Explicitly skipped (each would have required new public API or breaking changes)
   (`ComputeLineChanges`), enforced by tests rather than the type.
 - `O(n²)` cache on `StrictlyHitLines` + `PartiallyHitLines` (correctness-neutral; defer
   until a 50 MB+ report actually shows up in a benchmark).
+
+## Task 5 — 2026-05-15 — `CoverageWarning` surface for silent merge/parse anomalies
+
+Lifts the "defer-until-asked" warnings collection Task 3 explicitly skipped into a real
+public surface. Two CRITICAL/HIGH findings from a multi-agent review of the parser/merger
+become structured observable signals instead of silent drops:
+
+1. `FileCoverage.MergeWith` reconciles cross-report `BranchesByLine` with `Math.Max` per
+   `(Covered, Total)` component. When two CI jobs disagree on `Total` for the same line
+   (e.g. Release vs. Debug compile targets), the merge previously fabricated the larger
+   tuple with zero indication. It now emits a `BranchTotalMismatch` warning so divergent
+   uploads stop being a silent bug.
+
+2. `CoberturaParser.TryParseConditionCoverage` returns `false` on regex miss or int
+   overflow. The caller previously dropped the branch entry silently — a malformed
+   Coverlet emitter regression would have zeroed out branch coverage with no signal. The
+   parser now records a `MalformedConditionCoverage` warning for every malformed string,
+   keeping the parse robust while making the omission observable.
+
+Changed:
+- New `CoverageWarningKind` enum (`BranchTotalMismatch`, `MalformedConditionCoverage`)
+  and `CoverageWarning(Kind, File, Line, Detail)` record-struct in `CoverageReport.cs`.
+- `CoverageReport.Warnings { get; init; } = []` — init-only collection, defaults empty.
+- `FileCoverage.MergeWithWarnings(FileCoverage other)` returns a tuple
+  `(Merged, IReadOnlyList<CoverageWarning>)`. Original `MergeWith` kept as the lossy
+  convenience that drops warnings — every caller in the codebase that just wants the
+  merged file stays unchanged. `CoverageReport.Merge` now uses the tuple variant so it
+  can append divergences alongside per-side warnings.
+- `CoberturaParser` threads a `List<CoverageWarning>` through `ParseCore` /
+  `ParseCoreAsync` → `ConsumeClass` → branch parsing. Both regex-miss and int-overflow
+  paths now emit the same warning kind, with the raw `condition-coverage` string in
+  `Detail`.
+- `CoverageReport.Exclude` carries warnings forward — filtering files for display
+  doesn't unobserve a parser anomaly. Same `Warnings` propagation in `Merge`.
+- Formatters surface warnings additively (silent for clean reports, structured when
+  populated):
+  - `MarkdownFormatter.Format` appends `### Warnings` section with per-entry bullets
+    matching `- `{File}:{Line}` — {Kind}: {Detail}`.
+  - `JsonFormatter.Format` includes a `"warnings"` array (omitted when empty via the
+    existing `WhenWritingNull` policy), serialised as `{ kind, file, line, detail }`.
+  - `TableFormatter.Format` emits a one-line `Warnings: N` trailer after `TOTAL`,
+    dimmed via the existing `AnsiPen.Dim` helper. Detailed list is markdown's job.
+- README Public API surface block extended with `Warnings`, `CoverageWarning`,
+  `CoverageWarningKind`, and the new `MergeWithWarnings` overload.
+
+Verified:
+- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` followed
+  by `dotcov report TestResults/ --exclude-generated` reports **Lines 625/625 (100%)**,
+  **Branches 296/296 (100%)** across 218 tests (was 199 before this task).
+- New regression tests cover: default-empty `Warnings`, `MergeWith`/`MergeWithWarnings`
+  parity for the merged counts, `BranchTotalMismatch` emission with file/line/detail
+  payload, matching-totals silence, disjoint-line silence, `CoverageReport.Merge`
+  carrying per-side warnings plus appending new ones, distinct-file merges fabricating
+  no false anomalies, `Exclude` preserving warnings even when the source file is
+  filtered out, parser warnings for both regex-miss and int-overflow paths (sync +
+  async parity), markdown heading/bullet shape, JSON null-omission contract + four-
+  field round-trip, table trailer position + dim ANSI escape.
+
+Notes:
+- `FormatDiff` paths in all three formatters intentionally left alone — Agent A owns
+  those sections per the parallel-agents scope split. Warnings flow on the `Format`
+  path only.
+- `MergeWith` (single-return) preserved as the public lossy overload rather than
+  removed, even though the user authorised breaking changes. Rationale: the codebase has
+  ~6 internal callers (parser, diff producer, the convenience overload in
+  `CoverageReport.Merge`) that only ever needed the merged file; forcing every callsite
+  to discard the warnings tuple would have added noise without value. The two-overload
+  shape mirrors `Exclude(patterns)` / `Exclude(patterns, keep)`.

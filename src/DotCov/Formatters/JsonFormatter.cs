@@ -16,7 +16,19 @@ public static class JsonFormatter
         JsonSerializer.Serialize(new
         {
             summary = FormatSummary(report),
-            files = report.Files.Select(FormatFile)
+            files = report.Files.Select(FormatFile),
+            // Same `Count == 0 ? null : ...` shape as `lineChanges` — the
+            // WhenWritingNull policy drops the property entirely when empty so consumers
+            // can detect a clean report with `!root.TryGetProperty("warnings", out _)`.
+            warnings = report.Warnings.Count > 0
+                ? report.Warnings.Select(w => new
+                {
+                    kind = w.Kind.ToString(),
+                    file = w.File,
+                    line = w.Line,
+                    detail = w.Detail
+                })
+                : null
         }, Options);
 
     public static string FormatDiff(CoverageDiffResult diff) =>

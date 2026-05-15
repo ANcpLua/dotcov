@@ -33,7 +33,23 @@ public static class MarkdownFormatter
                 $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {f.LineRate * 100:F1}% | {branches} | {branchPct} |");
         }
 
+        AppendWarnings(sb, report);
+
         return sb.ToString();
+    }
+
+    private static void AppendWarnings(StringBuilder sb, CoverageReport report)
+    {
+        // Structured anomaly surface — kept additive so existing consumers see no change
+        // when nothing diverged. Detailed list lives here because table/JSON have their
+        // own conventions; markdown is the natural place for full per-entry context.
+        if (report.Warnings.Count is 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("### Warnings");
+        sb.AppendLine();
+        foreach (var w in report.Warnings)
+            sb.AppendLine($"- `{w.File}:{w.Line}` — {w.Kind}: {w.Detail}");
     }
 
     public static string FormatDiff(CoverageDiffResult diff)

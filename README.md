@@ -145,6 +145,7 @@ public sealed class CoverageReport
 {
     static readonly CoverageReport Empty;
     IReadOnlyList<FileCoverage> Files;
+    IReadOnlyList<CoverageWarning> Warnings { get; init; }   // parser/merge anomalies
     double LineRate, BranchRate;
     double StrictLineRate;           // Codecov-style: partials and misses both depress the rate
     bool HasBranchData;
@@ -167,10 +168,15 @@ public readonly record struct FileCoverage(
     IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; }
     LineStatus GetLineStatus(int line);   // Hit / Partial / Miss
     FileCoverage MergeWith(FileCoverage other);
+    (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWithWarnings(FileCoverage other);
 }
 
 public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state
 public readonly record struct BranchDetail(int Line, int Covered, int Total);
+
+public enum CoverageWarningKind { BranchTotalMismatch, MalformedConditionCoverage }
+public readonly record struct CoverageWarning(
+    CoverageWarningKind Kind, string File, int Line, string Detail);
 
 public static class CoverageDiff
 {

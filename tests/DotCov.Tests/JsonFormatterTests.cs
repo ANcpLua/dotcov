@@ -229,4 +229,42 @@ public sealed class JsonFormatterTests
         Assert.Contains("\"totalLines\"", json);
         Assert.Contains("\"coveredLines\"", json);
     }
+
+    // ── Warnings: same null-omission contract as `lineChanges` / `uncoveredLines` ──
+
+    [Fact]
+    public void Format_NoWarnings_OmitsWarningsField()
+    {
+        // Empty Warnings → null → field absent. Same contract as `lineChanges` /
+        // `uncoveredLines`. Consumers can detect a clean report with TryGetProperty.
+        var json = JsonFormatter.Format(Reports.Mixed);
+        var root = JsonDocument.Parse(json).RootElement;
+
+        Assert.False(root.TryGetProperty("warnings", out _));
+    }
+
+    [Fact]
+    public void Format_WithWarnings_SerializesArrayWithKindFileLineDetail()
+    {
+        // Each warning round-trips with the four-field shape. Pin the camelCased field
+        // names so the public JSON contract is asserted explicitly.
+        var report = new CoverageReport([new FileCoverage("src/A.cs", 1, 1, 0, 0)])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 12, "Total 5 vs 7"),
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "src/B.cs", 30, "raw")
+            ]
+        };
+
+        var json = JsonFormatter.Format(report);
+        var warnings = JsonDocument.Parse(json).RootElement.GetProperty("warnings").EnumerateArray().ToList();
+
+        Assert.Equal(2, warnings.Count);
+        Assert.Equal("BranchTotalMismatch", warnings[0].GetProperty("kind").GetString());
+        Assert.Equal("src/A.cs", warnings[0].GetProperty("file").GetString());
+        Assert.Equal(12, warnings[0].GetProperty("line").GetInt32());
+        Assert.Equal("Total 5 vs 7", warnings[0].GetProperty("detail").GetString());
+        Assert.Equal("MalformedConditionCoverage", warnings[1].GetProperty("kind").GetString());
+    }
 }

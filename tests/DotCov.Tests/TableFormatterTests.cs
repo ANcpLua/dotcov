@@ -249,4 +249,54 @@ public sealed class TableFormatterTests
         var dividerLength = lines.First(l => l.StartsWith("-")).Length;
         Assert.True(dividerLength > "very/long/nested/path/to/some/source.cs".Length);
     }
+
+    // ── Warnings trailer: one-line `Warnings: N`, silent when empty ──
+
+    [Fact]
+    public void Format_NoWarnings_OmitsTrailerLine()
+    {
+        // Default-path clean output stays untouched.
+        var output = TableFormatter.Format(Reports.Mixed);
+
+        Assert.DoesNotContain("Warnings:", output);
+    }
+
+    [Fact]
+    public void Format_WithWarnings_RendersCountTrailerAfterTotal()
+    {
+        // Trailer prints the count only; detailed entries live in the markdown formatter.
+        // Verifies position too (after TOTAL) so visual scanning stays predictable.
+        var report = new CoverageReport([new FileCoverage("src/A.cs", 1, 1, 0, 0)])
+        {
+            Warnings =
+            [
+                new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 1, "x"),
+                new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "src/A.cs", 2, "y")
+            ]
+        };
+
+        var output = TableFormatter.Format(report);
+        var lines = output.Split('\n');
+
+        Assert.Contains("Warnings: 2", output);
+        var totalIdx = Array.FindIndex(lines, l => l.Contains("TOTAL"));
+        var warnIdx = Array.FindIndex(lines, l => l.Contains("Warnings:"));
+        Assert.True(totalIdx < warnIdx, "Warnings trailer must follow TOTAL row");
+    }
+
+    [Fact]
+    public void Format_WithWarnings_ColorEnabled_DimsTrailer()
+    {
+        // Dim ANSI escape on the trailer keeps it un-screaming in normal output —
+        // consistent with the indirect-changes trailer style on the diff path.
+        var report = new CoverageReport([new FileCoverage("src/A.cs", 1, 1, 0, 0)])
+        {
+            Warnings = [new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 1, "x")]
+        };
+
+        var output = TableFormatter.Format(report, color: true);
+        var trailerLine = output.Split('\n').Single(l => l.Contains("Warnings:"));
+
+        Assert.Contains("\e[2m", trailerLine);  // dim
+    }
 }
