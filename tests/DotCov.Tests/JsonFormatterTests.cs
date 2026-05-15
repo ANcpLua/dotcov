@@ -171,6 +171,78 @@ public sealed class JsonFormatterTests
     }
 
     [Fact]
+    public void FormatDiff_AddedLine_EmitsAddedChangeWithOnlyAfterHits()
+    {
+        // Same file on both sides; line 30 only exists in After → LineDelta.Added variant.
+        // Wire format: change="added", beforeHits omitted (null), afterHits populated.
+        var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1, [30] = 7 }
+        }]);
+
+        var json = JsonFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+        var lineChange = JsonDocument.Parse(json).RootElement
+            .GetProperty("files")[0].GetProperty("lineChanges")[0];
+
+        Assert.Equal(30, lineChange.GetProperty("line").GetInt32());
+        Assert.Equal("added", lineChange.GetProperty("change").GetString());
+        Assert.Equal(7, lineChange.GetProperty("afterHits").GetInt32());
+        Assert.False(lineChange.TryGetProperty("beforeHits", out _));
+    }
+
+    [Fact]
+    public void FormatDiff_RemovedLine_EmitsRemovedChangeWithOnlyBeforeHits()
+    {
+        // Line 20 dropped from After → LineDelta.Removed variant.
+        // Wire format: change="removed", beforeHits populated, afterHits omitted (null).
+        var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1, [20] = 4 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        }]);
+
+        var json = JsonFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+        var lineChange = JsonDocument.Parse(json).RootElement
+            .GetProperty("files")[0].GetProperty("lineChanges")[0];
+
+        Assert.Equal(20, lineChange.GetProperty("line").GetInt32());
+        Assert.Equal("removed", lineChange.GetProperty("change").GetString());
+        Assert.Equal(4, lineChange.GetProperty("beforeHits").GetInt32());
+        Assert.False(lineChange.TryGetProperty("afterHits", out _));
+    }
+
+    [Fact]
+    public void FormatDiff_NewlyHitLine_EmitsNewlyHitChangeWithBothHits()
+    {
+        // Line 10 missed before, hit now → LineDelta.NewlyHit variant.
+        // Wire format: change="newlyhit", both beforeHits (0) and afterHits populated.
+        var before = new CoverageReport([new FileCoverage("a.cs", 0, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        }]);
+        var after = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 3 }
+        }]);
+
+        var json = JsonFormatter.FormatDiff(CoverageDiff.Compare(before, after));
+        var lineChange = JsonDocument.Parse(json).RootElement
+            .GetProperty("files")[0].GetProperty("lineChanges")[0];
+
+        Assert.Equal(10, lineChange.GetProperty("line").GetInt32());
+        Assert.Equal("newlyhit", lineChange.GetProperty("change").GetString());
+        Assert.Equal(0, lineChange.GetProperty("beforeHits").GetInt32());
+        Assert.Equal(3, lineChange.GetProperty("afterHits").GetInt32());
+    }
+
+    [Fact]
     public void FormatDiff_NoIndirectChanges_LineChangesAbsent()
     {
         var diff = CoverageDiff.Compare(

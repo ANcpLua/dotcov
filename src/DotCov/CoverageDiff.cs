@@ -21,33 +21,42 @@ public enum FileChangeKind { Unchanged, Added, Removed, Modified }
 /// <summary>
 /// Per-line change between two coverage reports. Only emitted when the state actually
 /// changed — equal-on-both-sides lines (same hit/miss boolean) are dropped so callers can
-/// iterate <see cref="LineDelta"/> lists without filtering.
+/// iterate the lists without filtering. Hit-count-still-hit transitions (100 → 1) are NOT
+/// emitted — Codecov treats the hit/miss boolean as the change signal, not the magnitude.
 /// <para>
-/// Invariants by <see cref="Change"/> (enforced by <see cref="CoverageDiff.Compare"/>, not
-/// by the type itself — careless construction can produce illegal combinations):
+/// Closed sealed-hierarchy: every variant carries exactly the data the diff actually has,
+/// so illegal combinations (Added with BeforeHits, Removed with AfterHits, NewlyHit with a
+/// missing AfterHits…) are unrepresentable rather than enforced by convention. The base
+/// constructor is private — derivation is restricted to the four nested sealed records,
+/// so consumers can pattern-match against the variants exhaustively. (Roslyn doesn't yet
+/// prove this for switch-expressions; consumers use <c>is</c>-pattern chains with a final
+/// unguarded cast to keep the code reachable while preserving the closed-set guarantee.)
 /// </para>
-/// <list type="bullet">
-///   <item><c>Added</c>: <c>BeforeHits is null</c>, <c>AfterHits is not null</c>.</item>
-///   <item><c>Removed</c>: <c>BeforeHits is not null</c>, <c>AfterHits is null</c>.</item>
-///   <item><c>NewlyHit</c> / <c>NewlyMissed</c>: both hit counts present;
-///     <c>BeforeHits == 0</c> XOR <c>AfterHits == 0</c>.</item>
-/// </list>
-/// Hit-count-still-hit transitions (100 → 1) are NOT emitted — Codecov treats the
-/// hit/miss boolean as the change signal, not the magnitude.
 /// </summary>
-public readonly record struct LineDelta(int Line, int? BeforeHits, int? AfterHits, LineChangeKind Change);
+public abstract record LineDelta
+{
+    // Private constructor closes the hierarchy: derivation is restricted to the four
+    // nested sealed records below. External types literally cannot inherit, so consumers
+    // can rely on exhaustive pattern matches without a fallback arm.
+    private LineDelta(int line) => Line = line;
 
-/// <summary>
-/// Why a particular line shows up in the diff.
-///   <list type="bullet">
-///   <item><c>Added</c>: line existed in After but not in Before (new code).</item>
-///   <item><c>Removed</c>: line existed in Before but not in After (deleted code).</item>
-///   <item><c>NewlyHit</c>: same line in both, missed before, hit now (test added).</item>
-///   <item><c>NewlyMissed</c>: same line in both, hit before, missed now (test removed
-///     or an upstream change stopped exercising it — the canonical "indirect change").</item>
-///   </list>
-/// </summary>
-public enum LineChangeKind { Added, Removed, NewlyHit, NewlyMissed }
+    public int Line { get; }
+
+    /// <summary>Line existed in After but not in Before (new code).</summary>
+    public sealed record Added(int Line, int AfterHits) : LineDelta(Line);
+
+    /// <summary>Line existed in Before but not in After (deleted code).</summary>
+    public sealed record Removed(int Line, int BeforeHits) : LineDelta(Line);
+
+    /// <summary>Same line in both reports; missed before, hit now (test added).</summary>
+    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+
+    /// <summary>
+    /// Same line in both reports; hit before, missed now (test removed or an upstream
+    /// change stopped exercising it — the canonical Codecov "indirect change").
+    /// </summary>
+    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+}
 
 /// <summary>
 /// Result of comparing two coverage reports.
@@ -134,12 +143,12 @@ public static class CoverageDiff
 
             if (!hadBefore)
             {
-                changes.Add(new LineDelta(line, null, afterHits, LineChangeKind.Added));
+                changes.Add(new LineDelta.Added(line, afterHits));
                 continue;
             }
             if (!hadAfter)
             {
-                changes.Add(new LineDelta(line, beforeHits, null, LineChangeKind.Removed));
+                changes.Add(new LineDelta.Removed(line, beforeHits));
                 continue;
             }
 
@@ -147,8 +156,9 @@ public static class CoverageDiff
             var afterMissed = afterHits == 0;
             if (beforeMissed == afterMissed) continue;  // hit-state unchanged
 
-            var kind = afterMissed ? LineChangeKind.NewlyMissed : LineChangeKind.NewlyHit;
-            changes.Add(new LineDelta(line, beforeHits, afterHits, kind));
+            changes.Add(afterMissed
+                ? new LineDelta.NewlyMissed(line, beforeHits, afterHits)
+                : new LineDelta.NewlyHit(line, beforeHits, afterHits));
         }
 
         return changes;

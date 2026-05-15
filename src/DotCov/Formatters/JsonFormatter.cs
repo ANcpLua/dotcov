@@ -49,13 +49,7 @@ public static class JsonFormatter
                 delta = Pct(d.Delta),
                 change = d.Change.ToString().ToLowerInvariant(),
                 lineChanges = d.LineChanges.Count > 0
-                    ? d.LineChanges.Select(c => new
-                    {
-                        line = c.Line,
-                        beforeHits = c.BeforeHits,
-                        afterHits = c.AfterHits,
-                        change = c.Change.ToString().ToLowerInvariant()
-                    })
+                    ? d.LineChanges.Select(FormatLineDelta)
                     : null
             })
         }, Options);
@@ -97,6 +91,27 @@ public static class JsonFormatter
             ? f.PartialBranches.Select(b => new { line = b.Line, covered = b.Covered, total = b.Total })
             : null
     };
+
+    // Discriminates the closed LineDelta hierarchy via type-pattern chain. Wire format
+    // pins all-lowercase `change` strings (`added`, `removed`, `newlyhit`, `newlymissed`)
+    // — same shape downstream consumers parsed before the sealed-hierarchy refactor.
+    //
+    // `is`-chain instead of a `switch` expression: LineDelta's constructor is private so
+    // the four nested sealed records are the only possible runtime types, but Roslyn
+    // can't prove that on `abstract record` + private-ctor, so a `switch` would force an
+    // unreachable `_ => throw` arm that we can't cover. The final cast in this chain is
+    // total by construction.
+    private static object FormatLineDelta(LineDelta c)
+    {
+        if (c is LineDelta.Added a)
+            return new { line = a.Line, beforeHits = (int?)null, afterHits = (int?)a.AfterHits, change = "added" };
+        if (c is LineDelta.Removed r)
+            return new { line = r.Line, beforeHits = (int?)r.BeforeHits, afterHits = (int?)null, change = "removed" };
+        if (c is LineDelta.NewlyHit h)
+            return new { line = h.Line, beforeHits = (int?)h.BeforeHits, afterHits = (int?)h.AfterHits, change = "newlyhit" };
+        var m = (LineDelta.NewlyMissed)c;
+        return new { line = m.Line, beforeHits = (int?)m.BeforeHits, afterHits = (int?)m.AfterHits, change = "newlymissed" };
+    }
 
     private static double Pct(double rate) => Math.Round(rate * 100, 2);
 }

@@ -211,8 +211,18 @@ public readonly record struct FileDelta(
 }
 
 public enum FileChangeKind { Unchanged, Added, Removed, Modified }
-public readonly record struct LineDelta(int Line, int? BeforeHits, int? AfterHits, LineChangeKind Change);
-public enum LineChangeKind { Added, Removed, NewlyHit, NewlyMissed }
+
+// Closed sealed-hierarchy: every variant carries exactly the data the diff actually has,
+// so illegal combinations (Added with BeforeHits, Removed with AfterHits…) are
+// compile-time-unrepresentable. The base constructor is private — only the four nested
+// sealed records can derive.
+public abstract record LineDelta(int Line)
+{
+    public sealed record Added(int Line, int AfterHits) : LineDelta(Line);
+    public sealed record Removed(int Line, int BeforeHits) : LineDelta(Line);
+    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+}
 
 public sealed record CoverageSnapshot(
     string CommitSha, string Branch, string Project,
