@@ -24,4 +24,36 @@ public static class Reports
 
     public static CoverageReport Single(string path, int hit, int total, int bHit = 0, int bTotal = 0) =>
         new([new FileCoverage(path, hit, total, bHit, bTotal)]);
+
+    /// <summary>
+    /// Build a <see cref="FileCoverage"/> from raw line / branch dicts with the strict
+    /// classification counts filled in via <see cref="FileCoverage.ClassifyLines"/>. The
+    /// library's public surface intentionally exposes no factory — external callers do
+    /// the same two-step dance — so this helper lives in test infrastructure to keep the
+    /// fixtures readable without re-introducing the convenience method on the library.
+    /// </summary>
+    public static FileCoverage ClassifiedFile(
+        string path,
+        int linesHit,
+        int linesTotal,
+        int branchesHit,
+        int branchesTotal,
+        IReadOnlyDictionary<int, int>? lineHits = null,
+        IReadOnlyDictionary<int, (int Covered, int Total)>? branchesByLine = null,
+        IReadOnlyList<int>? uncoveredLines = null,
+        IReadOnlyList<BranchDetail>? partialBranches = null)
+    {
+        var hits = lineHits ?? new Dictionary<int, int>();
+        var branches = branchesByLine ?? new Dictionary<int, (int Covered, int Total)>();
+        var (strict, partial) = FileCoverage.ClassifyLines(hits, branches);
+        return new FileCoverage(path, linesHit, linesTotal, branchesHit, branchesTotal)
+        {
+            LineHits = hits,
+            BranchesByLine = branches,
+            UncoveredLines = uncoveredLines ?? [],
+            PartialBranches = partialBranches ?? [],
+            StrictlyHitLines = strict,
+            PartiallyHitLines = partial
+        };
+    }
 }

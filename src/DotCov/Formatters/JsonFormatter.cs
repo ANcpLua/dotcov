@@ -92,26 +92,16 @@ public static class JsonFormatter
             : null
     };
 
-    // Discriminates the closed LineDelta hierarchy via type-pattern chain. Wire format
-    // pins all-lowercase `change` strings (`added`, `removed`, `newlyhit`, `newlymissed`)
-    // — same shape downstream consumers parsed before the sealed-hierarchy refactor.
-    //
-    // `is`-chain instead of a `switch` expression: LineDelta's constructor is private so
-    // the four nested sealed records are the only possible runtime types, but Roslyn
-    // can't prove that on `abstract record` + private-ctor, so a `switch` would force an
-    // unreachable `_ => throw` arm that we can't cover. The final cast in this chain is
-    // total by construction.
-    private static object FormatLineDelta(LineDelta c)
-    {
-        if (c is LineDelta.Added a)
-            return new { line = a.Line, beforeHits = (int?)null, afterHits = (int?)a.AfterHits, change = "added" };
-        if (c is LineDelta.Removed r)
-            return new { line = r.Line, beforeHits = (int?)r.BeforeHits, afterHits = (int?)null, change = "removed" };
-        if (c is LineDelta.NewlyHit h)
-            return new { line = h.Line, beforeHits = (int?)h.BeforeHits, afterHits = (int?)h.AfterHits, change = "newlyhit" };
-        var m = (LineDelta.NewlyMissed)c;
-        return new { line = m.Line, beforeHits = (int?)m.BeforeHits, afterHits = (int?)m.AfterHits, change = "newlymissed" };
-    }
+    // Visitor dispatch over the closed LineDelta hierarchy. Wire format pins all-lowercase
+    // `change` strings (`added`, `removed`, `newlyhit`, `newlymissed`) — same shape
+    // downstream consumers parsed before the sealed-hierarchy refactor. Match<T> is the
+    // compile-time-exhaustive entry point: a fifth variant would break this signature, so
+    // no fallback arm is needed.
+    private static object FormatLineDelta(LineDelta c) => c.Match<object>(
+        added:       a => new { line = a.Line, beforeHits = (int?)null,         afterHits = (int?)a.AfterHits, change = "added" },
+        removed:     r => new { line = r.Line, beforeHits = (int?)r.BeforeHits, afterHits = (int?)null,        change = "removed" },
+        newlyHit:    h => new { line = h.Line, beforeHits = (int?)h.BeforeHits, afterHits = (int?)h.AfterHits, change = "newlyhit" },
+        newlyMissed: m => new { line = m.Line, beforeHits = (int?)m.BeforeHits, afterHits = (int?)m.AfterHits, change = "newlymissed" });
 
     private static double Pct(double rate) => Math.Round(rate * 100, 2);
 }

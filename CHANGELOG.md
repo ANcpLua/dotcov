@@ -361,3 +361,74 @@ Verified:
 Notes:
 - README's "Public API surface" block updated: `StrictlyHitLines`/`PartiallyHitLines` are
   flagged init-only and the `WithComputedClassification` factory signature is added.
+
+## Task 8 — 2026-05-16 — Eliminate three deferred trade-offs from Tasks 4–7
+
+The four parallel-agent merges (Tasks 4-7) closed the original review punch-list but each
+left one documented compromise (`[Δ]` markers in the integration write-up). User authorised
+breaking changes, so this task removes all three. Result: smaller and stricter public
+surface, all invariants compile-time-enforced.
+
+Changed:
+
+- **Δ#1 — `LineDelta` exhaustiveness becomes compile-time.** Added two abstract visitor
+  methods on the closed hierarchy: `T Match<T>(Func<Added,T>, Func<Removed,T>,
+  Func<NewlyHit,T>, Func<NewlyMissed,T>)` for value-returning dispatch and
+  `void Switch(Action<Added>, Action<Removed>, Action<NewlyHit>, Action<NewlyMissed>)` for
+  side-effecting consumers. Each variant overrides both. A fifth variant requires
+  extending both signatures, which breaks every callsite — the actual sum-type
+  guarantee. Replaced the `is`-pattern chains in `JsonFormatter.FormatLineDelta` (now
+  `c.Match<object>(…)`) and `MarkdownFormatter.AppendIndirectChanges` (now
+  `c.Switch(…)`); the former unguarded `(LineDelta.NewlyMissed)c` cast and the
+  `is`-chain rationale comments are gone.
+- **Δ#2 — `MergeWithWarnings` renamed to `MergeWith`, lossy overload deleted.** The
+  tuple-returning `(FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings)`
+  signature is now the only `MergeWith` on `FileCoverage`. Callers who don't care about
+  warnings discard with `var (merged, _) = a.MergeWith(b)`; the divergence-is-observable
+  contract can no longer be silently bypassed by picking the wrong overload.
+  `CoverageReport.Merge` updated to call the renamed method.
+- **Δ#3 — `WithComputedClassification` factory deleted from public API.**
+  `FileCoverage.ClassifyLines(...)` is now `public` (was `internal`) so external
+  hand-builders compute the strict / partial counts inline:
+  `var (s,p) = FileCoverage.ClassifyLines(hits, branches); new FileCoverage(...) { …,
+  StrictlyHitLines = s, PartiallyHitLines = p }`. Test fixtures get a private
+  `Reports.ClassifiedFile(...)` helper in `tests/DotCov.Tests/Infrastructure/` that
+  encodes the same two-step dance — kept the tests readable without re-introducing the
+  factory on the library.
+
+Tests:
+- Two regression tests deleted as redundant: `WithComputedClassification_OmitsOptional
+  Lists_DefaultsToEmpty` (factory is gone — would now test `Reports.ClassifiedFile`,
+  which is test infrastructure) and `MergeWith_LegacyConvenience_DropsWarningsBut
+  PreservesMergedCounts` (parity check between two methods that are now the same one).
+- All `MergeWith(b)` callsites that previously assigned to a `FileCoverage` updated to
+  `var (merged, _) = a.MergeWith(b)` deconstruction. All `MergeWithWarnings_…` test
+  method names renamed to `MergeWith_…`.
+- All `FileCoverage.WithComputedClassification(...)` callsites in the test project
+  switched to `Reports.ClassifiedFile(...)`. `Reports.ClassifiedFile` accepts
+  `IReadOnlyDictionary<…>` (not just `Dictionary<…>`) so callers can pass the dicts
+  out of an existing `FileCoverage` directly without re-materialising.
+
+Verified:
+- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` —
+  **232/232 passing** (test count dropped by 2 from Task 7 because the two redundant
+  tests above were deleted, no functionality was lost).
+- `dotcov report tests/DotCov.Tests/TestResults --exclude-generated` reports
+  **Lines 645/645 (100%)** / **Branches 306/306 (100%)** — `CoverageReport.cs` at
+  142/142 lines + 56/56 branches (lost ~25 lines from the deleted factory and lossy
+  overload), `CoverageDiff.cs` at 68/68 lines + 10/10 branches (gained 8 lines from
+  the abstract Match/Switch + four overrides each), the three `Format*.cs` files all
+  100%/100%.
+
+Notes:
+- `Match<T>` for value-returning dispatch + `Switch` for fold-style side effects is
+  intentional duplication: `Match<T>` can't return `void`, and JSON consumers want a
+  return value while Markdown consumers want a counter increment. Both abstract methods
+  pull weight in formatter code, both are 100%-covered by the existing diff tests.
+- `ClassifyLines` is now `public` rather than wrapped behind a factory because the
+  factory was strictly less expressive: it forced a fixed parameter order, hid the
+  manual init-block from external readers, and added one more name to the public
+  surface to maintain. The two-line idiom (call ClassifyLines, init the struct) reads
+  the same in both library and consumer code.
+- The previous `[Δ]` markers from the Task 4/5/7 integration report are now resolved
+  in code rather than documented as known limitations.

@@ -27,35 +27,77 @@ public enum FileChangeKind { Unchanged, Added, Removed, Modified }
 /// Closed sealed-hierarchy: every variant carries exactly the data the diff actually has,
 /// so illegal combinations (Added with BeforeHits, Removed with AfterHits, NewlyHit with a
 /// missing AfterHits…) are unrepresentable rather than enforced by convention. The base
-/// constructor is private — derivation is restricted to the four nested sealed records,
-/// so consumers can pattern-match against the variants exhaustively. (Roslyn doesn't yet
-/// prove this for switch-expressions; consumers use <c>is</c>-pattern chains with a final
-/// unguarded cast to keep the code reachable while preserving the closed-set guarantee.)
+/// constructor is <c>private</c> — derivation is restricted to the four nested sealed
+/// records below.
+/// </para>
+/// <para>
+/// Consumers dispatch via the abstract <see cref="Match{T}"/> (returns a value) or
+/// <see cref="Switch"/> (side-effecting) visitor methods. Adding a fifth variant requires
+/// extending both signatures, which breaks every callsite at compile time — the actual
+/// guarantee a closed sum type is supposed to give. No <c>_ => throw</c> fallback or
+/// <c>is</c>-pattern chain is reachable on this surface.
 /// </para>
 /// </summary>
 public abstract record LineDelta
 {
     // Private constructor closes the hierarchy: derivation is restricted to the four
     // nested sealed records below. External types literally cannot inherit, so consumers
-    // can rely on exhaustive pattern matches without a fallback arm.
+    // can rely on exhaustive Match/Switch dispatch with no fallback arm.
     private LineDelta(int line) => Line = line;
 
     public int Line { get; }
 
+    /// <summary>
+    /// Visitor dispatch over the closed variant set. Returns a value computed by the
+    /// matching delegate. Adding a fifth variant breaks compile at every callsite — the
+    /// desired property of a true sum type.
+    /// </summary>
+    public abstract T Match<T>(
+        Func<Added, T> added,
+        Func<Removed, T> removed,
+        Func<NewlyHit, T> newlyHit,
+        Func<NewlyMissed, T> newlyMissed);
+
+    /// <summary>
+    /// Side-effecting variant of <see cref="Match{T}"/>. Same compile-time exhaustiveness
+    /// guarantee, useful for accumulators and fold-style counters.
+    /// </summary>
+    public abstract void Switch(
+        Action<Added> added,
+        Action<Removed> removed,
+        Action<NewlyHit> newlyHit,
+        Action<NewlyMissed> newlyMissed);
+
     /// <summary>Line existed in After but not in Before (new code).</summary>
-    public sealed record Added(int Line, int AfterHits) : LineDelta(Line);
+    public sealed record Added(int Line, int AfterHits) : LineDelta(Line)
+    {
+        public override T Match<T>(Func<Added, T> added, Func<Removed, T> removed, Func<NewlyHit, T> newlyHit, Func<NewlyMissed, T> newlyMissed) => added(this);
+        public override void Switch(Action<Added> added, Action<Removed> removed, Action<NewlyHit> newlyHit, Action<NewlyMissed> newlyMissed) => added(this);
+    }
 
     /// <summary>Line existed in Before but not in After (deleted code).</summary>
-    public sealed record Removed(int Line, int BeforeHits) : LineDelta(Line);
+    public sealed record Removed(int Line, int BeforeHits) : LineDelta(Line)
+    {
+        public override T Match<T>(Func<Added, T> added, Func<Removed, T> removed, Func<NewlyHit, T> newlyHit, Func<NewlyMissed, T> newlyMissed) => removed(this);
+        public override void Switch(Action<Added> added, Action<Removed> removed, Action<NewlyHit> newlyHit, Action<NewlyMissed> newlyMissed) => removed(this);
+    }
 
     /// <summary>Same line in both reports; missed before, hit now (test added).</summary>
-    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta(Line)
+    {
+        public override T Match<T>(Func<Added, T> added, Func<Removed, T> removed, Func<NewlyHit, T> newlyHit, Func<NewlyMissed, T> newlyMissed) => newlyHit(this);
+        public override void Switch(Action<Added> added, Action<Removed> removed, Action<NewlyHit> newlyHit, Action<NewlyMissed> newlyMissed) => newlyHit(this);
+    }
 
     /// <summary>
     /// Same line in both reports; hit before, missed now (test removed or an upstream
     /// change stopped exercising it — the canonical Codecov "indirect change").
     /// </summary>
-    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta(Line)
+    {
+        public override T Match<T>(Func<Added, T> added, Func<Removed, T> removed, Func<NewlyHit, T> newlyHit, Func<NewlyMissed, T> newlyMissed) => newlyMissed(this);
+        public override void Switch(Action<Added> added, Action<Removed> removed, Action<NewlyHit> newlyHit, Action<NewlyMissed> newlyMissed) => newlyMissed(this);
+    }
 }
 
 /// <summary>

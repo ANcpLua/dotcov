@@ -161,26 +161,20 @@ public readonly record struct FileCoverage(
 {
     double LineRate, BranchRate, StrictLineRate;
     bool HasBranchData;
-    int StrictlyHitLines { get; init; }     // init-only — set by parser / MergeWith / factory
-    int PartiallyHitLines { get; init; }    // init-only — set by parser / MergeWith / factory
+    int StrictlyHitLines { get; init; }     // init-only — fill via ClassifyLines
+    int PartiallyHitLines { get; init; }    // init-only — fill via ClassifyLines
     IReadOnlyList<int> UncoveredLines { get; init; }
     IReadOnlyList<BranchDetail> PartialBranches { get; init; }
     IReadOnlyDictionary<int, int> LineHits { get; init; }
     IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; }
     LineStatus GetLineStatus(int line);   // Hit / Partial / Miss
     bool TryGetLineStatus(int line, out LineStatus status);   // false = not tracked
-    FileCoverage MergeWith(FileCoverage other);
-    (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWithWarnings(FileCoverage other);
+    (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWith(FileCoverage other);
 
-    // Hand-build a FileCoverage with strict/partial counts computed in one pass.
-    // Use this instead of the direct constructor when you supply LineHits + BranchesByLine —
-    // the direct constructor leaves StrictlyHitLines/PartiallyHitLines at 0.
-    static FileCoverage WithComputedClassification(
-        string path, int linesHit, int linesTotal, int branchesHit, int branchesTotal,
+    // Single-pass classifier — fill StrictlyHitLines / PartiallyHitLines when hand-building.
+    static (int Strict, int Partial) ClassifyLines(
         IReadOnlyDictionary<int, int> lineHits,
-        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine,
-        IReadOnlyList<int>? uncoveredLines = null,
-        IReadOnlyList<BranchDetail>? partialBranches = null);
+        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine);
 }
 
 public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state
@@ -214,14 +208,21 @@ public enum FileChangeKind { Unchanged, Added, Removed, Modified }
 
 // Closed sealed-hierarchy: every variant carries exactly the data the diff actually has,
 // so illegal combinations (Added with BeforeHits, Removed with AfterHits…) are
-// compile-time-unrepresentable. The base constructor is private — only the four nested
-// sealed records can derive.
-public abstract record LineDelta(int Line)
+// compile-time-unrepresentable. Base constructor is private — only the four nested sealed
+// records can derive. Match<T> / Switch are abstract: adding a fifth variant breaks every
+// callsite at compile time.
+public abstract record LineDelta
 {
-    public sealed record Added(int Line, int AfterHits) : LineDelta(Line);
-    public sealed record Removed(int Line, int BeforeHits) : LineDelta(Line);
-    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
-    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta(Line);
+    int Line { get; }
+    abstract T Match<T>(Func<Added, T> added, Func<Removed, T> removed,
+                        Func<NewlyHit, T> newlyHit, Func<NewlyMissed, T> newlyMissed);
+    abstract void Switch(Action<Added> added, Action<Removed> removed,
+                         Action<NewlyHit> newlyHit, Action<NewlyMissed> newlyMissed);
+
+    public sealed record Added(int Line, int AfterHits) : LineDelta;
+    public sealed record Removed(int Line, int BeforeHits) : LineDelta;
+    public sealed record NewlyHit(int Line, int BeforeHits, int AfterHits) : LineDelta;
+    public sealed record NewlyMissed(int Line, int BeforeHits, int AfterHits) : LineDelta;
 }
 
 public sealed record CoverageSnapshot(

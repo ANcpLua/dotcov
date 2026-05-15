@@ -21,7 +21,7 @@ public enum CoverageWarningKind
 {
     /// <summary>
     /// Two reports disagreed on the branch <c>Total</c> for the same source line (e.g.
-    /// one CI job built Release, the other Debug). <see cref="FileCoverage.MergeWithWarnings"/>
+    /// one CI job built Release, the other Debug). <see cref="FileCoverage.MergeWith"/>
     /// keeps the larger total via <c>Math.Max</c>; this warning records the divergence.
     /// </summary>
     BranchTotalMismatch,
@@ -96,7 +96,9 @@ public readonly record struct FileCoverage(
     /// Merge semantics: <see cref="MergeWith"/> reconciles entries with <c>Math.Max</c> per
     /// component. A mismatched <c>Total</c> for the same line across reports usually means
     /// the reports came from different compile targets (e.g. one CI job built Release, another
-    /// Debug) — the merge keeps the larger total without flagging the divergence.
+    /// Debug) — the merge keeps the larger total and emits a
+    /// <see cref="CoverageWarningKind.BranchTotalMismatch"/> warning so the divergence is
+    /// observable rather than silent.
     /// </para>
     /// </summary>
     public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; } =
@@ -137,18 +139,17 @@ public readonly record struct FileCoverage(
     /// <summary>
     /// Lines that were executed AND had all their branches exercised. Init-only; the parser's
     /// <c>Materialize</c> step and <see cref="MergeWith"/> compute it via the single-pass
-    /// <see cref="ClassifyLines"/> helper. Hand-built records must set this explicitly or use
-    /// <see cref="WithComputedClassification"/> — a default of <c>0</c> will silently disagree
-    /// with the keyspace of <see cref="LineHits"/>.
+    /// <see cref="ClassifyLines"/> helper. Hand-built records that supply
+    /// <see cref="LineHits"/> + <see cref="BranchesByLine"/> must call <see cref="ClassifyLines"/>
+    /// and set both this property and <see cref="PartiallyHitLines"/> at construction —
+    /// a default of <c>0</c> will silently disagree with the keyspace of <see cref="LineHits"/>.
     /// </summary>
     public int StrictlyHitLines { get; init; }
 
     /// <summary>
-    /// Lines that were executed but had at least one unexercised branch. Init-only; the parser's
-    /// <c>Materialize</c> step and <see cref="MergeWith"/> compute it via the single-pass
-    /// <see cref="ClassifyLines"/> helper. Hand-built records must set this explicitly or use
-    /// <see cref="WithComputedClassification"/> — a default of <c>0</c> will silently disagree
-    /// with the keyspace of <see cref="LineHits"/>.
+    /// Lines that were executed but had at least one unexercised branch. Init-only; same
+    /// construction contract as <see cref="StrictlyHitLines"/> — produced together by
+    /// <see cref="ClassifyLines"/>.
     /// </summary>
     public int PartiallyHitLines { get; init; }
 
@@ -158,8 +159,21 @@ public readonly record struct FileCoverage(
     /// dict (one per call to <c>StrictlyHitLines</c>, <c>PartiallyHitLines</c>, and
     /// <c>CoverageReport.StrictLineRate</c>) with one — the difference is observable on
     /// 50 MB+ reports where every walk costs millions of <see cref="LineStatus"/> lookups.
+    /// <para>
+    /// Public so external callers hand-building a <see cref="FileCoverage"/> from raw
+    /// dicts can fill <see cref="StrictlyHitLines"/> + <see cref="PartiallyHitLines"/>
+    /// consistently in one call:
+    /// <code>
+    /// var (strict, partial) = FileCoverage.ClassifyLines(myHits, myBranches);
+    /// var f = new FileCoverage("a.cs", linesHit, linesTotal, branchesHit, branchesTotal)
+    /// {
+    ///     LineHits = myHits, BranchesByLine = myBranches,
+    ///     StrictlyHitLines = strict, PartiallyHitLines = partial
+    /// };
+    /// </code>
+    /// </para>
     /// </summary>
-    internal static (int strict, int partial) ClassifyLines(
+    public static (int Strict, int Partial) ClassifyLines(
         IReadOnlyDictionary<int, int> lineHits,
         IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine)
     {
@@ -177,38 +191,6 @@ public readonly record struct FileCoverage(
     }
 
     /// <summary>
-    /// Builds a <see cref="FileCoverage"/> with <see cref="StrictlyHitLines"/> /
-    /// <see cref="PartiallyHitLines"/> computed in a single pass over <paramref name="lineHits"/>
-    /// and <paramref name="branchesByLine"/>. Use this whenever you hand-build a
-    /// <see cref="FileCoverage"/> from raw line/branch dicts — the direct constructor leaves the
-    /// strict counts at <c>0</c>, which silently disagrees with the keyspace of
-    /// <see cref="LineHits"/>. The parser's <c>Materialize</c> and <see cref="MergeWith"/> both
-    /// go through this helper.
-    /// </summary>
-    public static FileCoverage WithComputedClassification(
-        string path,
-        int linesHit,
-        int linesTotal,
-        int branchesHit,
-        int branchesTotal,
-        IReadOnlyDictionary<int, int> lineHits,
-        IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine,
-        IReadOnlyList<int>? uncoveredLines = null,
-        IReadOnlyList<BranchDetail>? partialBranches = null)
-    {
-        var (strict, partial) = ClassifyLines(lineHits, branchesByLine);
-        return new FileCoverage(path, linesHit, linesTotal, branchesHit, branchesTotal)
-        {
-            LineHits = lineHits,
-            BranchesByLine = branchesByLine,
-            UncoveredLines = uncoveredLines ?? [],
-            PartialBranches = partialBranches ?? [],
-            StrictlyHitLines = strict,
-            PartiallyHitLines = partial
-        };
-    }
-
-    /// <summary>
     /// Codecov-style strict line rate: <see cref="StrictlyHitLines"/> divided by
     /// <see cref="LinesTotal"/>. Stricter than <see cref="LineRate"/> — a line with
     /// <c>if (x &amp;&amp; y)</c> that only saw <c>x=true, y=true</c> is reported as
@@ -222,18 +204,21 @@ public readonly record struct FileCoverage(
     /// </summary>
     public double StrictLineRate => LinesTotal is 0 ? 1.0 : (double)StrictlyHitLines / LinesTotal;
 
-    public FileCoverage MergeWith(FileCoverage other) => MergeWithWarnings(other).Merged;
-
     /// <summary>
-    /// Merge semantics identical to <see cref="MergeWith"/>, plus a structured warnings
-    /// list for anomalies the silent <c>Math.Max</c> reconciliation would otherwise hide.
-    /// Currently emits one <see cref="CoverageWarningKind.BranchTotalMismatch"/> per line
-    /// whose <c>Total</c> disagrees between the two sides — usually a sign that the
-    /// reports came from different compile targets (e.g. Release vs. Debug builds in
-    /// different CI jobs). Use this overload when you want the divergence observable;
-    /// <see cref="MergeWith"/> stays as the lossy convenience for callers that don't care.
+    /// Reconcile two reports of the same file into one. Returns the merged
+    /// <see cref="FileCoverage"/> alongside a structured warnings list for anomalies the
+    /// silent <c>Math.Max</c> reconciliation would otherwise hide — currently one
+    /// <see cref="CoverageWarningKind.BranchTotalMismatch"/> per line whose <c>Total</c>
+    /// disagrees between the two sides (usually a sign that the reports came from
+    /// different compile targets, e.g. Release vs. Debug builds in different CI jobs).
+    /// <para>
+    /// Tuple return is the only signature: callers who don't care about warnings
+    /// discard with <c>var (merged, _) = a.MergeWith(b)</c>. The convenience overload
+    /// returning just <c>FileCoverage</c> was removed to keep the divergence-is-observable
+    /// contract from being silently bypassed.
+    /// </para>
     /// </summary>
-    public (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWithWarnings(FileCoverage other)
+    public (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWith(FileCoverage other)
     {
         var mergedHits = new Dictionary<int, int>(LineHits);
         foreach (var (line, hits) in other.LineHits)
@@ -383,7 +368,7 @@ public sealed class CoverageReport
         {
             if (merged.TryGetValue(file.Path, out var existing))
             {
-                var (mergedFile, mergeWarnings) = existing.MergeWithWarnings(file);
+                var (mergedFile, mergeWarnings) = existing.MergeWith(file);
                 merged[file.Path] = mergedFile;
                 warnings.AddRange(mergeWarnings);
             }
