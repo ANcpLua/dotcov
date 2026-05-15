@@ -188,11 +188,11 @@ public sealed class MarkdownFormatterTests
     }
 
     [Fact]
-    public void FormatDiff_AllLineChangeKinds_RenderEachFragment()
+    public void FormatDiff_AllLineDeltaVariants_RenderEachFragment()
     {
         // Exercises every fragment-add arm in AppendIndirectChanges: newlyMissed, newlyHit,
         // added, removed. The four-line file flips line 10 (hit→miss), line 20 (miss→hit),
-        // drops line 30, and adds line 40 — one occurrence of each LineChangeKind.
+        // drops line 30, and adds line 40 — one occurrence of each LineDelta variant.
         var before = new CoverageReport([new FileCoverage("a.cs", 2, 3, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 5, [20] = 0, [30] = 1 }

@@ -78,16 +78,25 @@ public static class MarkdownFormatter
 
         foreach (var d in affected)
         {
-            var newlyHit = d.LineChanges.Count(c => c.Change is LineChangeKind.NewlyHit);
-            var newlyMissed = d.LineChanges.Count(c => c.Change is LineChangeKind.NewlyMissed);
-            var added = d.LineChanges.Count(c => c.Change is LineChangeKind.Added);
-            var removed = d.LineChanges.Count(c => c.Change is LineChangeKind.Removed);
+            // Type-pattern chain over the closed LineDelta hierarchy. LineDelta's ctor is
+            // private so the four nested sealed records are the only possible runtime
+            // types; the final unguarded cast surfaces a new variant as an
+            // InvalidCastException instead of silently miscounting. Order matches the
+            // rendered output: newly missed → newly hit → added → removed.
+            var counts = (newlyMissed: 0, newlyHit: 0, added: 0, removed: 0);
+            foreach (var c in d.LineChanges)
+            {
+                if (c is LineDelta.NewlyMissed) counts.newlyMissed++;
+                else if (c is LineDelta.NewlyHit) counts.newlyHit++;
+                else if (c is LineDelta.Added) counts.added++;
+                else { _ = (LineDelta.Removed)c; counts.removed++; }
+            }
 
             var fragments = new List<string>(4);
-            if (newlyMissed > 0) fragments.Add($"{newlyMissed} newly missed");
-            if (newlyHit > 0) fragments.Add($"{newlyHit} newly hit");
-            if (added > 0) fragments.Add($"{added} added");
-            if (removed > 0) fragments.Add($"{removed} removed");
+            if (counts.newlyMissed > 0) fragments.Add($"{counts.newlyMissed} newly missed");
+            if (counts.newlyHit    > 0) fragments.Add($"{counts.newlyHit} newly hit");
+            if (counts.added       > 0) fragments.Add($"{counts.added} added");
+            if (counts.removed     > 0) fragments.Add($"{counts.removed} removed");
 
             sb.AppendLine($"- `{d.Path}`: {string.Join(", ", fragments)}");
         }

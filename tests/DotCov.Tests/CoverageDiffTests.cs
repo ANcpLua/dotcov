@@ -130,10 +130,10 @@ public sealed class CoverageDiffTests
         var fileDelta = Assert.Single(result.Files);
         var lineDelta = Assert.Single(fileDelta.LineChanges);
 
-        Assert.Equal(10, lineDelta.Line);
-        Assert.Equal(LineChangeKind.NewlyMissed, lineDelta.Change);
-        Assert.Equal(3, lineDelta.BeforeHits);
-        Assert.Equal(0, lineDelta.AfterHits);
+        var newlyMissed = Assert.IsType<LineDelta.NewlyMissed>(lineDelta);
+        Assert.Equal(10, newlyMissed.Line);
+        Assert.Equal(3, newlyMissed.BeforeHits);
+        Assert.Equal(0, newlyMissed.AfterHits);
     }
 
     [Fact]
@@ -151,11 +151,11 @@ public sealed class CoverageDiffTests
         var result = CoverageDiff.Compare(before, after);
         var lineDelta = Assert.Single(result.Files[0].LineChanges);
 
-        Assert.Equal(LineChangeKind.NewlyHit, lineDelta.Change);
-        // Pin the LineDelta payload, not just the kind — guards against parameter-order
+        // Pin the LineDelta payload, not just the variant — guards against parameter-order
         // regressions in ComputeLineChanges where Before/After hit counts could swap.
-        Assert.Equal(0, lineDelta.BeforeHits);
-        Assert.Equal(5, lineDelta.AfterHits);
+        var newlyHit = Assert.IsType<LineDelta.NewlyHit>(lineDelta);
+        Assert.Equal(0, newlyHit.BeforeHits);
+        Assert.Equal(5, newlyHit.AfterHits);
     }
 
     [Fact]
@@ -175,16 +175,13 @@ public sealed class CoverageDiffTests
 
         Assert.Equal(2, changes.Count);
 
-        // Removed: BeforeHits carries the dropped hit count, AfterHits is null.
-        var removed = changes.Single(c => c.Line == 20);
-        Assert.Equal(LineChangeKind.Removed, removed.Change);
+        // Removed: variant carries the dropped hit count; no AfterHits field exists on the
+        // type at all — that's the compile-time invariant the sealed-hierarchy enforces.
+        var removed = Assert.IsType<LineDelta.Removed>(changes.Single(c => c.Line == 20));
         Assert.Equal(4, removed.BeforeHits);
-        Assert.Null(removed.AfterHits);
 
-        // Added: AfterHits carries the new hit count, BeforeHits is null.
-        var added = changes.Single(c => c.Line == 30);
-        Assert.Equal(LineChangeKind.Added, added.Change);
-        Assert.Null(added.BeforeHits);
+        // Added: variant carries the new hit count; no BeforeHits field on the type.
+        var added = Assert.IsType<LineDelta.Added>(changes.Single(c => c.Line == 30));
         Assert.Equal(7, added.AfterHits);
     }
 
