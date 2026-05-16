@@ -451,3 +451,22 @@ Notes:
 - Addresses the review finding that the old implementation sorted the full before/after
   line-number union before discarding unchanged lines; large mostly-stable reports now avoid
   that per-file O(n log n) sort and only pay sorting cost for emitted changes.
+
+## Task 10 — 2026-05-16 — GitHub Actions SDK resolution from `global.json`
+
+Changed:
+- Updated the CI build and test jobs to install .NET from `global.json` via
+  `actions/setup-dotnet@v5`'s `global-json-file` input instead of floating on
+  `dotnet-version: 10.0.x` plus `dotnet-quality: preview`.
+
+Verified:
+- `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/nuget-publish.yml")'` —
+  workflow YAML parses.
+- `dotnet test DotCov.slnx` — 233 passed under SDK 10.0.300.
+
+Notes:
+- Root cause was Windows CI resolving `10.0.100-rc.2...` from the floating preview channel
+  while the repository now requires SDK `10.0.300`; `dotnet test` then failed before
+  running tests.
+- Trusted publishing itself already uses the required OIDC pieces: `id-token: write`,
+  `environment: nuget`, `NuGet/login@v1`, and `dotnet nuget push` with the short-lived key.
