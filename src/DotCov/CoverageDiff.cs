@@ -166,7 +166,7 @@ public static class CoverageDiff
         return new CoverageDiffResult(deltas, before.LineRate, after.LineRate);
     }
 
-    private static IReadOnlyList<LineDelta> ComputeLineChanges(FileCoverage before, FileCoverage after)
+    private static List<LineDelta> ComputeLineChanges(FileCoverage before, FileCoverage after)
     {
         // Probe the two hit dictionaries directly and only sort the emitted deltas. Large
         // reports usually have many stable lines and only a few real hit/miss flips, so

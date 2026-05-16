@@ -4,7 +4,7 @@
     <XunitVersion>2.9.3</XunitVersion>
     <XunitRunnerVersion>2.8.2</XunitRunnerVersion>
     <MicrosoftNetTestSdkVersion>18.4.0</MicrosoftNetTestSdkVersion>
-    <CoverletCollectorVersion>8.0.1</CoverletCollectorVersion>
+    <CoverletCollectorVersion>10.0.0</CoverletCollectorVersion>
     <NukeCommonVersion>10.1.0</NukeCommonVersion>
   </PropertyGroup>
 

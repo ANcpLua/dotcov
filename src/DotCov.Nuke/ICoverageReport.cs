@@ -1,7 +1,6 @@
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Components;
-using DotCov;
 using DotCov.Formatters;
 
 namespace DotCov.Nuke;

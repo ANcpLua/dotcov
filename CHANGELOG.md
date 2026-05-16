@@ -470,3 +470,25 @@ Notes:
   running tests.
 - Trusted publishing itself already uses the required OIDC pieces: `id-token: write`,
   `environment: nuget`, `NuGet/login@v1`, and `dotnet nuget push` with the short-lived key.
+
+## Task 11 — 2026-05-16 — Update Coverlet collector to 10.0.0
+
+Changed:
+- Bumped the central `coverlet.collector` package version from 8.0.1 to 10.0.0.
+- Applied CA1859 narrowly by changing the private `ComputeLineChanges` helper to return
+  `List<LineDelta>` while keeping the public `FileDelta.LineChanges` surface as
+  `IReadOnlyList<LineDelta>`.
+- Removed a stale unused `using DotCov;` from the Nuke component.
+
+Verified:
+- `dotnet test DotCov.slnx` — 233 passed.
+- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` —
+  233 passed and produced Cobertura output with Coverlet 10.
+- `dotnet run --project src/DotCov.Tool/DotCov.Tool.csproj -- report tests/DotCov.Tests/TestResults --exclude-generated`
+  — total coverage remained **669/669 lines (100%)** and **324/324 branches (100%)**.
+
+Notes:
+- This was not the root cause of the earlier GitHub Actions failure; CI failed because the
+  workflow installed a floating preview SDK while `global.json` required exact SDK 10.0.300.
+- The upgrade is still correct because Coverlet 10.0.0 targets .NET 8.0 and is compatible
+  with the repo's net10 test project.
