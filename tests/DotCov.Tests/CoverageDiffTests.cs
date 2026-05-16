@@ -186,6 +186,35 @@ public sealed class CoverageDiffTests
     }
 
     [Fact]
+    public void Compare_LineChanges_AreSortedAfterFilteringUnchangedLines()
+    {
+        var before = Make(new FileCoverage("a.cs", 2, 4, 0, 0)
+        {
+            LineHits = new Dictionary<int, int>
+            {
+                [1000] = 1,
+                [20] = 4,
+                [10] = 0,
+                [30] = 1
+            }
+        });
+        var after = Make(new FileCoverage("a.cs", 2, 4, 0, 0)
+        {
+            LineHits = new Dictionary<int, int>
+            {
+                [1000] = 1,
+                [30] = 0,
+                [40] = 7,
+                [10] = 5
+            }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Equal([10, 20, 30, 40], result.Files[0].LineChanges.Select(c => c.Line));
+    }
+
+    [Fact]
     public void Compare_UnchangedHitCount_ProducesNoLineChange()
     {
         var both = new FileCoverage("a.cs", 1, 1, 0, 0)

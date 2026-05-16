@@ -432,3 +432,22 @@ Notes:
   the same in both library and consumer code.
 - The previous `[Δ]` markers from the Task 4/5/7 integration report are now resolved
   in code rather than documented as known limitations.
+
+## Task 9 — 2026-05-16 — Line-diff filtering before stable ordering
+
+Changed:
+- Reworked `CoverageDiff.ComputeLineChanges` to scan `before.LineHits` and `after.LineHits`
+  directly, emit only real added/removed/hit-state-flip deltas, then sort the emitted
+  changes by line number for stable output.
+- Added a regression test that verifies mixed added, removed, newly-hit, and newly-missed
+  line changes still render in ascending line order after unchanged lines are filtered out.
+
+Verified:
+- `dotnet test tests/DotCov.Tests/DotCov.Tests.csproj --filter FullyQualifiedName~CoverageDiffTests`
+  — 17 passed.
+- `dotnet test DotCov.slnx` — 233 passed under SDK 10.0.300.
+
+Notes:
+- Addresses the review finding that the old implementation sorted the full before/after
+  line-number union before discarding unchanged lines; large mostly-stable reports now avoid
+  that per-file O(n log n) sort and only pay sorting cost for emitted changes.

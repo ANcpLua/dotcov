@@ -168,27 +168,14 @@ public static class CoverageDiff
 
     private static IReadOnlyList<LineDelta> ComputeLineChanges(FileCoverage before, FileCoverage after)
     {
-        // Walk the union of tracked line numbers; emit a LineDelta only when the
-        // hit/miss state genuinely changed. We don't surface "still hit but hit count
-        // dropped" — that's noisy and rarely actionable. Codecov's UI applies the same
-        // hit-vs-miss boolean when classifying indirect changes.
-        //
-        // Structured as early-return guards (Added → Removed → state-flip) for readability;
-        // the (false, false) combination is unreachable because allLines is the union.
-        var allLines = before.LineHits.Keys.Union(after.LineHits.Keys);
+        // Probe the two hit dictionaries directly and only sort the emitted deltas. Large
+        // reports usually have many stable lines and only a few real hit/miss flips, so
+        // sorting the full union would spend O(n log n) work on lines that get discarded.
         var changes = new List<LineDelta>();
 
-        foreach (var line in allLines.OrderBy(x => x))
+        foreach (var (line, beforeHits) in before.LineHits)
         {
-            var hadBefore = before.LineHits.TryGetValue(line, out var beforeHits);
-            var hadAfter = after.LineHits.TryGetValue(line, out var afterHits);
-
-            if (!hadBefore)
-            {
-                changes.Add(new LineDelta.Added(line, afterHits));
-                continue;
-            }
-            if (!hadAfter)
+            if (!after.LineHits.TryGetValue(line, out var afterHits))
             {
                 changes.Add(new LineDelta.Removed(line, beforeHits));
                 continue;
@@ -203,6 +190,14 @@ public static class CoverageDiff
                 : new LineDelta.NewlyHit(line, beforeHits, afterHits));
         }
 
+        foreach (var (line, afterHits) in after.LineHits)
+        {
+            if (before.LineHits.ContainsKey(line)) continue;
+
+            changes.Add(new LineDelta.Added(line, afterHits));
+        }
+
+        changes.Sort(static (left, right) => left.Line.CompareTo(right.Line));
         return changes;
     }
 }
