@@ -3,6 +3,7 @@
 [![NuGet — DotCov.Nuke](https://img.shields.io/nuget/v/DotCov.Nuke?label=DotCov.Nuke&color=0891B2)](https://www.nuget.org/packages/DotCov.Nuke/)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-7C3AED)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![CI](https://img.shields.io/github/actions/workflow/status/ANcpLua/dotcov/nuget-publish.yml?branch=main&label=CI)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/ANcpLua/dotcov?label=Coverage)](https://codecov.io/gh/ANcpLua/dotcov)
 [![License](https://img.shields.io/github/license/ANcpLua/dotcov?label=License&color=white)](LICENSE)
 
 # DotCov

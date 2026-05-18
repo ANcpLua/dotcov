@@ -84,9 +84,16 @@ jobs:
         with:
           global-json-file: global.json
       - name: Test
-        run: dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
+        run: dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }} --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults
         env:
           CI: true
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: TestResults/**/coverage.cobertura.xml
+          flags: ${{ matrix.os }}
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   publish:
     needs: [version, build, test]

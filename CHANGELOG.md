@@ -492,3 +492,30 @@ Notes:
   workflow installed a floating preview SDK while `global.json` required exact SDK 10.0.300.
 - The upgrade is still correct because Coverlet 10.0.0 targets .NET 8.0 and is compatible
   with the repo's net10 test project.
+
+## Task 12 — 2026-05-18 — Codecov badge + coverage upload from CI
+
+Changed:
+- `nuget-publish.yml` test job now collects Cobertura via
+  `--collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults`,
+  so the existing `coverlet.runsettings` (previously unreferenced) is finally honored under
+  both ubuntu and windows matrix legs.
+- Added a `codecov/codecov-action@v5` step that uploads `TestResults/**/coverage.cobertura.xml`,
+  flagged by matrix OS so Codecov unions the two runs instead of double-counting.
+  `fail_ci_if_error: false` and `token: ${{ secrets.CODECOV_TOKEN }}` keep CI green if the
+  token is unset or Codecov is down.
+- README gains a Codecov badge between CI and License, matching the existing shields.io row.
+
+Verified:
+- Local `dotnet test DotCov.slnx -c Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults`
+  passes 233 tests and lands `TestResults/<guid>/coverage.cobertura.xml`, which the workflow's
+  glob matches.
+- `dotcov report TestResults --exclude-generated` self-reports **552/552 lines (100%)** /
+  **316/316 branches (100%)** on the tested library surface — the number the badge will display
+  after the first successful upload.
+- `python3 -c "import yaml; yaml.safe_load(...)"` accepts the modified workflow.
+
+Notes:
+- Requires a `CODECOV_TOKEN` repo secret. Until that secret is set on
+  `github.com/ANcpLua/dotcov`, uploads no-op and the badge stays at "unknown" while CI still
+  passes.
