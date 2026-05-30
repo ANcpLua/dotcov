@@ -35,8 +35,6 @@ public sealed class Cobertura
 
     public override string ToString() => Encoding.UTF8.GetString(ToBytes());
 
-    public Stream ToStream() => new MemoryStream(ToBytes());
-
     public byte[] ToBytes()
     {
         var doc = new XDocument(
@@ -57,16 +55,6 @@ public sealed class Cobertura
         doc.Save(ms);
         return ms.ToArray();
     }
-
-    public string WriteTo(string directory, string name = "coverage.cobertura.xml")
-    {
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, name);
-        File.WriteAllBytes(path, ToBytes());
-        return path;
-    }
-
-    public CoverageReport Parse() => CoberturaParser.Parse(ToStream());
 
     public sealed class ClassBuilder(XElement cls)
     {
@@ -100,14 +88,13 @@ public sealed class Cobertura
             return this;
         }
 
-        private XElement Lines()
+        private XElement Lines() => _lines ??= CreateLines();
+
+        private XElement CreateLines()
         {
-            if (_lines is null)
-            {
-                _lines = new XElement("lines");
-                cls.Add(_lines);
-            }
-            return _lines;
+            var lines = new XElement("lines");
+            cls.Add(lines);
+            return lines;
         }
     }
 }

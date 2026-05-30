@@ -30,7 +30,7 @@ public sealed class CoberturaParserAsyncTests
             .ToString();
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             async () => await CoberturaParser.ParseAsync(stream, ct: cts.Token));
