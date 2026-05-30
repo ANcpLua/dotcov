@@ -80,6 +80,7 @@ public static partial class CoberturaParser
     private sealed class LineAccumulator
     {
         public readonly Dictionary<int, int> LineHits = new();
+
         // Per-line branch dedup: Coverlet emits the same branched line under
         // <methods>/<method>/<lines> AND <class>/<lines>, and a single source line may be
         // re-emitted under separate <class> blocks (record + state machine + partials).
@@ -197,6 +198,7 @@ public static partial class CoberturaParser
                 if (hits > 0) linesHit++;
                 else uncovered.Add(line);
             }
+
             uncovered.Sort();
 
             var branchesHit = 0;
@@ -221,6 +223,7 @@ public static partial class CoberturaParser
                 PartiallyHitLines = partial
             });
         }
+
         return new CoverageReport(result) { Warnings = warnings };
     }
 
@@ -230,9 +233,8 @@ public static partial class CoberturaParser
         total = 0;
         var match = ConditionPattern().Match(cond);
         if (!match.Success) return false;
-        if (!int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out covered)) return false;
-        if (!int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total)) return false;
-        return true;
+        return int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out covered) &&
+               int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total);
     }
 
     [GeneratedRegex(@"\((\d+)/(\d+)\)")]

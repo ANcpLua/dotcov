@@ -11,7 +11,7 @@ namespace DotCov.Formatters;
 /// known CI systems → on (their log viewers render escape codes),
 /// otherwise → on iff stdout is a TTY.
 /// </summary>
-public static class Ansi
+public static partial class Ansi
 {
     public static bool IsSupported() => IsSupported(Console.IsOutputRedirected);
 
@@ -90,22 +90,22 @@ public static class Ansi
         SetConsoleMode(handle, mode | EnableVirtualTerminalProcessing);
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [SupportedOSPlatform("windows")]
     [ExcludeFromCodeCoverage]
-    private static extern IntPtr GetStdHandle(int nStdHandle);
+    private static partial IntPtr GetStdHandle(int nStdHandle);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
     [ExcludeFromCodeCoverage]
-    private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    private static partial bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
     [ExcludeFromCodeCoverage]
-    private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    private static partial bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 
     #endregion
 }

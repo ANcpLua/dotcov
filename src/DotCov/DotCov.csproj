@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <RootNamespace>DotCov</RootNamespace>
+    <!-- LibraryImport (Ansi.cs P/Invokes) source-generates unsafe marshalling stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.
 
 Parses Cobertura XML without loading the DOM (streaming XmlReader, 50MB+ safe).

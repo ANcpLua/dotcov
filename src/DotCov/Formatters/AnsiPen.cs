@@ -20,7 +20,6 @@ public readonly struct AnsiPen(bool enabled)
     /// <summary>Color a coverage percentage cell by its rate (0..1).</summary>
     public string Rate(string text, double rate) => rate switch
     {
-        >= 0.9 => Green(text),
         >= 0.75 => Green(text),
         >= 0.5 => Yellow(text),
         > 0 => Red(text),
