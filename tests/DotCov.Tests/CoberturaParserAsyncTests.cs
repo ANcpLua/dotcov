@@ -9,13 +9,12 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public async Task ParseAsync_SmallDocument_ReturnsEquivalentReportToSync()
     {
-        var xml = Cobertura.NewDoc()
+        var doc = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 3).Line(2, hits: 0))
-            .AddClass("src/B.cs", c => c.Line(5, hits: 1))
-            .ToString();
+            .AddClass("src/B.cs", c => c.Line(5, hits: 1));
 
-        var sync = CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
-        var async = await CoberturaParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+        var sync = doc.Parse();
+        var async = await CoberturaParser.ParseAsync(doc.ToStream());
 
         Assert.Equal(sync.TotalLines, async.TotalLines);
         Assert.Equal(sync.TotalLinesHit, async.TotalLinesHit);
@@ -25,10 +24,9 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public async Task ParseAsync_RespectsCancellation()
     {
-        var xml = Cobertura.NewDoc()
+        using var stream = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(1, 1))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+            .ToStream();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -53,12 +51,10 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public async Task ParseAsync_EnforcesCharacterCap()
     {
-        var xml = Cobertura.NewDoc()
+        using var stream = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(1, 1))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+            .ToStream();
 
-        // 50 chars is far smaller than the document, must fail loudly.
         await Assert.ThrowsAsync<System.Xml.XmlException>(
             async () => await CoberturaParser.ParseAsync(stream, maxChars: 50));
     }
@@ -66,10 +62,9 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public async Task ParseAsync_PartialBranch_RecordsBranchDetail()
     {
-        var xml = Cobertura.NewDoc()
+        using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Branch(10, "50% (1/2)"))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+            .ToStream();
 
         var report = await CoberturaParser.ParseAsync(stream);
 
@@ -82,12 +77,9 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public void Parse_MalformedConditionString_IsIgnoredQuietly()
     {
-        var xml = Cobertura.NewDoc()
+        var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Branch(10, "garbage"))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-
-        var report = CoberturaParser.Parse(stream);
+            .Parse();
 
         Assert.Single(report.Files);
         Assert.Equal(0, report.Files[0].BranchesTotal);
@@ -96,15 +88,9 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public void Parse_LineWithoutNumber_IsSkipped()
     {
-        // Cobertura `<line>` without a `number` attribute cannot be deduplicated against
-        // other class blocks for the same file — skip it rather than collapse every
-        // numberless line into a single bucket, which would silently lose data.
-        var xml = Cobertura.NewDoc()
+        var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-
-        var report = CoberturaParser.Parse(stream);
+            .Parse();
 
         Assert.Single(report.Files);
         Assert.Equal(0, report.Files[0].LinesTotal);
@@ -129,12 +115,9 @@ public sealed class CoberturaParserAsyncTests
     [Fact]
     public void Parse_NoBranchData_HasBranchDataFalse()
     {
-        var xml = Cobertura.NewDoc()
+        var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
-            .ToString();
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-
-        var report = CoberturaParser.Parse(stream);
+            .Parse();
 
         Assert.False(report.HasBranchData);
         Assert.False(report.Files[0].HasBranchData);

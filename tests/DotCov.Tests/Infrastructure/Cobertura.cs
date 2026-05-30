@@ -35,6 +35,8 @@ public sealed class Cobertura
 
     public override string ToString() => Encoding.UTF8.GetString(ToBytes());
 
+    public Stream ToStream() => new MemoryStream(ToBytes());
+
     public byte[] ToBytes()
     {
         var doc = new XDocument(
@@ -55,6 +57,8 @@ public sealed class Cobertura
         doc.Save(ms);
         return ms.ToArray();
     }
+
+    public CoverageReport Parse() => CoberturaParser.Parse(ToStream());
 
     public sealed class ClassBuilder(XElement cls)
     {

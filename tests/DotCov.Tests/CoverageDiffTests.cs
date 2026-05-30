@@ -110,13 +110,9 @@ public sealed class CoverageDiffTests
         Assert.NotNull(result.Files[0].Before);
     }
 
-    // ── Codecov-style indirect coverage changes (line-level diff) ──
-
     [Fact]
     public void Compare_LineFlippedFromHitToMiss_SurfacesAsNewlyMissed()
     {
-        // Same file on both sides; line 10 was hit before, missed after — the canonical
-        // "tests were removed / something upstream changed" indirect coverage change.
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 3 }
@@ -151,8 +147,6 @@ public sealed class CoverageDiffTests
         var result = CoverageDiff.Compare(before, after);
         var lineDelta = Assert.Single(result.Files[0].LineChanges);
 
-        // Pin the LineDelta payload, not just the variant — guards against parameter-order
-        // regressions in ComputeLineChanges where Before/After hit counts could swap.
         var newlyHit = Assert.IsType<LineDelta.NewlyHit>(lineDelta);
         Assert.Equal(0, newlyHit.BeforeHits);
         Assert.Equal(5, newlyHit.AfterHits);
@@ -175,12 +169,9 @@ public sealed class CoverageDiffTests
 
         Assert.Equal(2, changes.Count);
 
-        // Removed: variant carries the dropped hit count; no AfterHits field exists on the
-        // type at all — that's the compile-time invariant the sealed-hierarchy enforces.
         var removed = Assert.IsType<LineDelta.Removed>(changes.Single(c => c.Line == 20));
         Assert.Equal(4, removed.BeforeHits);
 
-        // Added: variant carries the new hit count; no BeforeHits field on the type.
         var added = Assert.IsType<LineDelta.Added>(changes.Single(c => c.Line == 30));
         Assert.Equal(7, added.AfterHits);
     }
@@ -230,8 +221,6 @@ public sealed class CoverageDiffTests
     [Fact]
     public void Compare_HitCountChangedButStillHit_ProducesNoLineChange()
     {
-        // 100 hits → 1 hit is informative but not a state flip; Codecov treats this the
-        // same way (hit/miss boolean, not delta on hit count).
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 100 }
@@ -278,8 +267,6 @@ public sealed class CoverageDiffTests
     [Fact]
     public void Compare_AddedOrRemovedFile_HasNoLineChanges()
     {
-        // Added/Removed file deltas don't get line-level breakdowns — the whole file is
-        // either gone or new, so individual line classifications are redundant.
         var before = Make(new FileCoverage("gone.cs", 1, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 1 }
@@ -297,9 +284,6 @@ public sealed class CoverageDiffTests
     [Fact]
     public void Compare_LineMissedOnBothSides_ProducesNoLineChange()
     {
-        // Both reports track the same line at zero hits — covered-by-test-suite state didn't
-        // change. The line classifier must not emit a delta for it (otherwise every uncovered
-        // line in every file would spam "indirect changes" output).
         var both = new FileCoverage("a.cs", 0, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 0 }

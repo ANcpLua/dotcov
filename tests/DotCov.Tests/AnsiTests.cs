@@ -4,11 +4,6 @@ using Xunit;
 
 namespace DotCov.Tests;
 
-/// <summary>
-/// Verifies the env-var precedence cascade. Lives in <see cref="EnvCollection"/> to
-/// serialize against other env-touching tests — Environment.SetEnvironmentVariable
-/// mutates the process table.
-/// </summary>
 [Collection(nameof(EnvCollection))]
 public sealed class AnsiTests
 {
@@ -35,9 +30,6 @@ public sealed class AnsiTests
     [Fact]
     public void NoColor_EmptyString_DoesNotDisableBecauseEnvIsAbsent()
     {
-        // no-color.org says any non-empty value disables — empty string means "unset" in our cascade.
-        // .NET treats SetEnvironmentVariable("", "") as unsetting on some platforms; verify the
-        // documented behavior holds by clearing instead.
         using var _ = EnvScope.Clear(AllVars);
         using var force = new EnvScope([("FORCE_COLOR", "1")]);
 
@@ -136,8 +128,6 @@ public sealed class AnsiTests
     [Fact]
     public void EnableOnWindows_DoesNotThrow_OnAnyPlatform()
     {
-        // We don't assert side-effects: on non-Windows it's a no-op, on Windows it may or may not
-        // succeed depending on whether a console handle is attached. The contract is "never throws".
         var ex = Record.Exception(Ansi.EnableOnWindows);
         Assert.Null(ex);
     }

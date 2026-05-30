@@ -59,17 +59,15 @@ public sealed class ExclusionAndReportTests
     }
 
     [Theory]
-    [InlineData("src/MyApp/obj/Debug/file.cs", true)]
-    [InlineData("src/MyApp/OBJ/Debug/file.cs", true)] // case-insensitive
-    [InlineData("src/MyApp/bin/Release/file.cs", true)]
-    [InlineData("Source/file.cs", false)]
-    [InlineData("src/Foo.g.cs", true)]
-    [InlineData("src/Form.Designer.cs", true)]
-    [InlineData("src/MyApp/Migrations/20230101_Init.cs", true)]
-    [InlineData("src/MyApp/<MyMethod>d__0.cs", true)]
-    [InlineData("src/GlobalUsings.cs", true)]
-    [InlineData("src/MyService.cs", false)]
-    public void Exclude_WellKnown_FiltersByPattern(string path, bool shouldBeExcluded)
+    [InlineData("src/MyApp/obj/Debug/file.cs")]
+    [InlineData("src/MyApp/OBJ/Debug/file.cs")]
+    [InlineData("src/MyApp/bin/Release/file.cs")]
+    [InlineData("src/Foo.g.cs")]
+    [InlineData("src/Form.Designer.cs")]
+    [InlineData("src/MyApp/Migrations/20230101_Init.cs")]
+    [InlineData("src/MyApp/<MyMethod>d__0.cs")]
+    [InlineData("src/GlobalUsings.cs")]
+    public void Exclude_WellKnown_RemovesMatchingFile(string path)
     {
         var report = new CoverageReport([
             new FileCoverage(path, 1, 1, 0, 0),
@@ -78,10 +76,22 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
-        if (shouldBeExcluded)
-            Assert.DoesNotContain(filtered.Files, f => f.Path == path);
-        else
-            Assert.Contains(filtered.Files, f => f.Path == path);
+        Assert.DoesNotContain(filtered.Files, f => f.Path == path);
+    }
+
+    [Theory]
+    [InlineData("Source/file.cs")]
+    [InlineData("src/MyService.cs")]
+    public void Exclude_WellKnown_KeepsNonMatchingFile(string path)
+    {
+        var report = new CoverageReport([
+            new FileCoverage(path, 1, 1, 0, 0),
+            new FileCoverage("KeepThis.cs", 1, 1, 0, 0)
+        ]);
+
+        var filtered = report.Exclude(ExclusionRules.WellKnown);
+
+        Assert.Contains(filtered.Files, f => f.Path == path);
     }
 
     [Fact]
@@ -355,72 +365,66 @@ public sealed class ExclusionAndReportTests
 
     // ── Single-pass classification: precomputed counts vs. previous getter logic ──
 
-    public static TheoryData<Dictionary<int, int>, Dictionary<int, (int Covered, int Total)>, int, int> ClassificationFixtures()
-        => new()
-        {
-            // Mixed: hit-no-branches, hit-partial-branches, hit-fully-branched, missed.
-            {
-                new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 7, [4] = 0 },
-                new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2), [3] = (4, 4) },
-                /* strict */ 2, /* partial */ 1
-            },
-            // All hit, no branches at all.
-            {
-                new Dictionary<int, int> { [1] = 1, [2] = 1, [3] = 1 },
-                new Dictionary<int, (int Covered, int Total)>(),
-                3, 0
-            },
-            // Every line partial.
-            {
-                new Dictionary<int, int> { [10] = 1, [20] = 1 },
-                new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2), [20] = (0, 2) },
-                0, 2
-            },
-            // Every line missed (hits == 0).
-            {
-                new Dictionary<int, int> { [1] = 0, [2] = 0 },
-                new Dictionary<int, (int Covered, int Total)>(),
-                0, 0
-            },
-            // Empty dict.
-            {
-                new Dictionary<int, int>(),
-                new Dictionary<int, (int Covered, int Total)>(),
-                0, 0
-            },
-            // Branch entry exists but Covered == Total — still counts as strict.
-            {
-                new Dictionary<int, int> { [1] = 1 },
-                new Dictionary<int, (int Covered, int Total)> { [1] = (2, 2) },
-                1, 0
-            },
-            // Branch entry for a missed line — never reaches the branch check.
-            {
-                new Dictionary<int, int> { [1] = 0 },
-                new Dictionary<int, (int Covered, int Total)> { [1] = (0, 2) },
-                0, 0
-            }
-        };
+    [Fact]
+    public void Classify_MixedHitPartialFullMissed_CountsStrictAndPartial() =>
+        AssertClassification(
+            lineHits: new() { [1] = 5, [2] = 3, [3] = 7, [4] = 0 },
+            branchesByLine: new() { [2] = (1, 2), [3] = (4, 4) },
+            expectedStrict: 2, expectedPartial: 1);
 
-    [Theory]
-    [MemberData(nameof(ClassificationFixtures))]
-    public void ClassifyLines_SinglePass_MatchesPreviousGetterLogic(
+    [Fact]
+    public void Classify_AllHitNoBranches_AllStrict() =>
+        AssertClassification(
+            lineHits: new() { [1] = 1, [2] = 1, [3] = 1 },
+            branchesByLine: new(),
+            expectedStrict: 3, expectedPartial: 0);
+
+    [Fact]
+    public void Classify_EveryLinePartial_NoneStrict() =>
+        AssertClassification(
+            lineHits: new() { [10] = 1, [20] = 1 },
+            branchesByLine: new() { [10] = (1, 2), [20] = (0, 2) },
+            expectedStrict: 0, expectedPartial: 2);
+
+    [Fact]
+    public void Classify_AllMissed_NoneStrictOrPartial() =>
+        AssertClassification(
+            lineHits: new() { [1] = 0, [2] = 0 },
+            branchesByLine: new(),
+            expectedStrict: 0, expectedPartial: 0);
+
+    [Fact]
+    public void Classify_EmptyDict_NoneStrictOrPartial() =>
+        AssertClassification(
+            lineHits: new(),
+            branchesByLine: new(),
+            expectedStrict: 0, expectedPartial: 0);
+
+    [Fact]
+    public void Classify_BranchFullyCovered_CountsStrict() =>
+        AssertClassification(
+            lineHits: new() { [1] = 1 },
+            branchesByLine: new() { [1] = (2, 2) },
+            expectedStrict: 1, expectedPartial: 0);
+
+    [Fact]
+    public void Classify_BranchEntryOnMissedLine_StaysMiss() =>
+        AssertClassification(
+            lineHits: new() { [1] = 0 },
+            branchesByLine: new() { [1] = (0, 2) },
+            expectedStrict: 0, expectedPartial: 0);
+
+    private static void AssertClassification(
         Dictionary<int, int> lineHits,
         Dictionary<int, (int Covered, int Total)> branchesByLine,
-        int expectedStrict,
-        int expectedPartial)
+        int expectedStrict, int expectedPartial)
     {
-        // Build via the factory — exercises the production path that the parser and MergeWith
-        // both go through, and pins the public contract that strict + partial == the same
-        // numbers the original getter-based logic produced.
         var f = Reports.ClassifiedFile("x.cs", 0, lineHits.Count, 0, 0,
             lineHits: lineHits, branchesByLine: branchesByLine);
 
         Assert.Equal(expectedStrict, f.StrictlyHitLines);
         Assert.Equal(expectedPartial, f.PartiallyHitLines);
 
-        // Cross-check: counts derived from GetLineStatus over LineHits.Keys must agree —
-        // that was the exact body of the previous getter.
         var strictViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Hit);
         var partialViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Partial);
         Assert.Equal(strictViaStatus, f.StrictlyHitLines);
