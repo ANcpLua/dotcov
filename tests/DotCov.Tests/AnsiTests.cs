@@ -53,6 +53,7 @@ public sealed class AnsiTests
     [InlineData("false")]
     [InlineData("False")]
     [InlineData("FALSE")]
+    [InlineData("FaLsE")]
     public void ForceColor_FalsyValues_DoesNotForce(string value)
     {
         using var _ = EnvScope.Clear(AllVars);

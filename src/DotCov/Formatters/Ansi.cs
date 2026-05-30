@@ -53,7 +53,7 @@ public static partial class Ansi
     private static bool HasEnv(string name) => !string.IsNullOrEmpty(Env(name));
 
     private static bool IsTrue(string name) =>
-        Env(name) is { } v && v.Length > 0 && v is not "0" and not "false" and not "False" and not "FALSE";
+        Env(name) is { } v && v.Length > 0 && v is not "0" && !string.Equals(v, "false", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsKnownCiWithAnsi()
     {
