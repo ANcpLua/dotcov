@@ -5,10 +5,18 @@
     <RootNamespace>DotCov.Tool</RootNamespace>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotcov</ToolCommandName>
-    <!-- Enforce Native-AOT/trim cleanliness on the entry point too (see DotCov.csproj). The
-         tool still ships as a portable dotnet tool by default; flip PublishAot at publish time
-         (see scripts/verify-aot.sh) to emit a native single-file binary. -->
-    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Hybrid Native-AOT dotnet tool — .NET 10 RID-specific tool packaging
+         (https://learn.microsoft.com/dotnet/core/tools/rid-specific-tools, canonical example:
+         github.com/richlander/dotnet10-hybrid-tool). PublishAot also turns the trim/AOT
+         analyzers on at build, so AOT-safety stays compiler-enforced via TreatWarningsAsErrors.
+
+         Native AOT can't cross-OS-compile, so packages are built per RID by scripts/pack.sh:
+         osx-arm64 natively on a Mac, linux-* in the 10.0-noble-aot container, and a portable
+         CoreCLR `any` fallback for every other platform (Windows, Intel Mac, linux-musl, …).
+         `dotnet tool install` transparently picks the native package when one matches the
+         user's platform, else the `any` fallback — so an install never fails on an unbuilt RID. -->
+    <PublishAot>true</PublishAot>
+    <ToolPackageRuntimeIdentifiers>osx-arm64;linux-x64;linux-arm64;any</ToolPackageRuntimeIdentifiers>
     <Description>dotnet global tool for Cobertura coverage reporting, diffing, and CI gating.
 
 Installation:
