@@ -13,8 +13,10 @@ public sealed class ExclusionAndReportTests
         Assert.Contains("/obj/", ExclusionRules.WellKnown);
         Assert.Contains("/bin/", ExclusionRules.WellKnown);
         Assert.Contains("/Migrations/", ExclusionRules.WellKnown);
-        Assert.Contains("d__", ExclusionRules.WellKnown);
         Assert.Contains("GlobalUsings", ExclusionRules.WellKnown);
+        // No "d__" rule: it matched on Path (the filename), but coverlet only ever puts d__ in the
+        // *class name* — so the rule was structurally dead. Assert it's gone, not present.
+        Assert.DoesNotContain("d__", ExclusionRules.WellKnown);
         Assert.Contains("/Program.cs", ExclusionRules.WellKnown);
     }
 
@@ -65,7 +67,6 @@ public sealed class ExclusionAndReportTests
     [InlineData("src/Foo.g.cs")]
     [InlineData("src/Form.Designer.cs")]
     [InlineData("src/MyApp/Migrations/20230101_Init.cs")]
-    [InlineData("src/MyApp/<MyMethod>d__0.cs")]
     [InlineData("src/GlobalUsings.cs")]
     public void Exclude_WellKnown_RemovesMatchingFile(string path)
     {

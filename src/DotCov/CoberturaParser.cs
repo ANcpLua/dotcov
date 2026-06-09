@@ -86,6 +86,18 @@ public static partial class CoberturaParser
         // re-emitted under separate <class> blocks (record + state machine + partials).
         // Keying on line number with Math.Max prevents double-counting in all of those.
         public readonly Dictionary<int, (int Covered, int Total)> BranchesByLine = new();
+
+        // line → (coverlet condition `number` → covered outcomes of that 2-way jump, 0–2).
+        // Same Math.Max dedup as BranchesByLine, but keyed per condition so the cross-report
+        // merge can union by condition identity instead of collapsing to a single count.
+        public readonly Dictionary<int, Dictionary<int, int>> ConditionsByLine = new();
+
+        public void AddCondition(int line, int number, int covered)
+        {
+            if (!ConditionsByLine.TryGetValue(line, out var conds))
+                ConditionsByLine[line] = conds = new Dictionary<int, int>();
+            conds[number] = conds.TryGetValue(number, out var existing) ? Math.Max(existing, covered) : covered;
+        }
     }
 
     private static CoverageReport ParseCore(XmlReader reader)
@@ -130,6 +142,11 @@ public static partial class CoberturaParser
         var filename = reader.GetAttribute("filename");
         if (filename is null) return;
 
+        // Normalize path separators so the same source file merges across machines/CI jobs
+        // regardless of emitter convention (Windows coverlet writes `\`, Linux writes `/`).
+        // This string is the file's identity key in Materialize/Merge, so it must be stable.
+        filename = filename.Replace('\\', '/');
+
         if (!files.TryGetValue(filename, out var acc))
         {
             acc = new LineAccumulator();
@@ -143,10 +160,28 @@ public static partial class CoberturaParser
         using var sub = reader.ReadSubtree();
         sub.MoveToContent();
 
+        // Coverlet nests <conditions><condition number= coverage=/></conditions> inside each
+        // branched <line>. In document order conditions follow their line, so we attribute them
+        // to the most recent branched line; -1 means "current line carries no per-condition detail".
+        var conditionLine = -1;
+
         while (sub.Read())
         {
-            if (sub is not { NodeType: XmlNodeType.Element, LocalName: "line" })
+            if (sub.NodeType != XmlNodeType.Element) continue;
+
+            if (sub.LocalName == "condition")
+            {
+                if (conditionLine >= 0 &&
+                    int.TryParse(sub.GetAttribute("number"), out var condNumber) &&
+                    TryParseConditionOutcomes(sub.GetAttribute("coverage"), out var condCovered))
+                {
+                    acc.AddCondition(conditionLine, condNumber, condCovered);
+                }
                 continue;
+            }
+
+            if (sub.LocalName != "line") continue;
+            conditionLine = -1;
 
             if (!int.TryParse(sub.GetAttribute("number"), out var lineNum))
                 continue;
@@ -169,6 +204,7 @@ public static partial class CoberturaParser
                     acc.BranchesByLine[lineNum] = acc.BranchesByLine.TryGetValue(lineNum, out var existingBranch)
                         ? (Math.Max(existingBranch.Covered, covered), Math.Max(existingBranch.Total, total))
                         : (covered, total);
+                    conditionLine = lineNum;   // collect this branched line's <condition> children
                 }
                 else
                 {
@@ -212,11 +248,21 @@ public static partial class CoberturaParser
                     partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
             }
 
+            // Keep per-condition detail only where it reconstructs the line aggregate as 2-outcome
+            // jumps (the universal case for &&/||/?:/??/?.). If a switch jump-table makes it
+            // inconsistent, drop to the line aggregate so merge never invents a total the emitter
+            // didn't report — the invariant Merge's per-condition union relies on.
+            var conditionsByLine = new Dictionary<int, IReadOnlyDictionary<int, int>>();
+            foreach (var (line, conds) in acc.ConditionsByLine)
+                if (acc.BranchesByLine.TryGetValue(line, out var agg) && conds.Count * 2 == agg.Total)
+                    conditionsByLine[line] = new Dictionary<int, int>(conds);
+
             var (strict, partial) = FileCoverage.ClassifyLines(acc.LineHits, acc.BranchesByLine);
             result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, branchesHit, branchesTotal)
             {
                 LineHits = acc.LineHits,
                 BranchesByLine = acc.BranchesByLine,
+                ConditionsByLine = conditionsByLine,
                 UncoveredLines = uncovered,
                 PartialBranches = partialBranches,
                 StrictlyHitLines = strict,
@@ -235,6 +281,21 @@ public static partial class CoberturaParser
         if (!match.Success) return false;
         return int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out covered) &&
                int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total);
+    }
+
+    // coverlet's per-<condition> `coverage` is the percentage of that branch's outcomes hit.
+    // Branches are 2-outcome jumps (taken/not-taken): 0% -> 0, 50% -> 1, 100% -> 2 covered.
+    // A non-2-way figure (e.g. 33.33% from a switch arm) still parses, but Materialize's
+    // 2-outcome consistency gate then drops that line back to the line-level aggregate.
+    private static bool TryParseConditionOutcomes(string? coverage, out int covered)
+    {
+        covered = 0;
+        if (coverage is null) return false;
+        var span = coverage.AsSpan().TrimEnd('%');
+        if (!double.TryParse(span, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent))
+            return false;
+        covered = (int)Math.Round(percent / 100.0 * 2.0, MidpointRounding.AwayFromZero);
+        return true;
     }
 
     [GeneratedRegex(@"\((\d+)/(\d+)\)")]

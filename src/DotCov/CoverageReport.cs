@@ -105,6 +105,20 @@ public readonly record struct FileCoverage(
         new Dictionary<int, (int Covered, int Total)>();
 
     /// <summary>
+    /// Per-line, per-condition covered-outcome counts: line → (coverlet <c>condition number</c>
+    /// → covered outcomes of that 2-way branch, 0–2). Populated only when the emitter ships
+    /// <c>&lt;conditions&gt;&lt;condition number= coverage=/&gt;</c> children (coverlet does) AND they
+    /// reconstruct the line aggregate as 2-outcome jumps. This is what makes cross-report branch
+    /// <see cref="MergeWith"/> correct: two runs that each exercise a <em>different</em> condition of
+    /// the same line union per <c>number</c> (Math.Max), instead of the line-level <c>Math.Max</c> on
+    /// counts — which can't tell "both hit the same branch" from "each hit a different one" and
+    /// under-reports the union (the classic false not-hit). Empty for emitters without per-condition
+    /// detail or for non-2-way lines (switch jump tables); merge then falls back to the line aggregate.
+    /// </summary>
+    public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine { get; init; } =
+        new Dictionary<int, IReadOnlyDictionary<int, int>>();
+
+    /// <summary>
     /// Codecov-style three-state classification for a single source line. Returns
     /// <see cref="LineStatus.Miss"/> for any line not in <see cref="LineHits"/> so callers
     /// can iterate over an arbitrary line range without first checking membership; use
@@ -231,8 +245,26 @@ public readonly record struct FileCoverage(
         // multiple uploads (unit + integration test runs from the same CI workflow).
         var mergedBranches = new Dictionary<int, (int Covered, int Total)>(BranchesByLine);
         var warnings = new List<CoverageWarning>();
+
+        // Correct branch union via per-condition identity: where BOTH reports carry condition
+        // detail for a line, union the covered outcomes per coverlet `number` (Math.Max), then
+        // recompute the line aggregate from the union (2-outcome jumps). This reconstructs the
+        // true union when two runs exercise different conditions of the same line — the case
+        // line-level Math.Max on counts gets wrong (the false not-hit).
+        var mergedConditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
+        foreach (var (line, mine) in ConditionsByLine)
+        {
+            if (!other.ConditionsByLine.TryGetValue(line, out var theirs)) continue;
+            var union = new Dictionary<int, int>(mine);
+            foreach (var (number, covered) in theirs)
+                union[number] = union.TryGetValue(number, out var e) ? Math.Max(e, covered) : covered;
+            mergedConditions[line] = union;
+            mergedBranches[line] = (union.Values.Sum(), union.Count * 2);
+        }
+
         foreach (var (line, b) in other.BranchesByLine)
         {
+            if (mergedConditions.ContainsKey(line)) continue;   // already unioned per-condition above
             if (mergedBranches.TryGetValue(line, out var existing))
             {
                 if (existing.Total != b.Total)
@@ -277,6 +309,7 @@ public readonly record struct FileCoverage(
         {
             LineHits = mergedHits,
             BranchesByLine = mergedBranches,
+            ConditionsByLine = mergedConditions,
             UncoveredLines = uncovered,
             PartialBranches = partialBranches,
             StrictlyHitLines = strict,
@@ -395,7 +428,11 @@ public static class ExclusionRules
         "/obj/",          // build intermediates
         "/bin/",          // build output
         "/Migrations/",   // EF Core migrations
-        "d__",            // async state machine classes (e.g. +<MethodName>d__0)
+        // No "d__" rule: coverlet emits async state-machine *class names* (<Method>d__0) but the
+        // <class filename=> is the plain source file, and Exclude matches on Path (the filename) —
+        // so a "d__" path rule is structurally dead (matches nothing). The state machine's branches
+        // fuse into the real file; suppress them via coverlet config ([ExcludeFromCodeCoverage] /
+        // runsettings), which removes them at the source, not via a path filter that can't fire.
         "GlobalUsings",   // auto-generated global usings
         "/Program.cs",    // ASP.NET Core / generic host bootstrap — opt back in with --keep Program.cs
     ];
