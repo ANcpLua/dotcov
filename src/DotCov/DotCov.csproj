@@ -4,6 +4,10 @@
     <RootNamespace>DotCov</RootNamespace>
     <!-- LibraryImport (Ansi.cs P/Invokes) source-generates unsafe marshalling stubs. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Turns on the trim/AOT/single-file analyzers at build time. With TreatWarningsAsErrors,
+         any IL2026/IL3050 (reflection/dynamic-code) regression becomes a build error — the
+         library's Native-AOT cleanliness is enforced by the compiler, not by convention. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.
 
 Parses Cobertura XML without loading the DOM (streaming XmlReader, 50MB+ safe).

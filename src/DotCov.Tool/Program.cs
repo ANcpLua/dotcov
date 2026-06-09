@@ -39,7 +39,7 @@ async Task<int> Report(Dictionary<string, string> opts)
     if (opts.ContainsKey("github-summary"))
         WriteGitHubSummary(MarkdownFormatter.Format(report, threshold));
 
-    return await MaybeUpload(opts, JsonFormatter.Format(report));
+    return await MaybeUpload(opts, () => JsonFormatter.Format(report));
 }
 
 static async Task<int> Check(Dictionary<string, string> opts)
@@ -57,7 +57,7 @@ static async Task<int> Check(Dictionary<string, string> opts)
     if (report.MeetsThreshold(minLine, minBranch))
     {
         Console.WriteLine($"PASS: line {report.LineRate * 100:F1}% >= {minLine}%, branch {report.BranchRate * 100:F1}% >= {minBranch}%");
-        return await MaybeUpload(opts, JsonFormatter.Format(report));
+        return await MaybeUpload(opts, () => JsonFormatter.Format(report));
     }
 
     Console.Error.WriteLine($"FAIL: line {report.LineRate * 100:F1}% < {minLine}% or branch {report.BranchRate * 100:F1}% < {minBranch}%");
@@ -117,7 +117,7 @@ static async Task<int> Snapshot(Dictionary<string, string> opts)
     var json = JsonFormatter.FormatSnapshot(snapshot);
     Console.Write(json);
 
-    return await MaybeUpload(opts, json);
+    return await MaybeUpload(opts, () => json);
 }
 
 static int Version()
@@ -178,13 +178,16 @@ static void WriteGitHubSummary(string markdown)
     File.AppendAllText(summaryPath, markdown);
 }
 
-static async Task<int> MaybeUpload(Dictionary<string, string> opts, string json)
+// JSON is built lazily: a table/markdown run with no --upload never pays to serialize it
+// (and never touches the JSON path at all). The Func defers JsonFormatter.Format until we
+// know an upload URL is actually present.
+static async Task<int> MaybeUpload(Dictionary<string, string> opts, Func<string> json)
 {
     if (!opts.TryGetValue("upload", out var url)) return 0;
 
     using var http = new HttpClient();
     var response = await http.PostAsync(url,
-        new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+        new StringContent(json(), System.Text.Encoding.UTF8, "application/json"));
 
     if (response.IsSuccessStatusCode)
     {
