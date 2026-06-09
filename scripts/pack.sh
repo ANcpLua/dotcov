@@ -15,6 +15,7 @@
 #   NUGET_KEY=xxx scripts/pack.sh 0.2.0   # build, then push in the correct order
 #
 # Requires: .NET SDK 10+; Docker (optional — without it, Linux users use the `any` fallback).
+# Portable to the macOS-default bash 3.2 (COMMON is never an empty array, so `set -u` is safe).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,34 +24,40 @@ OUT="nupkgs"
 IMG="mcr.microsoft.com/dotnet/sdk:10.0-noble-aot"
 SRC="${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}"
 VERSION="${1:-}"
-VARG=(); [ -n "$VERSION" ] && VARG=(-p:Version="$VERSION")
+
+# Flags common to every pack. Seeded with -c Release so the array is never empty
+# (bash 3.2 errors on "${empty[@]}" under `set -u`).
+COMMON=(-c Release)
+[ -n "$VERSION" ] && COMMON+=(-p:Version="$VERSION")
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 # Native AOT for the host OS (cross-arch within the same OS is fine).
 echo "== pack osx-arm64 (native AOT) =="
-dotnet pack "$PROJ" -c Release -r osx-arm64 "${VARG[@]}" -o "$OUT"
+dotnet pack "$PROJ" "${COMMON[@]}" -r osx-arm64 -o "$OUT"
 
 # Linux AOT via the container — the OS inside the container matches the target RID's OS,
 # so it's a native build, not a cross-OS one. --platform selects the arch.
-if command -v docker >/dev/null 2>&1; then
+# Check the daemon is actually reachable, not just that the CLI exists: a stopped Docker
+# Desktop / OrbStack would otherwise abort the whole script under `set -e` mid-run.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   for spec in "linux-arm64 linux/arm64" "linux-x64 linux/amd64"; do
     set -- $spec
     echo "== pack $1 (native AOT in $IMG, $2) =="
     docker run --rm --platform "$2" -v "$PWD":/src -w /src "$IMG" \
-      dotnet pack "$PROJ" -c Release -r "$1" "${VARG[@]}" -o "$OUT"
+      dotnet pack "$PROJ" "${COMMON[@]}" -r "$1" -o "$OUT"
   done
 else
-  echo "!! docker not found — skipping Linux AOT packages; Linux users will use the 'any' fallback"
+  echo "!! Docker daemon not reachable — skipping Linux AOT packages; Linux users will use the 'any' fallback"
 fi
 
 # Portable CoreCLR fallback for every platform without a native build.
 echo "== pack any (portable CoreCLR fallback) =="
-dotnet pack "$PROJ" -c Release -r any -p:PublishAot=false "${VARG[@]}" -o "$OUT"
+dotnet pack "$PROJ" "${COMMON[@]}" -r any -p:PublishAot=false -o "$OUT"
 
 # RID-agnostic pointer package (built last; must also be PUSHED last).
 echo "== pack pointer package =="
-dotnet pack "$PROJ" -c Release "${VARG[@]}" -o "$OUT"
+dotnet pack "$PROJ" "${COMMON[@]}" -o "$OUT"
 
 echo; echo "== packages in $OUT/ =="; ls -1 "$OUT"
 
