@@ -83,6 +83,24 @@ public sealed class Cobertura
             return this;
         }
 
+        public ClassBuilder BranchWithConditions(
+            int number, string conditionCoverage, params (int Number, string Coverage)[] conditions)
+        {
+            var line = new XElement("line",
+                new XAttribute("number", number),
+                new XAttribute("hits", 1),
+                new XAttribute("branch", "true"),
+                new XAttribute("condition-coverage", conditionCoverage));
+            if (conditions.Length > 0)
+                line.Add(new XElement("conditions",
+                    conditions.Select(c => new XElement("condition",
+                        new XAttribute("number", c.Number),
+                        new XAttribute("type", "jump"),
+                        new XAttribute("coverage", c.Coverage)))));
+            Lines().Add(line);
+            return this;
+        }
+
         public ClassBuilder MalformedLine(string number, string hits)
         {
             Lines().Add(new XElement("line",

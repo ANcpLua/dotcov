@@ -370,6 +370,28 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
+    public void Merge_SplitConditionRuns_UnionsByConditionNumber_NotLineLevelMax()
+    {
+        // Two runs cover DIFFERENT conditions of the same branched line. Coverlet exposes
+        // per-branch identity (<condition number= coverage=>), so the true union is 5/6 — a
+        // line-level Math.Max on the (3/6) counts wrongly reports 3/6 (the false not-hit).
+        // This is the exact case that shipped broken because no test covered split runs.
+        var a = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (3/6)",
+                (1, "100%"), (2, "50%"), (3, "0%")))
+            .Parse();
+        var b = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (3/6)",
+                (1, "0%"), (2, "50%"), (3, "100%")))
+            .Parse();
+
+        var merged = CoverageReport.Merge(a, b);
+
+        Assert.Equal(5, merged.TotalBranchesHit);
+        Assert.Equal(6, merged.TotalBranches);
+    }
+
+    [Fact]
     public void ParsePath_WithFile_ParsesSuccessfully()
     {
         var report = CoberturaParser.ParsePath(FixturePath);
