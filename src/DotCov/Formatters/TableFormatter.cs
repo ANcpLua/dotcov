@@ -10,13 +10,13 @@ public static class TableFormatter
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
-        var maxPath = Math.Max("File".Length, report.Files.Count > 0 ? report.Files.Max(f => f.Path.Length) : 0);
+        var maxPath = Math.Max("File".Length, report.Files.Count > 0 ? report.Files.Max(static f => f.Path.Length) : 0);
 
         var headerPlain = $"{"File".PadRight(maxPath)}  {"Lines",10}  {"Line %",8}  {"Branches",10}  {"Branch %",8}";
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
-        foreach (var f in report.Files.OrderBy(f => f.LineRate))
+        foreach (var f in report.Files.OrderBy(static f => f.LineRate))
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
             var linePct = $"{f.LineRate * 100,7:F1}%";
@@ -60,7 +60,7 @@ public static class TableFormatter
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
-        var maxPath = Math.Max("File".Length, diff.Files.Count > 0 ? diff.Files.Max(d => d.Path.Length) : 0);
+        var maxPath = Math.Max("File".Length, diff.Files.Count > 0 ? diff.Files.Max(static d => d.Path.Length) : 0);
 
         var headerPlain = $"{"File".PadRight(maxPath)}  {"Before",8}  {"After",8}  {"Delta",8}  {"Change",10}";
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
@@ -95,7 +95,7 @@ public static class TableFormatter
         // Detailed per-file breakdown lives in the markdown formatter where it fits better.
         if (diff.TotalLineChanges > 0)
         {
-            var affected = diff.Files.Count(f => f.LineChanges.Count > 0);
+            var affected = diff.Files.Count(static f => f.LineChanges.Count > 0);
             var lineWord = diff.TotalLineChanges == 1 ? "line" : "lines";
             var fileWord = affected == 1 ? "file" : "files";
             sb.AppendLine(pen.Dim(

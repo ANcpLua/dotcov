@@ -1,3 +1,4 @@
+using System.Globalization;
 using DotCov;
 using DotCov.Formatters;
 
@@ -25,7 +26,18 @@ async Task<int> Report(Dictionary<string, string> opts)
 
     var report = ApplyExclusions(CoberturaParser.ParsePath(path), opts);
     var format = opts.GetValueOrDefault("format", "table");
-    var threshold = opts.TryGetValue("threshold", out var t) ? double.Parse(t) : (double?)null;
+
+    double? threshold = null;
+    if (opts.TryGetValue("threshold", out var t))
+    {
+        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            Console.Error.WriteLine($"Invalid --threshold value: '{t}' (expected a number).");
+            return 1;
+        }
+
+        threshold = parsed;
+    }
 
     var output = format switch
     {
@@ -51,8 +63,17 @@ static async Task<int> Check(Dictionary<string, string> opts)
     }
 
     var report = ApplyExclusions(CoberturaParser.ParsePath(path), opts);
-    var minLine = double.Parse(opts.GetValueOrDefault("min-line", "80"));
-    var minBranch = double.Parse(opts.GetValueOrDefault("min-branch", "0"));
+    if (!double.TryParse(opts.GetValueOrDefault("min-line", "80"), NumberStyles.Float, CultureInfo.InvariantCulture, out var minLine))
+    {
+        Console.Error.WriteLine("Invalid --min-line value (expected a number).");
+        return 1;
+    }
+
+    if (!double.TryParse(opts.GetValueOrDefault("min-branch", "0"), NumberStyles.Float, CultureInfo.InvariantCulture, out var minBranch))
+    {
+        Console.Error.WriteLine("Invalid --min-branch value (expected a number).");
+        return 1;
+    }
 
     if (report.MeetsThreshold(minLine, minBranch))
     {

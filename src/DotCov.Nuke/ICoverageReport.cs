@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Components;
@@ -53,8 +54,10 @@ public interface ICoverageReport : INukeBuild
             if (ExcludeGenerated)
                 report = report.Exclude(ExclusionRules.WellKnown);
 
-            var minLine = double.Parse(MinLine);
-            var minBranch = double.Parse(MinBranch);
+            Assert.True(double.TryParse(MinLine, NumberStyles.Float, CultureInfo.InvariantCulture, out var minLine),
+                $"Invalid Coverage MinLine: '{MinLine}' (expected a number).");
+            Assert.True(double.TryParse(MinBranch, NumberStyles.Float, CultureInfo.InvariantCulture, out var minBranch),
+                $"Invalid Coverage MinBranch: '{MinBranch}' (expected a number).");
 
             var output = Format switch
             {

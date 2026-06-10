@@ -25,7 +25,7 @@ public static class MarkdownFormatter
         sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
         sb.AppendLine("|------|------:|-------:|---------:|---------:|");
 
-        foreach (var f in report.Files.OrderBy(f => f.LineRate))
+        foreach (var f in report.Files.OrderBy(static f => f.LineRate))
         {
             var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
             var branchPct = f.BranchesTotal > 0 ? $"{f.BranchRate * 100:F1}%" : "-";

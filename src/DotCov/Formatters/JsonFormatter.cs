@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using System;
 
 namespace DotCov.Formatters;
 
@@ -199,5 +200,5 @@ public static class JsonFormatter
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private static double Pct(double rate) => Math.Round(rate * 100, 2);
+    private static double Pct(double rate) => Math.Round(rate * 100, 2, MidpointRounding.ToEven);
 }

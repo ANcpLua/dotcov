@@ -126,7 +126,7 @@ public readonly record struct FileCoverage(
     /// </summary>
     public LineStatus GetLineStatus(int line)
     {
-        if (!LineHits.TryGetValue(line, out var hits) || hits == 0)
+        if (!LineHits.TryGetValue(line, out var hits) || hits is 0)
             return LineStatus.Miss;
         if (BranchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
             return LineStatus.Partial;
@@ -195,7 +195,7 @@ public readonly record struct FileCoverage(
         var partial = 0;
         foreach (var (line, hits) in lineHits)
         {
-            if (hits == 0) continue;
+            if (hits is 0) continue;
             if (branchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
                 partial++;
             else
@@ -296,7 +296,7 @@ public readonly record struct FileCoverage(
         var branchesHit = 0;
         var branchesTotal = 0;
         var partialBranches = new List<BranchDetail>();
-        foreach (var (line, b) in mergedBranches.OrderBy(kv => kv.Key))
+        foreach (var (line, b) in mergedBranches.OrderBy(static kv => kv.Key))
         {
             branchesHit += b.Covered;
             branchesTotal += b.Total;
@@ -336,10 +336,10 @@ public sealed class CoverageReport
     /// </summary>
     public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 
-    public int TotalLines => Files.Sum(f => f.LinesTotal);
-    public int TotalLinesHit => Files.Sum(f => f.LinesHit);
-    public int TotalBranches => Files.Sum(f => f.BranchesTotal);
-    public int TotalBranchesHit => Files.Sum(f => f.BranchesHit);
+    public int TotalLines => Files.Sum(static f => f.LinesTotal);
+    public int TotalLinesHit => Files.Sum(static f => f.LinesHit);
+    public int TotalBranches => Files.Sum(static f => f.BranchesTotal);
+    public int TotalBranchesHit => Files.Sum(static f => f.BranchesHit);
 
     public double LineRate => TotalLines is 0 ? 1.0 : (double)TotalLinesHit / TotalLines;
     public double BranchRate => TotalBranches is 0 ? 1.0 : (double)TotalBranchesHit / TotalBranches;
@@ -353,7 +353,7 @@ public sealed class CoverageReport
     /// precomputed per-file <see cref="FileCoverage.StrictlyHitLines"/> rather than re-walking
     /// every <see cref="FileCoverage.LineHits"/> dict.
     /// </summary>
-    public double StrictLineRate => TotalLines is 0 ? 1.0 : (double)Files.Sum(f => f.StrictlyHitLines) / TotalLines;
+    public double StrictLineRate => TotalLines is 0 ? 1.0 : (double)Files.Sum(static f => f.StrictlyHitLines) / TotalLines;
 
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
         Files.Where(f => f.LineRate * 100 < linePercent);

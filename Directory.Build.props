@@ -32,4 +32,13 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <!-- ANcpLua.Analyzers: dev-only analyzer suite (AL1506 ExcludeFromCodeCoverage hygiene + others).
+       Applied to shipping code only; tests opt out. -->
+  <ItemGroup Condition="!$(MSBuildProjectName.EndsWith('Tests'))">
+    <PackageReference Include="ANcpLua.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
 </Project>

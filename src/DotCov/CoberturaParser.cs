@@ -42,8 +42,8 @@ public static partial class CoberturaParser
             return CoverageReport.Empty;
 
         return files
-            .OrderBy(f => f, StringComparer.Ordinal)
-            .Select(f => ParseFile(f))
+            .OrderBy(static f => f, StringComparer.Ordinal)
+            .Select(static f => ParseFile(f))
             .Aggregate(CoverageReport.Merge);
     }
 
@@ -240,7 +240,7 @@ public static partial class CoberturaParser
             var branchesHit = 0;
             var branchesTotal = 0;
             var partialBranches = new List<BranchDetail>();
-            foreach (var (line, b) in acc.BranchesByLine.OrderBy(kv => kv.Key))
+            foreach (var (line, b) in acc.BranchesByLine.OrderBy(static kv => kv.Key))
             {
                 branchesHit += b.Covered;
                 branchesTotal += b.Total;

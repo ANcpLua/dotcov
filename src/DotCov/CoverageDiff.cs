@@ -114,20 +114,20 @@ public sealed class CoverageDiffResult(
     public double AfterRate { get; } = afterRate;
     public double Delta => AfterRate - BeforeRate;
 
-    public IEnumerable<FileDelta> Regressions => Files.Where(f => f.Delta < 0);
-    public IEnumerable<FileDelta> Improvements => Files.Where(f => f.Delta > 0);
-    public IEnumerable<FileDelta> Added => Files.Where(f => f.Change is FileChangeKind.Added);
-    public IEnumerable<FileDelta> Removed => Files.Where(f => f.Change is FileChangeKind.Removed);
+    public IEnumerable<FileDelta> Regressions => Files.Where(static f => f.Delta < 0);
+    public IEnumerable<FileDelta> Improvements => Files.Where(static f => f.Delta > 0);
+    public IEnumerable<FileDelta> Added => Files.Where(static f => f.Change is FileChangeKind.Added);
+    public IEnumerable<FileDelta> Removed => Files.Where(static f => f.Change is FileChangeKind.Removed);
 
     /// <summary>
     /// Files that have at least one line whose hit/miss state flipped between the two
     /// reports. The set of indirectly-affected files — useful for surfacing "tests were
     /// removed / something broke upstream" in CI feedback.
     /// </summary>
-    public IEnumerable<FileDelta> WithLineChanges => Files.Where(f => f.LineChanges.Count > 0);
+    public IEnumerable<FileDelta> WithLineChanges => Files.Where(static f => f.LineChanges.Count > 0);
 
     /// <summary>Total count of flipped lines across the whole report.</summary>
-    public int TotalLineChanges => Files.Sum(f => f.LineChanges.Count);
+    public int TotalLineChanges => Files.Sum(static f => f.LineChanges.Count);
 }
 
 public static class CoverageDiff
@@ -181,8 +181,8 @@ public static class CoverageDiff
                 continue;
             }
 
-            var beforeMissed = beforeHits == 0;
-            var afterMissed = afterHits == 0;
+            var beforeMissed = beforeHits is 0;
+            var afterMissed = afterHits is 0;
             if (beforeMissed == afterMissed) continue;  // hit-state unchanged
 
             changes.Add(afterMissed

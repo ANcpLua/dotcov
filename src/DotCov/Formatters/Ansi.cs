@@ -41,7 +41,9 @@ public static partial class Ansi
     /// hits the try/catch). The unit tests verify the contract "never throws on any platform";
     /// branch coverage on a single OS would otherwise penalise an unreachable path.
     /// </remarks>
-    [ExcludeFromCodeCoverage]
+    [ExcludeFromCodeCoverage(Justification =
+        "OS-conditional dispatcher: the non-Windows early return and the Windows try/catch are " +
+        "mutually exclusive per platform, so single-OS branch coverage cannot exercise both.")]
     public static void EnableOnWindows()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -78,7 +80,8 @@ public static partial class Ansi
     // non-Windows would otherwise penalise an unreachable platform branch.
 
     [SupportedOSPlatform("windows")]
-    [ExcludeFromCodeCoverage]
+    [ExcludeFromCodeCoverage(Justification =
+        "Windows-only Win32 console interop; the guard branches are unreachable on the Linux/macOS CI matrix.")]
     private static void EnableWindowsVt()
     {
         const int StdOutputHandle = -11;
