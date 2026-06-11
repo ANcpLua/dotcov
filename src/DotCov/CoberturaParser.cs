@@ -254,7 +254,10 @@ public static partial class CoberturaParser
             // didn't report — the invariant Merge's per-condition union relies on.
             var conditionsByLine = new Dictionary<int, IReadOnlyDictionary<int, int>>();
             foreach (var (line, conds) in acc.ConditionsByLine)
-                if (acc.BranchesByLine.TryGetValue(line, out var agg) && conds.Count * 2 == agg.Total)
+                // Every line in ConditionsByLine has a BranchesByLine entry by construction —
+                // AddCondition only fires after the aggregate is recorded — so index directly
+                // (a missing key would be a broken invariant worth throwing on, not silently skipping).
+                if (conds.Count * 2 == acc.BranchesByLine[line].Total)
                     conditionsByLine[line] = new Dictionary<int, int>(conds);
 
             var (strict, partial) = FileCoverage.ClassifyLines(acc.LineHits, acc.BranchesByLine);

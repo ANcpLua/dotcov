@@ -392,6 +392,64 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
+    public void Parse_UnparseableConditionCoverage_IgnoresConditionKeepsLineAggregate()
+    {
+        // A coverlet emitter regression (garbage `coverage`) must not crash and must not poison
+        // the per-condition map — the line still parses via its line-level aggregate.
+        var f = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (1/2)", (1, "garbage")))
+            .Parse().Files[0];
+
+        Assert.Equal(1, f.BranchesHit);            // aggregate (1/2) preserved
+        Assert.Equal(2, f.BranchesTotal);
+        Assert.Empty(f.ConditionsByLine);          // the unparseable condition was dropped
+    }
+
+    [Fact]
+    public void Parse_ConditionCountInconsistentWithAggregate_DropsConditionDetail()
+    {
+        // 1 condition but the line aggregate reports 4 outcomes (a switch jump-table). 1*2 != 4,
+        // so the 2-outcome reconstruction is unsafe — drop to the aggregate rather than invent a total.
+        var f = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "25% (1/4)", (1, "50%")))
+            .Parse().Files[0];
+
+        Assert.Equal(4, f.BranchesTotal);          // aggregate (1/4) preserved
+        Assert.Empty(f.ConditionsByLine);          // gate dropped the inconsistent detail
+    }
+
+    [Fact]
+    public void Parse_SameConditionUnderMultipleClassBlocks_DedupesViaMathMax()
+    {
+        // Coverlet emits the same line under <method><lines> AND <class><lines>; the per-condition
+        // covered count must Math.Max across blocks, not sum (which would over-count the branch).
+        var f = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (1/2)", (1, "50%")))
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, "100%")))
+            .Parse().Files[0];
+
+        Assert.Equal(2, f.ConditionsByLine[10][1]);   // Math.Max(1, 2), not 1 + 2
+    }
+
+    [Fact]
+    public void Merge_ConditionNumbersAcrossReports_UnionsOverlappingAndDisjoint()
+    {
+        // Different builds can emit different condition `number`s for the same line. Overlapping
+        // numbers union by Math.Max; a number seen in only one report still counts.
+        var a = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (2/4)", (1, "100%"), (2, "0%")))
+            .Parse();
+        var b = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "66.66% (4/6)", (1, "0%"), (2, "100%"), (3, "100%")))
+            .Parse();
+
+        var f = CoverageReport.Merge(a, b).Files[0];
+
+        Assert.Equal(6, f.BranchesHit);    // #1 max(2,0)=2, #2 max(0,2)=2, #3 only-in-b=2
+        Assert.Equal(6, f.BranchesTotal);
+    }
+
+    [Fact]
     public void ParsePath_WithFile_ParsesSuccessfully()
     {
         var report = CoberturaParser.ParsePath(FixturePath);
