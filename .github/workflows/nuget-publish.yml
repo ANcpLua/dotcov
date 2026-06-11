@@ -36,13 +36,10 @@ jobs:
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
-            COMMITS=$(git rev-list --count HEAD)
-            SHA=$(git rev-parse --short HEAD)
-            echo "version=0.0.$COMMITS-ci.g$SHA" >> $GITHUB_OUTPUT
+            echo "version=0.0.$(git rev-list --count HEAD)-ci.g$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
             echo "is_release=false" >> $GITHUB_OUTPUT
           fi
 
@@ -54,25 +51,12 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - name: Build
-        run: dotnet build DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
+      - run: dotnet build DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
         env:
           CI: true
-      - name: Pack
-        run: |
-          dotnet pack src/DotCov/DotCov.csproj -c Release -o artifacts -p:Version=${{ needs.version.outputs.version }} --no-build
-          dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -o artifacts -p:Version=${{ needs.version.outputs.version }} --no-build
-          dotnet pack src/DotCov.Nuke/DotCov.Nuke.csproj -c Release -o artifacts -p:Version=${{ needs.version.outputs.version }} --no-build
-        env:
-          CI: true
-      - uses: actions/upload-artifact@v7
-        with:
-          name: packages
-          path: artifacts/*.nupkg
-          if-no-files-found: error
 
   test:
-    needs: [version, build]
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -95,8 +79,66 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
+  # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
+  # RID failure fails the whole job and gates `publish` (no partial/broken RID set ships).
+  pack-tool-native:
+    needs: version
+    if: needs.version.outputs.is_release == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: macos-latest,     rid: osx-arm64 }
+          - { os: ubuntu-latest,    rid: linux-x64 }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Install Native AOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Pack ${{ matrix.rid }} (Native AOT)
+        run: dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -r ${{ matrix.rid }} -p:Version=${{ needs.version.outputs.version }} -o artifacts
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pkg-${{ matrix.rid }}
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+  # The RID-agnostic pieces: portable CoreCLR `any` fallback (Windows/Intel-Mac/musl/...),
+  # the DotCov.Tool pointer package, and the plain DotCov + DotCov.Nuke library packages.
+  pack-rest:
+    needs: version
+    if: needs.version.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Pack any-fallback, pointer, and libraries
+        run: |
+          V=${{ needs.version.outputs.version }}
+          dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -r any -p:PublishAot=false -p:Version=$V -o artifacts
+          dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -p:Version=$V -o artifacts
+          dotnet pack src/DotCov/DotCov.csproj           -c Release -p:Version=$V -o artifacts
+          dotnet pack src/DotCov.Nuke/DotCov.Nuke.csproj -c Release -p:Version=$V -o artifacts
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pkg-rest
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
   publish:
-    needs: [version, build, test]
+    needs: [version, build, test, pack-tool-native, pack-rest]
     if: needs.version.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     environment: nuget
@@ -106,19 +148,30 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: packages
-          path: artifacts/
+          path: artifacts
+          pattern: pkg-*
+          merge-multiple: true
       - uses: actions/setup-dotnet@v5
       - name: Authenticate to NuGet (trusted publishing)
         id: login
         uses: NuGet/login@v1
         with:
           user: ANcpLua
-      - name: Push to NuGet
+      # Push every sub-package FIRST (RID-specific, `any`, and the libraries). The DotCov.Tool
+      # *pointer* is held back: NuGet requires the packages it references to exist before it.
+      - name: Push sub-packages
         run: |
+          shopt -s nullglob
+          POINTER="DotCov.Tool.${{ needs.version.outputs.version }}.nupkg"
           for pkg in artifacts/*.nupkg; do
-            dotnet nuget push "$pkg" \
-              --source https://api.nuget.org/v3/index.json \
-              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
-              --skip-duplicate
+            [ "$(basename "$pkg")" = "$POINTER" ] && continue
+            dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json \
+              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --skip-duplicate
           done
+      # Pointer LAST, as its own step — only reached if every sub-package push above succeeded.
+      # If a sub-package 403s or fails, the job aborts here and no broken pointer is published.
+      - name: Push the DotCov.Tool pointer
+        run: |
+          dotnet nuget push "artifacts/DotCov.Tool.${{ needs.version.outputs.version }}.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --skip-duplicate
