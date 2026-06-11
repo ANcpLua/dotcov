@@ -450,6 +450,39 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
+    public void Parse_MalformedAndStrayConditions_AreIgnored_KeepsLineAggregate()
+    {
+        // Robustness against bad emitter output: a <condition> outside any branched line, one with
+        // a non-numeric `number`, and one missing its `coverage` must all be ignored — no crash,
+        // and the branched line still parses via its line-level aggregate.
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <coverage line-rate="0" branch-rate="0" version="1.0">
+              <packages><package name="P"><classes>
+                <class name="P.Foo" filename="src/Foo.cs">
+                  <lines>
+                    <line number="1" hits="1" branch="false" />
+                    <condition number="9" coverage="50%" />
+                    <line number="2" hits="1" branch="true" condition-coverage="50% (2/4)">
+                      <conditions>
+                        <condition number="x" coverage="50%" />
+                        <condition number="2" />
+                      </conditions>
+                    </line>
+                  </lines>
+                </class>
+              </classes></package></packages>
+            </coverage>
+            """;
+
+        var f = CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml))).Files[0];
+
+        Assert.Equal(2, f.BranchesHit);     // line-level aggregate (2/4) preserved
+        Assert.Equal(4, f.BranchesTotal);
+        Assert.Empty(f.ConditionsByLine);   // stray / non-numeric / coverage-less conditions all dropped
+    }
+
+    [Fact]
     public void ParsePath_WithFile_ParsesSuccessfully()
     {
         var report = CoberturaParser.ParsePath(FixturePath);
