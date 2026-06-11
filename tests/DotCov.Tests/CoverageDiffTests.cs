@@ -293,4 +293,22 @@ public sealed class CoverageDiffTests
 
         Assert.Empty(result.Files[0].LineChanges);
     }
+
+    [Fact]
+    public void LineDelta_Match_RoutesEachVariantToItsOwnArm()
+    {
+        // Match<T> is the value-returning half of the visitor pair; production uses Switch, so
+        // nothing else exercises these four copy-paste-shaped overrides — pin that each routes to
+        // its own arm (a mis-wire like Added.Match -> removed(this) would otherwise go unnoticed).
+        string Tag(LineDelta d) => d.Match(
+            added:       _ => "added",
+            removed:     _ => "removed",
+            newlyHit:    _ => "newlyHit",
+            newlyMissed: _ => "newlyMissed");
+
+        Assert.Equal("added", Tag(new LineDelta.Added(1, 5)));
+        Assert.Equal("removed", Tag(new LineDelta.Removed(2, 3)));
+        Assert.Equal("newlyHit", Tag(new LineDelta.NewlyHit(3, 0, 4)));
+        Assert.Equal("newlyMissed", Tag(new LineDelta.NewlyMissed(4, 7, 0)));
+    }
 }
