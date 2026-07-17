@@ -3,7 +3,7 @@
   <PropertyGroup>
     <XunitVersion>2.9.3</XunitVersion>
     <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
-    <MicrosoftNetTestSdkVersion>18.7.0</MicrosoftNetTestSdkVersion>
+    <MicrosoftNetTestSdkVersion>18.8.1</MicrosoftNetTestSdkVersion>
     <CoverletCollectorVersion>10.0.1</CoverletCollectorVersion>
     <NukeCommonVersion>10.1.0</NukeCommonVersion>
     <ANcpLuaAnalyzersVersion>2.1.1</ANcpLuaAnalyzersVersion>
