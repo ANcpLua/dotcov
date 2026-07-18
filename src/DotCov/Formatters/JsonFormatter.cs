@@ -57,9 +57,9 @@ public static class JsonFormatter
         writer.WriteStartObject();
 
         writer.WriteStartObject("summary");
-        writer.WriteNumber("before", Pct(diff.BeforeRate));
-        writer.WriteNumber("after", Pct(diff.AfterRate));
-        writer.WriteNumber("delta", Pct(diff.Delta));
+        if (diff.BeforeRate is { } bRate) writer.WriteNumber("before", Pct(bRate));
+        if (diff.AfterRate is { } aRate) writer.WriteNumber("after", Pct(aRate));
+        if (diff.Delta is { } dRate) writer.WriteNumber("delta", Pct(dRate));
         writer.WriteNumber("indirectLineChanges", diff.TotalLineChanges);
         writer.WriteEndObject();
 
@@ -71,7 +71,7 @@ public static class JsonFormatter
             // Added files have no "before", removed files have no "after" — omit, don't null.
             if (d.Before.HasValue) writer.WriteNumber("before", Pct(d.Before.Value));
             if (d.After.HasValue) writer.WriteNumber("after", Pct(d.After.Value));
-            writer.WriteNumber("delta", Pct(d.Delta));
+            if (d.Delta is { } fileDelta) writer.WriteNumber("delta", Pct(fileDelta));
             writer.WriteString("change", d.Change.ToString().ToLowerInvariant());
             if (d.LineChanges.Count > 0)
             {
@@ -108,8 +108,10 @@ public static class JsonFormatter
     private static void WriteSummary(Utf8JsonWriter writer, CoverageReport report)
     {
         writer.WriteStartObject();
-        writer.WriteNumber("lineRate", Pct(report.LineRate));
-        if (report.HasBranchData) writer.WriteNumber("branchRate", Pct(report.BranchRate));
+        // Omitted rather than zeroed when unmeasured: a consumer that sees no key can tell
+        // it has no data; one that sees 0 cannot distinguish that from total failure.
+        if (report.LineRate is { } lr) writer.WriteNumber("lineRate", Pct(lr));
+        if (report.BranchRate is { } br) writer.WriteNumber("branchRate", Pct(br));
         writer.WriteBoolean("hasBranchData", report.HasBranchData);
         writer.WriteNumber("totalLines", report.TotalLines);
         writer.WriteNumber("coveredLines", report.TotalLinesHit);
@@ -122,8 +124,8 @@ public static class JsonFormatter
     {
         writer.WriteStartObject();
         writer.WriteString("path", f.Path);
-        writer.WriteNumber("lineRate", Pct(f.LineRate));
-        if (f.HasBranchData) writer.WriteNumber("branchRate", Pct(f.BranchRate));
+        if (f.LineRate is { } flr) writer.WriteNumber("lineRate", Pct(flr));
+        if (f.BranchRate is { } fbr) writer.WriteNumber("branchRate", Pct(fbr));
         writer.WriteNumber("linesHit", f.LinesHit);
         writer.WriteNumber("linesTotal", f.LinesTotal);
         writer.WriteNumber("branchesHit", f.BranchesHit);

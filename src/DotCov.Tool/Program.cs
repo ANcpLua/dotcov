@@ -75,20 +75,26 @@ static async Task<int> Check(Dictionary<string, string> opts)
         return 1;
     }
 
-    if (report.MeetsThreshold(minLine, minBranch))
+    var gate = report.Evaluate(minLine, minBranch);
+
+    if (gate.IsPass)
     {
-        Console.WriteLine($"PASS: line {report.LineRate * 100:F1}% >= {minLine}%, branch {report.BranchRate * 100:F1}% >= {minBranch}%");
+        Console.WriteLine(gate.ToString());
         return await MaybeUpload(opts, () => JsonFormatter.Format(report));
     }
 
-    Console.Error.WriteLine($"FAIL: line {report.LineRate * 100:F1}% < {minLine}% or branch {report.BranchRate * 100:F1}% < {minBranch}%");
+    Console.Error.WriteLine(gate.ToString());
 
     foreach (var f in report.BelowPercent(minLine))
-        Console.Error.WriteLine($"  {f.Path}: {f.LineRate * 100:F1}%");
+        Console.Error.WriteLine($"  {f.Path}: {f.LineRate!.Value * 100:F1}%");
 
     if (opts.ContainsKey("github-summary"))
         WriteGitHubSummary(MarkdownFormatter.Format(report, minLine));
 
+    // POLICY (shell, not core - open question for the effectful pass): NoData and Disabled both
+    // exit 1 here, deliberately conservative. Whether they deserve a distinct exit code (2?) is a
+    // CLI contract change that ripples into every consumer's CI, so it is not decided in this
+    // change. GateResult.Outcome carries the distinction whenever that call gets made.
     return 1;
 }
 

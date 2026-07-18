@@ -25,7 +25,7 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(0.3, result.Files[0].Delta, precision: 10);
+        Assert.Equal(0.3, result.Files[0].Delta!.Value, precision: 10);
         Assert.Equal(FileChangeKind.Modified, result.Files[0].Change);
     }
 
@@ -79,7 +79,7 @@ public sealed class CoverageDiffTests
 
         Assert.Equal(0.5, result.BeforeRate);
         Assert.Equal(0.8, result.AfterRate);
-        Assert.Equal(0.3, result.Delta, precision: 10);
+        Assert.Equal(0.3, result.Delta!.Value, precision: 10);
     }
 
     [Fact]

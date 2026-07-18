@@ -70,10 +70,12 @@ public interface ICoverageReport : INukeBuild
 
             WriteGitHubStepSummary(MarkdownFormatter.Format(report, minLine));
 
-            Assert.True(
-                report.MeetsThreshold(minLine, minBranch),
-                $"Coverage below threshold: line {report.LineRate * 100:F1}% < {minLine}% " +
-                $"or branch {report.BranchRate * 100:F1}% < {minBranch}%");
+            // POLICY (shell, not core - open question for the effectful pass): NoData and
+            // Disabled currently fail the build alongside Fail, on the reasoning that a gate which
+            // cannot verify must not vouch. Whether NUKE should instead warn is a build-semantics
+            // decision; GateResult.Outcome distinguishes the cases whenever that is settled.
+            var gate = report.Evaluate(minLine, minBranch);
+            Assert.True(gate.IsPass, gate.ToString());
         });
 
     private static void WriteGitHubStepSummary(string markdown)

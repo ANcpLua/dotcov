@@ -7,15 +7,31 @@ public static class MarkdownFormatter
     public static string Format(CoverageReport report, double? threshold = null)
     {
         var sb = new StringBuilder();
-        var status = threshold.HasValue
-            ? report.MeetsThreshold(threshold.Value) ? "pass" : "fail"
-            : null;
+        // A gate that could not evaluate gets its own badge. Rendering NoData/Disabled as ✅
+        // is what lets an unmeasured build read as a healthy one in a PR summary.
+        var gate = threshold.HasValue ? report.Evaluate(threshold.Value) : (GateResult?)null;
+        var badge = gate?.Outcome switch
+        {
+            GateOutcome.Pass => " ✅",
+            GateOutcome.Fail => " ❌",
+            GateOutcome.NoData => " ⚠️",
+            GateOutcome.Disabled => " ⚠️",
+            _ => "",
+        };
 
-        sb.AppendLine($"## Coverage Report{(status is "pass" ? " ✅" : status is "fail" ? " ❌" : "")}");
+        sb.AppendLine($"## Coverage Report{badge}");
         sb.AppendLine();
-        sb.AppendLine($"**Line coverage:** {report.LineRate * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})");
+        sb.AppendLine(report.LineRate is { } lr
+            ? $"**Line coverage:** {lr * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})"
+            : "**Line coverage:** no data - the report contains no measured lines");
+        if (gate is { IsInconclusive: true } g)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"> **No verdict:** {g.Reason}.");
+        }
+
         sb.AppendLine(report.HasBranchData
-            ? $"**Branch coverage:** {report.BranchRate * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})"
+            ? $"**Branch coverage:** {report.BranchRate!.Value * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})"
             : "**Branch coverage:** _no branch data emitted_");
 
         if (threshold.HasValue)
@@ -25,12 +41,12 @@ public static class MarkdownFormatter
         sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
         sb.AppendLine("|------|------:|-------:|---------:|---------:|");
 
-        foreach (var f in report.Files.OrderBy(static f => f.LineRate))
+        foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
         {
             var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
-            var branchPct = f.BranchesTotal > 0 ? $"{f.BranchRate * 100:F1}%" : "-";
+            var branchPct = f.BranchRate is { } b ? $"{b * 100:F1}%" : "-";
             sb.AppendLine(
-                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {f.LineRate * 100:F1}% | {branches} | {branchPct} |");
+                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {(f.LineRate is { } r ? $"{r * 100:F1}%" : "-")} | {branches} | {branchPct} |");
         }
 
         AppendWarnings(sb, report);

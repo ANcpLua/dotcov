@@ -107,11 +107,14 @@ public sealed class ExclusionAndReportTests
     }
 
     [Fact]
-    public void Empty_StaticInstance_HasNoFilesAndPerfectRates()
+    public void Empty_StaticInstance_HasNoFilesAndNoRates()
     {
+        // The empty report is the whole point of this change: it used to claim 1.0/1.0, so a
+        // glob that matched nothing rendered as flawless coverage and cleared every threshold.
         Assert.Empty(CoverageReport.Empty.Files);
-        Assert.Equal(1.0, CoverageReport.Empty.LineRate);
-        Assert.Equal(1.0, CoverageReport.Empty.BranchRate);
+        Assert.Null(CoverageReport.Empty.LineRate);
+        Assert.Null(CoverageReport.Empty.BranchRate);
+        Assert.False(CoverageReport.Empty.HasLineData);
         Assert.False(CoverageReport.Empty.HasBranchData);
     }
 
@@ -287,8 +290,8 @@ public sealed class ExclusionAndReportTests
             lineHits: new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 0 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) });
 
-        Assert.Equal(2.0 / 3.0, f.LineRate, 4);
-        Assert.Equal(1.0 / 3.0, f.StrictLineRate, 4);
+        Assert.Equal(2.0 / 3.0, f.LineRate!.Value, 4);
+        Assert.Equal(1.0 / 3.0, f.StrictLineRate!.Value, 4);
         Assert.Equal(1, f.StrictlyHitLines);
         Assert.Equal(1, f.PartiallyHitLines);
     }
@@ -313,19 +316,19 @@ public sealed class ExclusionAndReportTests
     }
 
     [Fact]
-    public void StrictLineRate_EmptyReport_ReturnsOne()
+    public void StrictLineRate_EmptyReport_ReturnsNull()
     {
-        Assert.Equal(1.0, CoverageReport.Empty.StrictLineRate);
+        Assert.Null(CoverageReport.Empty.StrictLineRate);
     }
 
     [Fact]
-    public void FileCoverage_StrictLineRate_EmptyLines_ReturnsOne()
+    public void FileCoverage_StrictLineRate_EmptyLines_ReturnsNull()
     {
-        // Empty FileCoverage (no LineHits at all) — strict rate is vacuously 1.0 per the
-        // same convention as LineRate, so callers don't have to special-case empty files.
+        // Empty FileCoverage (no LineHits at all) — null, not a vacuous 1.0. Callers do have to
+        // handle empty files, and the type now makes them: that is the point, not an inconvenience.
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
-        Assert.Equal(1.0, f.StrictLineRate);
+        Assert.Null(f.StrictLineRate);
     }
 
     [Fact]
@@ -343,7 +346,7 @@ public sealed class ExclusionAndReportTests
                 branchesByLine: new Dictionary<int, (int Covered, int Total)>())
         ]);
 
-        Assert.Equal(0.6, report.StrictLineRate, 4);
+        Assert.Equal(0.6, report.StrictLineRate!.Value, 4);
     }
 
     [Fact]

@@ -554,3 +554,53 @@ Verified:
 Notes:
 - Docs-only; no API or behaviour change. Released as v0.3.1 so nuget.org re-renders — the
   banner clears on the new version only, 0.3.0's page keeps it permanently.
+
+## Task 14 — 2026-07-18 — Honest core: a rate that cannot be computed is null, not 1.0
+
+`LineRate`/`BranchRate`/`StrictLineRate` returned `1.0` when their denominator was zero. An empty
+report — a glob that matched nothing, a test step that emitted no Cobertura, a search directory
+pointing somewhere stale — therefore reported **100% line and 100% branch and cleared every
+threshold**. Same for a branch threshold checked against a report carrying no branch data.
+Reproduced against 0.3.1 before the change:
+
+    check <empty dir>   --min-line 95 --min-branch 75  ->  PASS: line 100.0%, branch 100.0%   exit 0
+    check <line-only>   --min-line 50 --min-branch 75  ->  PASS: branch 100.0% >= 75%         exit 0
+
+Six existing tests asserted exactly this (`..._ReturnsOne`, `..._HasNoFilesAndPerfectRates`,
+`Parse_NoBranches_ReportsFullBranchRate`). The behaviour was specified, not overlooked — which is
+why a 240-test suite at 100% self-coverage stayed green over it. Coverage cannot catch a wrong
+specification; only reproducing the claim against real input can.
+
+Changed (pure core only — no side-effecting behaviour was redesigned):
+- Rates are `double?` across `CoverageReport` and `FileCoverage`. Null means unanswerable, and is
+  distinct from `0.0` (measured, nothing hit). Added `HasLineData` alongside `HasBranchData`.
+- `MeetsThreshold` → `Evaluate`, returning `GateResult` with a four-state `GateOutcome`:
+  `Pass` / `Fail` / `NoData` / `Disabled`. A bool collapsed "too low", "nothing measured", and
+  "no threshold set" into one `false`, though CI owes each a different response.
+- `Disabled` reports thresholds of 0/0 explicitly: a gate that cannot fail is indistinguishable
+  from a passing one from the outside, which is how `--coverage-min-line 0` survives in a pipeline
+  looking like enforcement.
+- `BelowPercent` no longer lists unmeasured files as offenders — they are not "below" anything.
+- `ExclusionRules.TestCode`, separate from `WellKnown` because excluding test code changes the
+  number rather than corrects it. Includes `TestSupport` spellings: a `.Tests` rule does not match
+  a `TestSupport` assembly, and that gap silently counts shared fixtures as product code.
+- Formatters render unmeasured as `-` / `n/a` / omitted JSON keys, never as a number. `AnsiPen.Rate`
+  takes `double?` so no colour verdict is asserted over absent data. Markdown gains a `⚠️` badge and
+  a "No verdict" note for inconclusive gates, instead of showing ✅.
+- `CoverageDiffResult.Delta` and `FileDelta.Delta` are `double?`: a diff against an empty report is
+  not a 100-point regression, it is not a comparison.
+
+Deliberately NOT changed — these are effectful decisions, left for the shell pass:
+- exit codes: `NoData`/`Disabled` currently exit 1 (conservative: a gate that cannot verify must not
+  vouch). Whether they warrant a distinct code is a CLI contract change affecting every consumer.
+- `ParseDirectory` on zero matches still returns `Empty` rather than throwing.
+- The NUKE component still fails the build on inconclusive outcomes rather than warning.
+Both call sites carry a POLICY comment marking the open question.
+
+Verified:
+- 252/252 tests pass (240 before; 12 added, 6 rewritten from asserting the old behaviour).
+- Rebuilt CLI against the original reproductions: empty dir → `NODATA ... exit 1`; line-only with
+  `--min-branch 75` → `NODATA ... exit 1`; `0/0` → `DISABLED ... exit 1`; genuine pass → exit 0;
+  genuine fail → exit 1.
+
+Breaking: `double` → `double?` on every rate, `MeetsThreshold` removed. Next release is 0.4.0.

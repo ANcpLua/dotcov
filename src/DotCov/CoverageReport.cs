@@ -56,8 +56,15 @@ public readonly record struct FileCoverage(
     int BranchesHit,
     int BranchesTotal)
 {
-    public double LineRate => LinesTotal is 0 ? 1.0 : (double)LinesHit / LinesTotal;
-    public double BranchRate => BranchesTotal is 0 ? 1.0 : (double)BranchesHit / BranchesTotal;
+    /// <summary>
+    /// Ratio of hit lines, or <c>null</c> when the file carries no line data. Null is not zero
+    /// and not one: it means the question is unanswerable, and a caller that formats or compares
+    /// it must say so rather than invent a number.
+    /// </summary>
+    public double? LineRate => LinesTotal is 0 ? null : (double)LinesHit / LinesTotal;
+
+    /// <summary>Ratio of hit branches, or <c>null</c> when the file carries no branch data.</summary>
+    public double? BranchRate => BranchesTotal is 0 ? null : (double)BranchesHit / BranchesTotal;
 
     /// <summary>
     /// True when the underlying report carries branch data for this file. Lets formatters
@@ -216,7 +223,7 @@ public readonly record struct FileCoverage(
     /// keyspace of <see cref="LineHits"/> diverge from the Codecov formula by exactly that
     /// gap.
     /// </summary>
-    public double StrictLineRate => LinesTotal is 0 ? 1.0 : (double)StrictlyHitLines / LinesTotal;
+    public double? StrictLineRate => LinesTotal is 0 ? null : (double)StrictlyHitLines / LinesTotal;
 
     /// <summary>
     /// Reconcile two reports of the same file into one. Returns the merged
@@ -341,8 +348,19 @@ public sealed class CoverageReport
     public int TotalBranches => Files.Sum(static f => f.BranchesTotal);
     public int TotalBranchesHit => Files.Sum(static f => f.BranchesHit);
 
-    public double LineRate => TotalLines is 0 ? 1.0 : (double)TotalLinesHit / TotalLines;
-    public double BranchRate => TotalBranches is 0 ? 1.0 : (double)TotalBranchesHit / TotalBranches;
+    /// <summary>
+    /// Ratio of hit lines across the report, or <c>null</c> when it carries no line data at all —
+    /// an empty report, a glob that matched nothing, a test step that produced no Cobertura.
+    /// Returning 1.0 there (as this once did) renders "we measured nothing" as "we measured
+    /// everything", which passes any gate. Null forces the caller to distinguish the two.
+    /// </summary>
+    public double? LineRate => TotalLines is 0 ? null : (double)TotalLinesHit / TotalLines;
+
+    /// <summary>Ratio of hit branches, or <c>null</c> when the report carries no branch data.</summary>
+    public double? BranchRate => TotalBranches is 0 ? null : (double)TotalBranchesHit / TotalBranches;
+
+    /// <summary>True when the report carries any line data at all.</summary>
+    public bool HasLineData => TotalLines > 0;
 
     /// <summary>True when any file in the report carries branch data.</summary>
     public bool HasBranchData => TotalBranches > 0;
@@ -353,13 +371,44 @@ public sealed class CoverageReport
     /// precomputed per-file <see cref="FileCoverage.StrictlyHitLines"/> rather than re-walking
     /// every <see cref="FileCoverage.LineHits"/> dict.
     /// </summary>
-    public double StrictLineRate => TotalLines is 0 ? 1.0 : (double)Files.Sum(static f => f.StrictlyHitLines) / TotalLines;
+    public double? StrictLineRate => TotalLines is 0 ? null : (double)Files.Sum(static f => f.StrictlyHitLines) / TotalLines;
 
+    /// <summary>
+    /// Files measured below <paramref name="linePercent"/>. Files with no line data are not
+    /// "below" anything and are omitted — they are unmeasured, not failing.
+    /// </summary>
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
-        Files.Where(f => f.LineRate * 100 < linePercent);
+        Files.Where(f => f.LineRate is { } r && r * 100 < linePercent);
 
-    public bool MeetsThreshold(double minLinePercent, double minBranchPercent = 0) =>
-        LineRate * 100 >= minLinePercent && BranchRate * 100 >= minBranchPercent;
+    /// <summary>
+    /// Decide whether this report clears the given thresholds. Returns the full verdict rather
+    /// than a bool so callers can tell a real failure from an unanswerable question from a gate
+    /// that was never armed — three outcomes a bool collapses into "false".
+    /// </summary>
+    public GateResult Evaluate(double minLinePercent, double minBranchPercent = 0)
+    {
+        if (minLinePercent <= 0 && minBranchPercent <= 0)
+            return new GateResult(GateOutcome.Disabled, LineRate, BranchRate, minLinePercent, minBranchPercent,
+                "both thresholds are 0 - this gate cannot fail");
+
+        if (!HasLineData)
+            return new GateResult(GateOutcome.NoData, null, null, minLinePercent, minBranchPercent,
+                "report carries no line data - nothing was measured");
+
+        if (minBranchPercent > 0 && !HasBranchData)
+            return new GateResult(GateOutcome.NoData, LineRate, null, minLinePercent, minBranchPercent,
+                $"branch threshold of {minBranchPercent}% requested but the report carries no branch data");
+
+        var lineOk = LineRate * 100 >= minLinePercent;
+        var branchOk = minBranchPercent <= 0 || BranchRate * 100 >= minBranchPercent;
+
+        return lineOk && branchOk
+            ? new GateResult(GateOutcome.Pass, LineRate, BranchRate, minLinePercent, minBranchPercent, "thresholds met")
+            : new GateResult(GateOutcome.Fail, LineRate, BranchRate, minLinePercent, minBranchPercent,
+                !lineOk && !branchOk ? "line and branch coverage below threshold"
+                : !lineOk ? "line coverage below threshold"
+                : "branch coverage below threshold");
+    }
 
     /// <summary>Remove files matching exclusion patterns. Returns a new report.</summary>
     public CoverageReport Exclude(IEnumerable<string> patterns) =>
@@ -435,5 +484,27 @@ public static class ExclusionRules
         // runsettings), which removes them at the source, not via a path filter that can't fire.
         "GlobalUsings",   // auto-generated global usings
         "/Program.cs",    // ASP.NET Core / generic host bootstrap — opt back in with --keep Program.cs
+    ];
+
+    /// <summary>
+    /// Test code and the fixtures it is built from. Kept separate from <see cref="WellKnown"/>
+    /// because excluding it changes the number rather than correcting it, and that is a policy
+    /// call: a project may legitimately want its test helpers held to a standard.
+    /// </summary>
+    /// <remarks>
+    /// Coverage asks "did the tests exercise this line". Asked of the fixtures the tests are built
+    /// from, it answers itself — every helper a suite touches is covered by construction — so the
+    /// number carries no information about product risk while still moving the aggregate a gate
+    /// decides on. Note that a <c>.Tests</c> suffix rule does not match a <c>TestSupport</c>
+    /// assembly; both spellings are listed here because that gap is easy to miss and silent.
+    /// </remarks>
+    public static readonly IReadOnlyList<string> TestCode =
+    [
+        ".Tests/",        // xUnit/NUnit/MSTest projects, forward-slash paths
+        ".Tests\\",       // ...and Windows-emitted paths
+        "TestSupport/",   // shared fixtures — NOT matched by a ".Tests" rule
+        "TestSupport\\",
+        "/TestFixtures/",
+        "\\TestFixtures\\",
     ];
 }

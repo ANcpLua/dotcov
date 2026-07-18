@@ -17,8 +17,11 @@ public readonly struct AnsiPen(bool enabled)
     public string Red(string s) => enabled ? $"{Esc}31m{s}{Esc}39m" : s;
     public string Cyan(string s) => enabled ? $"{Esc}36m{s}{Esc}39m" : s;
 
-    /// <summary>Color a coverage percentage cell by its rate (0..1).</summary>
-    public string Rate(string text, double rate) => rate switch
+    /// <summary>
+    /// Color a coverage percentage cell by its rate (0..1). A null rate means unmeasured and
+    /// falls to the dim arm - no colour verdict is asserted over data that does not exist.
+    /// </summary>
+    public string Rate(string text, double? rate) => rate switch
     {
         >= 0.75 => Green(text),
         >= 0.5 => Yellow(text),
@@ -27,7 +30,7 @@ public readonly struct AnsiPen(bool enabled)
     };
 
     /// <summary>Color a delta cell — green for improvement, red for regression, dim for unchanged.</summary>
-    public string Delta(string text, double delta) => delta switch
+    public string Delta(string text, double? delta) => delta switch
     {
         > 0.0001 => Green(text),
         < -0.0001 => Red(text),

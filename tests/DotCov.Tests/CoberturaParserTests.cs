@@ -72,13 +72,16 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void Parse_NoBranches_ReportsFullBranchRate()
+    public void Parse_NoBranches_ReportsNoBranchRate()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
 
         Assert.Equal(0, unused.BranchesTotal);
-        Assert.Equal(1.0, unused.BranchRate);
+        // Not 1.0. A file with no branches has no branch rate - reporting "100%" for absent
+        // data is what let a --min-branch gate pass on reports carrying no branch data at all.
+        Assert.Null(unused.BranchRate);
+        Assert.False(unused.HasBranchData);
     }
 
     [Fact]
@@ -93,25 +96,27 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void MeetsThreshold_AboveMinimum_ReturnsTrue()
+    public void Evaluate_AboveMinimum_Passes()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.True(report.MeetsThreshold(50));
+        Assert.Equal(GateOutcome.Pass, report.Evaluate(50).Outcome);
     }
 
     [Fact]
-    public void MeetsThreshold_BelowMinimum_ReturnsFalse()
+    public void Evaluate_BelowMinimum_Fails()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.False(report.MeetsThreshold(80));
+        var gate = report.Evaluate(80);
+        Assert.Equal(GateOutcome.Fail, gate.Outcome);
+        Assert.Contains("line coverage below threshold", gate.Reason);
     }
 
     [Fact]
-    public void MeetsThreshold_WithBranchMinimum_ChecksBoth()
+    public void Evaluate_WithBranchMinimum_ChecksBoth()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.True(report.MeetsThreshold(50, 50));
-        Assert.False(report.MeetsThreshold(50, 60));
+        Assert.Equal(GateOutcome.Pass, report.Evaluate(50, 50).Outcome);
+        Assert.Equal(GateOutcome.Fail, report.Evaluate(50, 60).Outcome);
     }
 
     [Fact]
@@ -155,7 +160,8 @@ public sealed class CoberturaParserTests
         var report = CoberturaParser.Parse(stream);
 
         Assert.Empty(report.Files);
-        Assert.Equal(1.0, report.LineRate);
+        Assert.Null(report.LineRate);
+        Assert.False(report.HasLineData);
     }
 
     [Fact]
@@ -319,7 +325,8 @@ public sealed class CoberturaParserTests
 
         Assert.Single(report.Files);
         Assert.Equal(0, report.Files[0].LinesTotal);
-        Assert.Equal(1.0, report.Files[0].LineRate);
+        // A class the emitter listed but recorded no lines for is unmeasured, not fully covered.
+        Assert.Null(report.Files[0].LineRate);
     }
 
     [Fact]

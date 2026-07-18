@@ -4,7 +4,7 @@ public readonly record struct FileDelta(
     string Path,
     double? Before,
     double? After,
-    double Delta,
+    double? Delta,
     FileChangeKind Change)
 {
     /// <summary>
@@ -106,13 +106,22 @@ public abstract record LineDelta
 /// </summary>
 public sealed class CoverageDiffResult(
     IReadOnlyList<FileDelta> files,
-    double beforeRate,
-    double afterRate)
+    double? beforeRate,
+    double? afterRate)
 {
     public IReadOnlyList<FileDelta> Files { get; } = files;
-    public double BeforeRate { get; } = beforeRate;
-    public double AfterRate { get; } = afterRate;
-    public double Delta => AfterRate - BeforeRate;
+
+    /// <summary>Aggregate line rate of the "before" report, or null when it carried no line data.</summary>
+    public double? BeforeRate { get; } = beforeRate;
+
+    /// <summary>Aggregate line rate of the "after" report, or null when it carried no line data.</summary>
+    public double? AfterRate { get; } = afterRate;
+
+    /// <summary>
+    /// Movement between the two reports, or null when either side was unmeasured. A diff against
+    /// an empty report is not a 100-point regression - it is not a comparison at all.
+    /// </summary>
+    public double? Delta => AfterRate - BeforeRate;
 
     public IEnumerable<FileDelta> Regressions => Files.Where(static f => f.Delta < 0);
     public IEnumerable<FileDelta> Improvements => Files.Where(static f => f.Delta > 0);
@@ -152,7 +161,11 @@ public static class CoverageDiff
             return (hasBefore, hasAfter) switch
             {
                 (true, true) => new FileDelta(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
-                    Math.Abs(a.LineRate - b.LineRate) < 0.0001 ? FileChangeKind.Unchanged : FileChangeKind.Modified)
+                    // A null delta means neither side carried line data: unmeasured on both ends is
+                    // unchanged, not modified.
+                    (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < 0.0001
+                        ? FileChangeKind.Unchanged
+                        : FileChangeKind.Modified)
                 {
                     LineChanges = ComputeLineChanges(b, a)
                 },
