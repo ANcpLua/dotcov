@@ -27,6 +27,15 @@
     <PackageTags>coverage;cobertura;testing;nuke;ci;dotnet-tool</PackageTags>
   </PropertyGroup>
 
+  <!-- Package README: without PackageReadmeFile nuget.org renders only <Description> and shows a
+       "missing a README" banner. Each src project ships its own minimal README.md next to the
+       csproj; the Exists() guard makes this a no-op for tests (no README, nothing to pack).
+       EnableDefaultNoneItems already globs the file in, so Pack metadata goes on via Update
+       from Directory.Build.targets — Include here would duplicate the item (NETSDK1022). -->
+  <PropertyGroup Condition="Exists('$(MSBuildProjectDirectory)/README.md')">
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
   <!-- CI-specific settings -->
   <PropertyGroup Condition="'$(CI)' == 'true'">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>

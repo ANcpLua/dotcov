@@ -519,3 +519,38 @@ Notes:
 - Requires a `CODECOV_TOKEN` repo secret. Until that secret is set on
   `github.com/ANcpLua/dotcov`, uploads no-op and the badge stays at "unknown" while CI still
   passes.
+
+## Task 13 — 2026-07-18 — Per-package README embedded in every nupkg
+
+nuget.org showed a "Your package is missing a README" banner on all three package pages and
+rendered only the `<Description>` block as body text. The root `README.md` was never packed —
+no project set `PackageReadmeFile`, so nothing shipped inside the nupkg.
+
+Changed:
+- New minimal `README.md` next to each shipping csproj (`src/DotCov`, `src/DotCov.Tool`,
+  `src/DotCov.Nuke`) — install command, the commands themselves, and absolute links back to
+  the repo, the sibling packages, and the licence. Deliberately not a copy of the root README:
+  nuget.org is an install surface, so each page carries only what you type, and links out for
+  the rest. Relative links are inert on nuget.org, hence absolute URLs throughout.
+- `Directory.Build.props` sets `PackageReadmeFile` under an
+  `Exists('$(MSBuildProjectDirectory)/README.md')` guard, so the convention self-limits to the
+  three shipping projects and no-ops for `DotCov.Tests`.
+- New `Directory.Build.targets` attaches `Pack="true" PackagePath="/"` via `None Update`.
+  `Update` rather than `Include`, and in `.targets` rather than `.props`: `Directory.Build.props`
+  is imported before the SDK's default item globs exist, so `Update` there would be a no-op,
+  while `Include` would add a second `None` for a file `EnableDefaultNoneItems` already globbed
+  in — NETSDK1022.
+- Root `README.md` left untouched; it stays the GitHub landing page.
+
+Verified:
+- All five pack shapes carry `README.md` at the package root with `<readme>README.md</readme>`
+  in the nuspec: `DotCov`, `DotCov.Nuke`, the `DotCov.Tool` pointer, the `any` CoreCLR
+  fallback (`-r any -p:PublishAot=false`), and a RID-specific Native AOT build
+  (`-r osx-arm64`) — the shape CI's `fail-fast: true` `pack-tool-native` job builds.
+- No NETSDK1022 (duplicate `None`) and no NU5039 (readme not found) on any pack.
+- `dotnet test DotCov.slnx -c Release` passes 240/240.
+- All five outbound links return HTTP 200.
+
+Notes:
+- Docs-only; no API or behaviour change. Released as v0.3.1 so nuget.org re-renders — the
+  banner clears on the new version only, 0.3.0's page keeps it permanently.

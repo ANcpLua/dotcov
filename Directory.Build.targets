@@ -1,0 +1,10 @@
+<Project>
+
+  <!-- Ships the per-project README.md declared by PackageReadmeFile in Directory.Build.props.
+       Imported after the SDK's default item globs, so `Update` decorates the existing None
+       item instead of adding a second one. -->
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/README.md')">
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>
