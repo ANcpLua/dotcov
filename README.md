@@ -64,8 +64,12 @@ var report = CoberturaParser.ParsePath("TestResults/");        // file or direct
 report = report.Exclude(ExclusionRules.WellKnown);             // strip generated code
 
 Console.WriteLine(TableFormatter.Format(report));
-if (!report.MeetsThreshold(minLinePercent: 80, minBranchPercent: 60))
+var gate = report.Evaluate(minLinePercent: 80, minBranchPercent: 60);
+if (!gate.IsPass)
+{
+    Console.Error.WriteLine(gate);   // e.g. NODATA: line n/a (min 80%) - report carries no line data
     Environment.Exit(1);
+}
 ```
 
 ```csharp
@@ -147,11 +151,12 @@ public sealed class CoverageReport
     static readonly CoverageReport Empty;
     IReadOnlyList<FileCoverage> Files;
     IReadOnlyList<CoverageWarning> Warnings { get; init; }   // parser/merge anomalies
-    double LineRate, BranchRate;
-    double StrictLineRate;           // Codecov-style: partials and misses both depress the rate
-    bool HasBranchData;
-    bool MeetsThreshold(double minLinePercent, double minBranchPercent = 0);
-    IEnumerable<FileCoverage> BelowPercent(double linePercent);
+    // null == unanswerable (no data), which is NOT 0.0 and NOT 1.0. An empty report has no rate.
+    double? LineRate, BranchRate;
+    double? StrictLineRate;          // Codecov-style: partials and misses both depress the rate
+    bool HasLineData, HasBranchData;
+    GateResult Evaluate(double minLinePercent, double minBranchPercent = 0);
+    IEnumerable<FileCoverage> BelowPercent(double linePercent);   // omits unmeasured files
     CoverageReport Exclude(IEnumerable<string> patterns);
     CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep);
     static CoverageReport Merge(CoverageReport a, CoverageReport b);
@@ -160,7 +165,7 @@ public sealed class CoverageReport
 public readonly record struct FileCoverage(
     string Path, int LinesHit, int LinesTotal, int BranchesHit, int BranchesTotal)
 {
-    double LineRate, BranchRate, StrictLineRate;
+    double? LineRate, BranchRate, StrictLineRate;   // null when the file carries no such data
     bool HasBranchData;
     int StrictlyHitLines { get; init; }     // init-only — fill via ClassifyLines
     int PartiallyHitLines { get; init; }    // init-only — fill via ClassifyLines
@@ -176,6 +181,18 @@ public readonly record struct FileCoverage(
     static (int Strict, int Partial) ClassifyLines(
         IReadOnlyDictionary<int, int> lineHits,
         IReadOnlyDictionary<int, (int Covered, int Total)> branchesByLine);
+}
+
+// A threshold check has four outcomes, not two. Collapsing them into a bool is how a build
+// that measured nothing comes to look identical to one that measured everything and passed.
+public enum GateOutcome { Pass, Fail, NoData, Disabled }
+
+public readonly record struct GateResult(
+    GateOutcome Outcome, double? LineRate, double? BranchRate,
+    double MinLinePercent, double MinBranchPercent, string Reason)
+{
+    bool IsPass;            // Pass only — Disabled is not a pass, nothing was verified
+    bool IsInconclusive;    // NoData or Disabled
 }
 
 public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state
