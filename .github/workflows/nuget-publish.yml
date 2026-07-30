@@ -62,6 +62,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # badge push to the `badges` branch (ubuntu + main only)
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -71,13 +73,30 @@ jobs:
         run: dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }} --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults
         env:
           CI: true
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
-        with:
-          files: TestResults/**/coverage.cobertura.xml
-          flags: ${{ matrix.os }}
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # Dogfood: dotcov measures dotcov. The badge is shields.io's endpoint schema, published to
+      # the `badges` branch and served via raw.githubusercontent — no external coverage service.
+      - name: Generate coverage badge (dotcov measuring dotcov)
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          dotnet run --project src/DotCov.Tool -c Release -- report TestResults --format json > coverage.json
+          RATE=$(jq -r '.summary.lineRate // empty' coverage.json)
+          # Absent key means no line data was measured; a badge claiming otherwise would lie.
+          if [ -z "$RATE" ]; then echo "no line data — refusing to publish a badge"; exit 1; fi
+          COLOR=$(awk -v r="$RATE" 'BEGIN { print (r >= 90) ? "brightgreen" : (r >= 75) ? "yellow" : "red" }')
+          MSG=$(awk -v r="$RATE" 'BEGIN { printf "%.1f%%", r }')
+          printf '{"schemaVersion":1,"label":"Coverage","message":"%s","color":"%s"}\n' "$MSG" "$COLOR" > coverage-badge.json
+          echo "badge: $MSG ($COLOR)"
+      - name: Publish badge to badges branch
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin badges
+          git worktree add -B badges badge-wt origin/badges
+          cp coverage-badge.json badge-wt/
+          cd badge-wt
+          git add coverage-badge.json
+          git diff --cached --quiet || { git commit -m "badge: $(jq -r .message ../coverage-badge.json) coverage"; git push origin badges; }
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single

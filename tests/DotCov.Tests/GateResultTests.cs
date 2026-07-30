@@ -98,6 +98,17 @@ public sealed class GateResultTests
     }
 
     [Fact]
+    public void ToString_RendersMeasuredRatesAsPercentages()
+    {
+        // The measured arm of both rate renderings: 62/100 lines, 101/200 branches.
+        var text = Report(62, 100, 101, 200).Evaluate(80, 70).ToString();
+
+        Assert.Contains("FAIL", text);
+        Assert.Contains($"line {62d:F1}%", text);
+        Assert.Contains($"branch {50.5:F1}%", text);
+    }
+
+    [Fact]
     public void BelowPercent_OmitsUnmeasuredFiles()
     {
         // An unmeasured file is not "below" a threshold; listing it as an offender sends people
