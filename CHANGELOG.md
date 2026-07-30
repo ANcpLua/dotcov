@@ -604,3 +604,22 @@ Verified:
   genuine fail → exit 1.
 
 Breaking: `double` → `double?` on every rate, `MeetsThreshold` removed. Next release is 0.4.0.
+
+## Task 15 — 2026-07-30 — Invariant output, structured gate verdicts, prose pinned once
+
+Changed:
+- All human-readable numeric rendering (`GateResult.ToString`, `TableFormatter`,
+  `MarkdownFormatter`, the CLI's below-threshold listing, and the NoData branch-threshold
+  `Reason`) now formats with `FormattableString.Invariant`. CI logs, PR summaries, and
+  scripts parse these strings; a de-AT host must not turn `62.0%` into `62,0%`. Pinned by
+  `ToString_IsCultureInvariant`, which runs the render under `de-AT`.
+- New structured verdict properties `GateResult.LineBelowThreshold` /
+  `BranchBelowThreshold` (same comparisons `Evaluate` uses). Tests and consumers branch on
+  these instead of parsing `Reason` prose.
+- `Reason` wording is asserted in exactly one golden test
+  (`Reason_CanonicalProse_IsPinnedHereOnly`); all other tests assert structure, so a
+  rewording is a one-test change instead of a scatter of false failures.
+- `GateResultTests.Report` helper lost its `bHit = 0, bTotal = 0` defaults — branch data
+  presence decides Pass/Fail vs NoData, so it is now explicit at every call site.
+
+256/256 green; self-measured 99.4% line / 97.1% branch, `GateResult.cs` at 100/100.

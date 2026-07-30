@@ -397,7 +397,7 @@ public sealed class CoverageReport
 
         if (minBranchPercent > 0 && !HasBranchData)
             return new GateResult(GateOutcome.NoData, LineRate, null, minLinePercent, minBranchPercent,
-                $"branch threshold of {minBranchPercent}% requested but the report carries no branch data");
+                FormattableString.Invariant($"branch threshold of {minBranchPercent}% requested but the report carries no branch data"));
 
         var lineOk = LineRate * 100 >= minLinePercent;
         var branchOk = minBranchPercent <= 0 || BranchRate * 100 >= minBranchPercent;

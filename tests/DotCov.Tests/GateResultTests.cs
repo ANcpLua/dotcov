@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 
 namespace DotCov.Tests;
@@ -10,7 +11,9 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class GateResultTests
 {
-    private static CoverageReport Report(int hit, int total, int bHit = 0, int bTotal = 0) =>
+    // Branch counts are deliberately not defaulted: whether a case runs with or without branch
+    // data decides between Pass/Fail and NoData, so it must be visible at every call site.
+    private static CoverageReport Report(int hit, int total, int bHit, int bTotal) =>
         new([new FileCoverage("src/A.cs", hit, total, bHit, bTotal)]);
 
     [Fact]
@@ -22,7 +25,9 @@ public sealed class GateResultTests
         Assert.Equal(GateOutcome.NoData, gate.Outcome);
         Assert.False(gate.IsPass);
         Assert.Null(gate.LineRate);
-        Assert.Contains("no line data", gate.Reason);
+        // Unmeasured is not "below": a rate that does not exist cannot be under a threshold.
+        Assert.False(gate.LineBelowThreshold);
+        Assert.False(gate.BranchBelowThreshold);
     }
 
     [Fact]
@@ -30,13 +35,13 @@ public sealed class GateResultTests
     {
         // Line data present, branch data absent, --min-branch 75 requested. Previously passed
         // because BranchRate returned 1.0 for "no branches emitted".
-        var gate = Report(hit: 8, total: 10).Evaluate(50, 75);
+        var gate = Report(hit: 8, total: 10, bHit: 0, bTotal: 0).Evaluate(50, 75);
 
         Assert.Equal(GateOutcome.NoData, gate.Outcome);
         Assert.False(gate.IsPass);
         Assert.Equal(0.8, gate.LineRate);
         Assert.Null(gate.BranchRate);
-        Assert.Contains("no branch data", gate.Reason);
+        Assert.False(gate.BranchBelowThreshold);
     }
 
     [Fact]
@@ -44,7 +49,7 @@ public sealed class GateResultTests
     {
         // Asking nothing of branches is answerable even with no branch data - only a caller
         // that actually requested a branch guarantee is owed a NoData.
-        var gate = Report(hit: 8, total: 10).Evaluate(50);
+        var gate = Report(hit: 8, total: 10, bHit: 0, bTotal: 0).Evaluate(50);
 
         Assert.Equal(GateOutcome.Pass, gate.Outcome);
     }
@@ -54,12 +59,13 @@ public sealed class GateResultTests
     {
         // The Paperless case: `--coverage-min-line 0 --coverage-min-branch 0` ran for months
         // looking like a gate. A gate that cannot fail should say so rather than say "pass".
-        var gate = Report(hit: 1, total: 100).Evaluate(0, 0);
+        var gate = Report(hit: 1, total: 100, bHit: 0, bTotal: 0).Evaluate(0, 0);
 
         Assert.Equal(GateOutcome.Disabled, gate.Outcome);
         Assert.False(gate.IsPass);
         Assert.True(gate.IsInconclusive);
-        Assert.Contains("cannot fail", gate.Reason);
+        // An unarmed branch threshold never reports "below", whatever the measured rate.
+        Assert.False(gate.BranchBelowThreshold);
     }
 
     [Fact]
@@ -75,15 +81,57 @@ public sealed class GateResultTests
     [InlineData(7, 10, 80, GateOutcome.Fail)]
     public void LineThreshold_ComparesInclusively(int hit, int total, double min, GateOutcome expected)
     {
-        Assert.Equal(expected, Report(hit, total).Evaluate(min).Outcome);
+        Assert.Equal(expected, Report(hit, total, bHit: 0, bTotal: 0).Evaluate(min).Outcome);
     }
 
     [Fact]
     public void Fail_NamesWhichDimensionFell()
     {
-        Assert.Contains("line coverage below", Report(5, 10, 9, 10).Evaluate(80, 50).Reason);
-        Assert.Contains("branch coverage below", Report(9, 10, 5, 10).Evaluate(80, 90).Reason);
-        Assert.Contains("line and branch", Report(5, 10, 5, 10).Evaluate(80, 90).Reason);
+        // Structured verdicts, not Reason prose: which dimension fell is a fact of the result,
+        // and asserting it through wording would make every rewording a false failure.
+        var lineOnly = Report(5, 10, 9, 10).Evaluate(80, 50);
+        Assert.True(lineOnly.LineBelowThreshold);
+        Assert.False(lineOnly.BranchBelowThreshold);
+
+        var branchOnly = Report(9, 10, 5, 10).Evaluate(80, 90);
+        Assert.False(branchOnly.LineBelowThreshold);
+        Assert.True(branchOnly.BranchBelowThreshold);
+
+        var both = Report(5, 10, 5, 10).Evaluate(80, 90);
+        Assert.True(both.LineBelowThreshold);
+        Assert.True(both.BranchBelowThreshold);
+    }
+
+    [Fact]
+    public void Pass_ReportsNothingBelowThreshold()
+    {
+        var gate = Report(hit: 9, total: 10, bHit: 9, bTotal: 10).Evaluate(80, 50);
+
+        Assert.Equal(GateOutcome.Pass, gate.Outcome);
+        Assert.False(gate.LineBelowThreshold);
+        Assert.False(gate.BranchBelowThreshold);
+    }
+
+    [Fact]
+    public void Reason_CanonicalProse_IsPinnedHereOnly()
+    {
+        // The one test allowed to know the wording. Everything else asserts structure
+        // (Outcome, LineBelowThreshold, BranchBelowThreshold), so rewording the prose is a
+        // one-test change instead of a scatter of false failures.
+        Assert.Equal("both thresholds are 0 - this gate cannot fail",
+            Report(1, 100, 0, 0).Evaluate(0, 0).Reason);
+        Assert.Equal("report carries no line data - nothing was measured",
+            CoverageReport.Empty.Evaluate(95, 75).Reason);
+        Assert.Equal("branch threshold of 75% requested but the report carries no branch data",
+            Report(8, 10, 0, 0).Evaluate(50, 75).Reason);
+        Assert.Equal("thresholds met",
+            Report(9, 10, 9, 10).Evaluate(80, 50).Reason);
+        Assert.Equal("line coverage below threshold",
+            Report(5, 10, 9, 10).Evaluate(80, 50).Reason);
+        Assert.Equal("branch coverage below threshold",
+            Report(9, 10, 5, 10).Evaluate(80, 90).Reason);
+        Assert.Equal("line and branch coverage below threshold",
+            Report(5, 10, 5, 10).Evaluate(80, 90).Reason);
     }
 
     [Fact]
@@ -101,11 +149,34 @@ public sealed class GateResultTests
     public void ToString_RendersMeasuredRatesAsPercentages()
     {
         // The measured arm of both rate renderings: 62/100 lines, 101/200 branches.
+        // Literal expectations on purpose - the output is invariant-formatted, so these
+        // strings are exact on every host locale.
         var text = Report(62, 100, 101, 200).Evaluate(80, 70).ToString();
 
         Assert.Contains("FAIL", text);
-        Assert.Contains($"line {62d:F1}%", text);
-        Assert.Contains($"branch {50.5:F1}%", text);
+        Assert.Contains("line 62.0%", text);
+        Assert.Contains("branch 50.5%", text);
+    }
+
+    [Fact]
+    public void ToString_IsCultureInvariant()
+    {
+        // A de-AT host writes 62,0 for 62.0 under current-culture formatting. CI logs and
+        // scripts parse this line, so its shape must not follow the machine's locale.
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-AT");
+            var text = Report(62, 100, 101, 200).Evaluate(80.5, 70).ToString();
+
+            Assert.Contains("line 62.0%", text);
+            Assert.Contains("branch 50.5%", text);
+            Assert.Contains("min 80.5%", text);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]

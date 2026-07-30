@@ -1,7 +1,10 @@
 using System.Text;
+using static System.FormattableString;
 
 namespace DotCov.Formatters;
 
+// All numeric rendering is invariant-formatted: this output lands in CI logs, PR summaries,
+// and scripts, so its shape must not follow the host locale (de-AT would write 62,1%).
 public static class TableFormatter
 {
     public static string Format(CoverageReport report) => Format(report, color: false);
@@ -19,9 +22,9 @@ public static class TableFormatter
         foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
-            var linePct = (f.LineRate is { } r ? $"{r * 100,7:F1}%" : "       -").PadLeft(8);
+            var linePct = (f.LineRate is { } r ? Invariant($"{r * 100,7:F1}%") : "       -").PadLeft(8);
             var branches = (f.HasBranchData ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-").PadLeft(10);
-            var branchPct = (f.BranchRate is { } br ? $"{br * 100,7:F1}%" : "       -").PadLeft(8);
+            var branchPct = (f.BranchRate is { } br ? Invariant($"{br * 100,7:F1}%") : "       -").PadLeft(8);
 
             sb.AppendLine(
                 $"{f.Path.PadRight(maxPath)}  " +
@@ -34,10 +37,10 @@ public static class TableFormatter
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
         var totalLines = $"{report.TotalLinesHit}/{report.TotalLines}".PadLeft(10);
-        var totalLinePct = (report.LineRate is { } tr ? $"{tr * 100,7:F1}%" : "       -").PadLeft(8);
+        var totalLinePct = (report.LineRate is { } tr ? Invariant($"{tr * 100,7:F1}%") : "       -").PadLeft(8);
         var totalBranches = (report.HasBranchData
             ? $"{report.TotalBranchesHit}/{report.TotalBranches}" : "-").PadLeft(10);
-        var totalBranchPct = (report.BranchRate is { } tbr ? $"{tbr * 100,7:F1}%" : "       -").PadLeft(8);
+        var totalBranchPct = (report.BranchRate is { } tbr ? Invariant($"{tbr * 100,7:F1}%") : "       -").PadLeft(8);
 
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
@@ -68,10 +71,10 @@ public static class TableFormatter
 
         foreach (var d in diff.Files)
         {
-            var before = (d.Before.HasValue ? $"{d.Before.Value * 100:F1}%" : "-").PadLeft(8);
-            var after = (d.After.HasValue ? $"{d.After.Value * 100:F1}%" : "-").PadLeft(8);
+            var before = (d.Before.HasValue ? Invariant($"{d.Before.Value * 100:F1}%") : "-").PadLeft(8);
+            var after = (d.After.HasValue ? Invariant($"{d.After.Value * 100:F1}%") : "-").PadLeft(8);
             var indicator = d.Delta switch { > 0 => "+", < 0 => "", _ => " " };
-            var deltaText = d.Delta is { } dv ? $"{indicator}{dv * 100,6:F1}%" : "       -";
+            var deltaText = d.Delta is { } dv ? Invariant($"{indicator}{dv * 100,6:F1}%") : "       -";
             var change = $"{d.Change,10}";
 
             sb.AppendLine(
@@ -84,11 +87,11 @@ public static class TableFormatter
 
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
         var sign = diff.Delta >= 0 ? "+" : "";
-        var totalDeltaText = diff.Delta is { } td ? $"{sign}{td * 100,6:F1}%" : "       -";
+        var totalDeltaText = diff.Delta is { } td ? Invariant($"{sign}{td * 100,6:F1}%") : "       -";
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
-            $"{pen.Bold(diff.BeforeRate is { } bt ? $"{bt * 100,7:F1}%" : "       -")}  " +
-            $"{pen.Bold(diff.AfterRate is { } at ? $"{at * 100,7:F1}%" : "       -")}  " +
+            $"{pen.Bold(diff.BeforeRate is { } bt ? Invariant($"{bt * 100,7:F1}%") : "       -")}  " +
+            $"{pen.Bold(diff.AfterRate is { } at ? Invariant($"{at * 100,7:F1}%") : "       -")}  " +
             $"{pen.Bold(pen.Delta(totalDeltaText, diff.Delta))}");
 
         // Codecov-style indirect-change summary: one line, only when there's anything to show.

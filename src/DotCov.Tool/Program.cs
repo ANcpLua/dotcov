@@ -86,7 +86,7 @@ static async Task<int> Check(Dictionary<string, string> opts)
     Console.Error.WriteLine(gate.ToString());
 
     foreach (var f in report.BelowPercent(minLine))
-        Console.Error.WriteLine($"  {f.Path}: {f.LineRate!.Value * 100:F1}%");
+        Console.Error.WriteLine(FormattableString.Invariant($"  {f.Path}: {f.LineRate!.Value * 100:F1}%"));
 
     if (opts.ContainsKey("github-summary"))
         WriteGitHubSummary(MarkdownFormatter.Format(report, minLine));

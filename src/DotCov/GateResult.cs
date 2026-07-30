@@ -1,3 +1,5 @@
+using static System.FormattableString;
+
 namespace DotCov;
 
 /// <summary>
@@ -54,12 +56,26 @@ public readonly record struct GateResult(
     /// <summary>True when the gate produced no verdict either way — nothing measured, or nothing asked.</summary>
     public bool IsInconclusive => Outcome is GateOutcome.NoData or GateOutcome.Disabled;
 
+    /// <summary>True when line coverage was measured and fell below <see cref="MinLinePercent"/>.</summary>
+    /// <remarks>
+    /// The structured counterpart to the prose in <see cref="Reason"/>: branch on this, not on
+    /// wording. Same comparison <see cref="CoverageReport.Evaluate"/> uses, so the two never drift.
+    /// </remarks>
+    public bool LineBelowThreshold => LineRate is { } l && l * 100 < MinLinePercent;
+
+    /// <summary>True when a branch threshold was armed, branch coverage was measured, and it fell below <see cref="MinBranchPercent"/>.</summary>
+    public bool BranchBelowThreshold => MinBranchPercent > 0 && BranchRate is { } b && b * 100 < MinBranchPercent;
+
     /// <summary>One-line human summary, e.g. <c>FAIL: line 62.0% &lt; 80% (line coverage below threshold)</c>.</summary>
+    /// <remarks>
+    /// Invariant-formatted: CI logs and scripts read this line, so a de-AT host must not turn
+    /// <c>62.0%</c> into <c>62,0%</c>.
+    /// </remarks>
     public override string ToString()
     {
-        var line = LineRate is { } l ? $"{l * 100:F1}%" : "n/a";
-        var branch = BranchRate is { } b ? $"{b * 100:F1}%" : "n/a";
-        return $"{Outcome.ToString().ToUpperInvariant()}: line {line} (min {MinLinePercent}%), " +
-               $"branch {branch} (min {MinBranchPercent}%) - {Reason}";
+        var line = LineRate is { } l ? Invariant($"{l * 100:F1}%") : "n/a";
+        var branch = BranchRate is { } b ? Invariant($"{b * 100:F1}%") : "n/a";
+        return Invariant($"{Outcome.ToString().ToUpperInvariant()}: line {line} (min {MinLinePercent}%), ") +
+               Invariant($"branch {branch} (min {MinBranchPercent}%) - {Reason}");
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using static System.FormattableString;
 
 namespace DotCov.Formatters;
 
@@ -22,7 +23,7 @@ public static class MarkdownFormatter
         sb.AppendLine($"## Coverage Report{badge}");
         sb.AppendLine();
         sb.AppendLine(report.LineRate is { } lr
-            ? $"**Line coverage:** {lr * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})"
+            ? Invariant($"**Line coverage:** {lr * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})")
             : "**Line coverage:** no data - the report contains no measured lines");
         if (gate is { IsInconclusive: true } g)
         {
@@ -31,11 +32,11 @@ public static class MarkdownFormatter
         }
 
         sb.AppendLine(report.HasBranchData
-            ? $"**Branch coverage:** {report.BranchRate!.Value * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})"
+            ? Invariant($"**Branch coverage:** {report.BranchRate!.Value * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})")
             : "**Branch coverage:** _no branch data emitted_");
 
         if (threshold.HasValue)
-            sb.AppendLine($"**Threshold:** {threshold.Value:F0}%");
+            sb.AppendLine(Invariant($"**Threshold:** {threshold.Value:F0}%"));
 
         sb.AppendLine();
         sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
@@ -44,9 +45,9 @@ public static class MarkdownFormatter
         foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
         {
             var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
-            var branchPct = f.BranchRate is { } b ? $"{b * 100:F1}%" : "-";
+            var branchPct = f.BranchRate is { } b ? Invariant($"{b * 100:F1}%") : "-";
             sb.AppendLine(
-                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {(f.LineRate is { } r ? $"{r * 100:F1}%" : "-")} | {branches} | {branchPct} |");
+                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {(f.LineRate is { } r ? Invariant($"{r * 100:F1}%") : "-")} | {branches} | {branchPct} |");
         }
 
         AppendWarnings(sb, report);
@@ -76,17 +77,17 @@ public static class MarkdownFormatter
         sb.AppendLine($"## Coverage Diff {icon}");
         sb.AppendLine();
         sb.AppendLine(
-            $"**Overall:** {diff.BeforeRate * 100:F1}% → {diff.AfterRate * 100:F1}% ({(diff.Delta >= 0 ? "+" : "")}{diff.Delta * 100:F1}%)");
+            Invariant($"**Overall:** {diff.BeforeRate * 100:F1}% → {diff.AfterRate * 100:F1}% ({(diff.Delta >= 0 ? "+" : "")}{diff.Delta * 100:F1}%)"));
         sb.AppendLine();
         sb.AppendLine("| File | Before | After | Delta | Change |");
         sb.AppendLine("|------|-------:|------:|------:|--------|");
 
         foreach (var d in diff.Files)
         {
-            var before = d.Before.HasValue ? $"{d.Before.Value * 100:F1}%" : "-";
-            var after = d.After.HasValue ? $"{d.After.Value * 100:F1}%" : "-";
+            var before = d.Before.HasValue ? Invariant($"{d.Before.Value * 100:F1}%") : "-";
+            var after = d.After.HasValue ? Invariant($"{d.After.Value * 100:F1}%") : "-";
             var sign = d.Delta >= 0 ? "+" : "";
-            sb.AppendLine($"| `{d.Path}` | {before} | {after} | {sign}{d.Delta * 100:F1}% | {d.Change} |");
+            sb.AppendLine(Invariant($"| `{d.Path}` | {before} | {after} | {sign}{d.Delta * 100:F1}% | {d.Change} |"));
         }
 
         AppendIndirectChanges(sb, diff);
