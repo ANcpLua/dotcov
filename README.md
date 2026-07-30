@@ -68,6 +68,8 @@ var gate = report.Evaluate(minLinePercent: 80, minBranchPercent: 60);
 if (!gate.IsPass)
 {
     Console.Error.WriteLine(gate);   // e.g. NODATA: line n/a (min 80%) - report carries no line data
+    if (gate.LineBelowThreshold)     // structured verdicts: branch on these, never parse Reason prose
+        Console.Error.WriteLine("line coverage is the offender");
     Environment.Exit(1);
 }
 ```
@@ -97,6 +99,8 @@ var report = await CoberturaParser.ParseAsync(stream, ct: cancellationToken);
 - **Coverage diffs** — added / removed / modified files, per-file delta, aggregate line-rate delta. Drop into PR comments to surface regressions.
 - **Snapshots** — versioned JSON with commit SHA, branch, project, timestamp, SHA-256 file hash, and the full report. `--upload <url>` POSTs to any HTTP endpoint.
 - **Exclusion rules** — `ExclusionRules.WellKnown` filters `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, async state machines (`d__`), and `GlobalUsings`. Or pass your own substring patterns to `report.Exclude(...)`.
+- **Locale-proof output** — every numeric rendering (table, markdown, gate summaries) is invariant-formatted. CI logs and scripts see `62.0%` on every host, never `62,0%`.
+- **Self-measured badge** — CI runs dotcov on its own `TestResults` and publishes shields.io endpoint JSON to the [`badges` branch](https://github.com/ANcpLua/dotcov/tree/badges); the Coverage badge above reads it. No external coverage service.
 - **Native-AOT-friendly** — `DotCov` library has zero runtime package references.
 
 ## CLI Reference
@@ -191,8 +195,10 @@ public readonly record struct GateResult(
     GateOutcome Outcome, double? LineRate, double? BranchRate,
     double MinLinePercent, double MinBranchPercent, string Reason)
 {
-    bool IsPass;            // Pass only — Disabled is not a pass, nothing was verified
-    bool IsInconclusive;    // NoData or Disabled
+    bool IsPass;                 // Pass only — Disabled is not a pass, nothing was verified
+    bool IsInconclusive;         // NoData or Disabled
+    bool LineBelowThreshold;     // structured verdicts — branch on these, never parse Reason
+    bool BranchBelowThreshold;   // false when the branch threshold was never armed
 }
 
 public enum LineStatus { Miss, Partial, Hit }     // Codecov-style three-state

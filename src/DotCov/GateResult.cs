@@ -66,7 +66,7 @@ public readonly record struct GateResult(
     /// <summary>True when a branch threshold was armed, branch coverage was measured, and it fell below <see cref="MinBranchPercent"/>.</summary>
     public bool BranchBelowThreshold => MinBranchPercent > 0 && BranchRate is { } b && b * 100 < MinBranchPercent;
 
-    /// <summary>One-line human summary, e.g. <c>FAIL: line 62.0% &lt; 80% (line coverage below threshold)</c>.</summary>
+    /// <summary>One-line human summary, e.g. <c>FAIL: line 62.0% (min 80%), branch 50.5% (min 70%) - line coverage below threshold</c>.</summary>
     /// <remarks>
     /// Invariant-formatted: CI logs and scripts read this line, so a de-AT host must not turn
     /// <c>62.0%</c> into <c>62,0%</c>.
