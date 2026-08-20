@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
-using System;
 
 namespace DotCov.Formatters;
 
@@ -28,26 +27,13 @@ public static class JsonFormatter
         writer.WritePropertyName("summary");
         WriteSummary(writer, report);
 
+        // Files keep the parser's document order — the wire shape is for machines, which
+        // sort as they need; only the text formatters apply worst-first ordering.
         writer.WriteStartArray("files");
         foreach (var f in report.Files) WriteFile(writer, f);
         writer.WriteEndArray();
 
-        // Omitted entirely when empty — same `Count == 0 ? null : …` shape the WhenWritingNull
-        // policy used to give, so consumers can treat a missing "warnings" key as "clean report".
-        if (report.Warnings.Count > 0)
-        {
-            writer.WriteStartArray("warnings");
-            foreach (var w in report.Warnings)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("kind", w.Kind.ToString());
-                writer.WriteString("file", w.File);
-                writer.WriteNumber("line", w.Line);
-                writer.WriteString("detail", w.Detail);
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-        }
+        WriteWarnings(writer, report);
 
         writer.WriteEndObject();
     });
@@ -102,6 +88,10 @@ public static class JsonFormatter
         foreach (var f in snapshot.Report.Files) WriteFile(writer, f);
         writer.WriteEndArray();
 
+        // Warnings travel with the snapshot: remote sinks are exactly the consumers the
+        // anomaly channel exists for, and "absent key == clean" holds here as well.
+        WriteWarnings(writer, snapshot.Report);
+
         writer.WriteEndObject();
     });
 
@@ -118,6 +108,25 @@ public static class JsonFormatter
         writer.WriteNumber("totalBranches", report.TotalBranches);
         writer.WriteNumber("coveredBranches", report.TotalBranchesHit);
         writer.WriteEndObject();
+    }
+
+    // Omitted entirely when empty — same `Count == 0 ? null : …` shape the WhenWritingNull
+    // policy used to give, so consumers can treat a missing "warnings" key as "clean report".
+    private static void WriteWarnings(Utf8JsonWriter writer, CoverageReport report)
+    {
+        if (report.Warnings.Count is 0) return;
+
+        writer.WriteStartArray("warnings");
+        foreach (var w in report.Warnings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("kind", w.Kind.ToString());
+            writer.WriteString("file", w.File);
+            writer.WriteNumber("line", w.Line);
+            writer.WriteString("detail", w.Detail);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
     }
 
     private static void WriteFile(Utf8JsonWriter writer, FileCoverage f)

@@ -210,6 +210,36 @@ public sealed class MarkdownFormatterTests
         Assert.Contains("1 removed", md);
     }
 
+    // ── Null-rate contract: unmeasured sides render "-", never a bare "%" ──
+
+    [Fact]
+    public void FormatDiff_EmptyBefore_OverallRendersDashForUnmeasuredSides()
+    {
+        // Diff against an empty report is not a comparison: before and delta are null and
+        // must render as "-" (table/JSON convention), not as "% → 58.3% (%)".
+        var diff = CoverageDiff.Compare(
+            CoverageReport.Empty,
+            new CoverageReport([new FileCoverage("a.cs", 7, 12, 0, 0)]));
+
+        var md = MarkdownFormatter.FormatDiff(diff);
+
+        Assert.Contains("**Overall:** - → 58.3% (-)", md);
+    }
+
+    [Fact]
+    public void FormatDiff_UnmeasuredFile_DeltaCellIsDashNotBareSign()
+    {
+        // A zero-line file has null rates on both sides, so its delta is null too — every
+        // cell must follow the dash convention (the delta cell used to render "%").
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]),
+            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
+
+        var md = MarkdownFormatter.FormatDiff(diff);
+
+        Assert.Contains("| `empty.cs` | - | - | - | Unchanged |", md);
+    }
+
     // ── Warnings section: additive — silent when empty, structured when populated ──
 
     [Fact]

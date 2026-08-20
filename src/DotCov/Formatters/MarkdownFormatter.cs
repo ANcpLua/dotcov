@@ -45,9 +45,8 @@ public static class MarkdownFormatter
         foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
         {
             var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
-            var branchPct = f.BranchRate is { } b ? Invariant($"{b * 100:F1}%") : "-";
             sb.AppendLine(
-                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {(f.LineRate is { } r ? Invariant($"{r * 100:F1}%") : "-")} | {branches} | {branchPct} |");
+                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate)} | {branches} | {Pct(f.BranchRate)} |");
         }
 
         AppendWarnings(sb, report);
@@ -76,24 +75,26 @@ public static class MarkdownFormatter
         var icon = diff.Delta switch { > 0 => "📈", < 0 => "📉", _ => "➡️" };
         sb.AppendLine($"## Coverage Diff {icon}");
         sb.AppendLine();
-        sb.AppendLine(
-            Invariant($"**Overall:** {diff.BeforeRate * 100:F1}% → {diff.AfterRate * 100:F1}% ({(diff.Delta >= 0 ? "+" : "")}{diff.Delta * 100:F1}%)"));
+        // Null rates render as "-" like the table/JSON formatters: a diff against an
+        // empty report is not a comparison, so no percentage may be asserted for it.
+        sb.AppendLine($"**Overall:** {Pct(diff.BeforeRate)} → {Pct(diff.AfterRate)} ({SignedPct(diff.Delta)})");
         sb.AppendLine();
         sb.AppendLine("| File | Before | After | Delta | Change |");
         sb.AppendLine("|------|-------:|------:|------:|--------|");
 
         foreach (var d in diff.Files)
-        {
-            var before = d.Before.HasValue ? Invariant($"{d.Before.Value * 100:F1}%") : "-";
-            var after = d.After.HasValue ? Invariant($"{d.After.Value * 100:F1}%") : "-";
-            var sign = d.Delta >= 0 ? "+" : "";
-            sb.AppendLine(Invariant($"| `{d.Path}` | {before} | {after} | {sign}{d.Delta * 100:F1}% | {d.Change} |"));
-        }
+            sb.AppendLine($"| `{d.Path}` | {Pct(d.Before)} | {Pct(d.After)} | {SignedPct(d.Delta)} | {d.Change} |");
 
         AppendIndirectChanges(sb, diff);
 
         return sb.ToString();
     }
+
+    private static string Pct(double? rate) =>
+        rate is { } r ? Invariant($"{r * 100:F1}%") : "-";
+
+    private static string SignedPct(double? delta) =>
+        delta is { } d ? Invariant($"{(d >= 0 ? "+" : "")}{d * 100:F1}%") : "-";
 
     private static void AppendIndirectChanges(StringBuilder sb, CoverageDiffResult diff)
     {

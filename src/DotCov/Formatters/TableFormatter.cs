@@ -22,9 +22,9 @@ public static class TableFormatter
         foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
-            var linePct = (f.LineRate is { } r ? Invariant($"{r * 100,7:F1}%") : "       -").PadLeft(8);
+            var linePct = Pct(f.LineRate);
             var branches = (f.HasBranchData ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-").PadLeft(10);
-            var branchPct = (f.BranchRate is { } br ? Invariant($"{br * 100,7:F1}%") : "       -").PadLeft(8);
+            var branchPct = Pct(f.BranchRate);
 
             sb.AppendLine(
                 $"{f.Path.PadRight(maxPath)}  " +
@@ -37,10 +37,10 @@ public static class TableFormatter
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
         var totalLines = $"{report.TotalLinesHit}/{report.TotalLines}".PadLeft(10);
-        var totalLinePct = (report.LineRate is { } tr ? Invariant($"{tr * 100,7:F1}%") : "       -").PadLeft(8);
+        var totalLinePct = Pct(report.LineRate);
         var totalBranches = (report.HasBranchData
             ? $"{report.TotalBranchesHit}/{report.TotalBranches}" : "-").PadLeft(10);
-        var totalBranchPct = (report.BranchRate is { } tbr ? Invariant($"{tbr * 100,7:F1}%") : "       -").PadLeft(8);
+        var totalBranchPct = Pct(report.BranchRate);
 
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
@@ -71,8 +71,8 @@ public static class TableFormatter
 
         foreach (var d in diff.Files)
         {
-            var before = (d.Before.HasValue ? Invariant($"{d.Before.Value * 100:F1}%") : "-").PadLeft(8);
-            var after = (d.After.HasValue ? Invariant($"{d.After.Value * 100:F1}%") : "-").PadLeft(8);
+            var before = Pct(d.Before);
+            var after = Pct(d.After);
             var indicator = d.Delta switch { > 0 => "+", < 0 => "", _ => " " };
             var deltaText = d.Delta is { } dv ? Invariant($"{indicator}{dv * 100,6:F1}%") : "       -";
             var change = $"{d.Change,10}";
@@ -90,15 +90,15 @@ public static class TableFormatter
         var totalDeltaText = diff.Delta is { } td ? Invariant($"{sign}{td * 100,6:F1}%") : "       -";
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
-            $"{pen.Bold(diff.BeforeRate is { } bt ? Invariant($"{bt * 100,7:F1}%") : "       -")}  " +
-            $"{pen.Bold(diff.AfterRate is { } at ? Invariant($"{at * 100,7:F1}%") : "       -")}  " +
+            $"{pen.Bold(Pct(diff.BeforeRate))}  " +
+            $"{pen.Bold(Pct(diff.AfterRate))}  " +
             $"{pen.Bold(pen.Delta(totalDeltaText, diff.Delta))}");
 
         // Codecov-style indirect-change summary: one line, only when there's anything to show.
         // Detailed per-file breakdown lives in the markdown formatter where it fits better.
         if (diff.TotalLineChanges > 0)
         {
-            var affected = diff.Files.Count(static f => f.LineChanges.Count > 0);
+            var affected = diff.WithLineChanges.Count();
             var lineWord = diff.TotalLineChanges == 1 ? "line" : "lines";
             var fileWord = affected == 1 ? "file" : "files";
             sb.AppendLine(pen.Dim(
@@ -107,6 +107,11 @@ public static class TableFormatter
 
         return sb.ToString();
     }
+
+    // The one fixed-width percent cell every rate column uses: right-aligned to 8 chars,
+    // dash-padded when the rate is unmeasured (null), always invariant-formatted.
+    private static string Pct(double? rate) =>
+        rate is { } r ? Invariant($"{r * 100,7:F1}%") : "       -";
 
     private static string ColorChange(AnsiPen pen, string text, FileChangeKind kind) => kind switch
     {
