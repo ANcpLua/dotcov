@@ -682,7 +682,11 @@ public sealed class CoverageReport
         return new CoverageReport(merged.Values.ToList())
         {
             Warnings = warnings,
-            SourceRoots = a.SourceRoots.Concat(b.SourceRoots).Distinct(StringComparer.Ordinal).ToList()
+            // Dedup by normalized identity, not raw spelling: RootsDiffer compares normalized
+            // sequences, so a raw union of c:\repo and C:/repo/ would keep two entries and
+            // permanently re-flag every later merge as ambiguous.
+            SourceRoots = a.SourceRoots.Concat(b.SourceRoots)
+                .DistinctBy(PathIdentity.NormalizeRoot, StringComparer.Ordinal).ToList()
         };
     }
 

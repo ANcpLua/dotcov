@@ -35,7 +35,9 @@ public static class CoverageReportHelpers
         {
             return CoberturaParser.ParseDirectory(searchDirectory, pattern, maxChars);
         }
-        catch (ArgumentException ex)
+        // Scoped to the pattern gate's exception (ParamName "pattern"): ArgumentOutOfRangeException
+        // from a negative maxChars derives from ArgumentException and must not be blamed on the pattern.
+        catch (ArgumentException ex) when (ex.ParamName == nameof(pattern))
         {
             throw new ArgumentException(
                 $"Invalid Coverage Pattern: '{pattern}' (only 'filename' and '**/filename' are supported).", ex);

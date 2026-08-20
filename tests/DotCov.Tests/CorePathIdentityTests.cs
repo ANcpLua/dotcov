@@ -424,4 +424,23 @@ public sealed class CorePathIdentityTests
 
         Assert.Equal(["/repo"], filtered.SourceRoots);
     }
+
+    // ── run-004 regression pins ──
+
+    [Fact]
+    public void Merge_HandBuiltUnnormalizedRoots_DedupesByNormalizedIdentity()
+    {
+        // Parser-path roots are already normalized; hand-built reports are not. A raw-spelling
+        // union kept both c:\repo and C:/repo/, so every later merge saw "different" roots
+        // and re-flagged ambiguity forever.
+        var a = new CoverageReport([]) { SourceRoots = [@"c:\repo"] };
+        var b = new CoverageReport([]) { SourceRoots = ["C:/repo/"] };
+
+        var once = CoverageReport.Merge(a, b);
+
+        Assert.Single(once.SourceRoots);
+
+        var again = CoverageReport.Merge(once, b);
+        Assert.Single(again.SourceRoots);
+    }
 }

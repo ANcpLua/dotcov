@@ -237,4 +237,17 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
     public void TryAppendGitHubStepSummary_MissingParentDirectory_ReturnsFalseWithoutThrowing() =>
         Assert.False(CoverageReportHelpers.TryAppendGitHubStepSummary(
             Path.Combine(_root, "no-such-dir", "summary.md"), "# md"));
+
+    [Fact]
+    public void LoadReport_NegativeMaxChars_IsNotBlamedOnThePattern()
+    {
+        // ArgumentOutOfRangeException derives from ArgumentException; the pattern-gate rethrow
+        // must not swallow it into "Invalid Coverage Pattern".
+        Write("coverage.cobertura.xml", Cobertura.NewDoc());
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CoverageReportHelpers.LoadReport(_root, "coverage.cobertura.xml", -1));
+
+        Assert.DoesNotContain("Invalid Coverage Pattern", ex.Message);
+    }
 }
