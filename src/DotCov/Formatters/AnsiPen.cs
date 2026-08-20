@@ -29,11 +29,15 @@ public readonly struct AnsiPen(bool enabled)
         _ => Dim(text)
     };
 
-    /// <summary>Color a delta cell — green for improvement, red for regression, dim for unchanged.</summary>
+    /// <summary>
+    /// Color a delta cell — green for improvement, red for regression, dim for unchanged.
+    /// Shares <see cref="CoverageDiff.MovementEpsilon"/> with the diff classification so a
+    /// delta never colors as movement while the diff calls it unchanged (or vice versa).
+    /// </summary>
     public string Delta(string text, double? delta) => delta switch
     {
-        > 0.0001 => Green(text),
-        < -0.0001 => Red(text),
+        > CoverageDiff.MovementEpsilon => Green(text),
+        < -CoverageDiff.MovementEpsilon => Red(text),
         _ => Dim(text)
     };
 }

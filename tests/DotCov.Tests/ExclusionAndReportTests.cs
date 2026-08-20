@@ -6,18 +6,16 @@ namespace DotCov.Tests;
 public sealed class ExclusionAndReportTests
 {
     [Fact]
-    public void WellKnown_ContainsExpectedPatterns()
+    public void WellKnown_HasNoStructurallyDeadRules()
     {
-        Assert.Contains(".g.cs", ExclusionRules.WellKnown);
-        Assert.Contains(".designer.cs", ExclusionRules.WellKnown);
-        Assert.Contains("/obj/", ExclusionRules.WellKnown);
-        Assert.Contains("/bin/", ExclusionRules.WellKnown);
-        Assert.Contains("/Migrations/", ExclusionRules.WellKnown);
-        Assert.Contains("GlobalUsings", ExclusionRules.WellKnown);
         // No "d__" rule: it matched on Path (the filename), but coverlet only ever puts d__ in the
         // *class name* — so the rule was structurally dead. Assert it's gone, not present.
+        // (The behavioral effect of every live pattern is protected by the Exclude_WellKnown_*
+        // theories below — mirroring the list contents here would just restate the data.)
         Assert.DoesNotContain("d__", ExclusionRules.WellKnown);
-        Assert.Contains("/Program.cs", ExclusionRules.WellKnown);
+        // No bare "GlobalUsings" substring either: it swallowed real product code in any
+        // directory whose name contains it (src/GlobalUsingsGenerator/…).
+        Assert.DoesNotContain("GlobalUsings", ExclusionRules.WellKnown);
     }
 
     [Fact]
@@ -83,6 +81,10 @@ public sealed class ExclusionAndReportTests
     [Theory]
     [InlineData("Source/file.cs")]
     [InlineData("src/MyService.cs")]
+    // Real product code whose *directory name* contains "GlobalUsings" — the old unanchored
+    // substring rule silently dropped this whole directory, which could flip a failing
+    // `check --min-line` gate to PASS.
+    [InlineData("src/GlobalUsingsGenerator/Emitter.cs")]
     public void Exclude_WellKnown_KeepsNonMatchingFile(string path)
     {
         var report = new CoverageReport([
@@ -93,6 +95,42 @@ public sealed class ExclusionAndReportTests
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
         Assert.Contains(filtered.Files, f => f.Path == path);
+    }
+
+    [Theory]
+    [InlineData("Program.cs")]        // no directory prefix at all (project-root file)
+    [InlineData("GlobalUsings.cs")]
+    public void Exclude_WellKnown_LeadingSeparatorRules_MatchRootLevelPaths(string path)
+    {
+        // Emitters disagree on whether `filename` carries a directory prefix: the same
+        // Program.cs must be excluded whether it arrives as "src/App/Program.cs" or as a
+        // bare root-level "Program.cs". Matching runs against a virtually-rooted path so
+        // "/Program.cs" anchors at the top level too.
+        var report = new CoverageReport([
+            new FileCoverage(path, 1, 1, 0, 0),
+            new FileCoverage("KeepThis.cs", 1, 1, 0, 0)
+        ]);
+
+        var filtered = report.Exclude(ExclusionRules.WellKnown);
+
+        Assert.DoesNotContain(filtered.Files, f => f.Path == path);
+        Assert.Contains(filtered.Files, f => f.Path == "KeepThis.cs");
+    }
+
+    [Fact]
+    public void Exclude_WellKnown_CannotFlipAFailingGateByDroppingProductCode()
+    {
+        // The end-to-end hazard the anchored GlobalUsings rule prevents: 0%-covered product
+        // code under src/GlobalUsingsGenerator/ must keep counting, so --exclude-generated
+        // cannot turn a 20% report into a 100% PASS.
+        var report = new CoverageReport([
+            new FileCoverage("src/App/Covered.cs", 10, 10, 0, 0),
+            new FileCoverage("src/GlobalUsingsGenerator/Emitter.cs", 0, 40, 0, 0)
+        ]);
+
+        var gate = report.Exclude(ExclusionRules.WellKnown).Evaluate(80);
+
+        Assert.Equal(GateOutcome.Fail, gate.Outcome);
     }
 
     [Fact]

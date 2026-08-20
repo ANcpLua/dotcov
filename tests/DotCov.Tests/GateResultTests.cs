@@ -77,11 +77,81 @@ public sealed class GateResultTests
 
     [Theory]
     [InlineData(9, 10, 80, GateOutcome.Pass)]
-    [InlineData(8, 10, 80, GateOutcome.Pass)]   // exactly at threshold clears it
+    [InlineData(8, 10, 80, GateOutcome.Pass)]   // exactly at threshold clears it (binary-exact)
     [InlineData(7, 10, 80, GateOutcome.Fail)]
+    // Decimal-inexact exact-threshold cases: (58.0/100)*100 computes to 57.99999999999999 in
+    // IEEE 754, so a naive `rate * 100 >= min` failed a gate that was exactly met. The
+    // comparison must be epsilon-tolerant — and still fail anything genuinely below.
+    [InlineData(58, 100, 58, GateOutcome.Pass)]
+    [InlineData(29, 50, 58, GateOutcome.Pass)]
+    [InlineData(29, 100, 29, GateOutcome.Pass)]
+    [InlineData(803, 1000, 80.3, GateOutcome.Pass)]
+    [InlineData(57, 100, 58, GateOutcome.Fail)]
+    [InlineData(5799, 10000, 58, GateOutcome.Fail)]
     public void LineThreshold_ComparesInclusively(int hit, int total, double min, GateOutcome expected)
     {
         Assert.Equal(expected, Report(hit, total, bHit: 0, bTotal: 0).Evaluate(min).Outcome);
+    }
+
+    [Fact]
+    public void BranchThreshold_ExactlyMet_DecimalInexactRatio_Passes()
+    {
+        // Same float hazard on the branch dimension: 29/100 branches against --min-branch 29.
+        var gate = Report(hit: 10, total: 10, bHit: 29, bTotal: 100).Evaluate(50, 29);
+
+        Assert.Equal(GateOutcome.Pass, gate.Outcome);
+        Assert.False(gate.BranchBelowThreshold);
+    }
+
+    [Fact]
+    public void BelowThreshold_ExactlyMetRate_IsNotBelow()
+    {
+        // The structured properties share the epsilon-tolerant comparison with Evaluate, so
+        // an exactly-met dimension never reports "below" — verdict and structure can't drift.
+        var gate = Report(hit: 58, total: 100, bHit: 29, bTotal: 100).Evaluate(58, 29);
+
+        Assert.Equal(GateOutcome.Pass, gate.Outcome);
+        Assert.False(gate.LineBelowThreshold);
+        Assert.False(gate.BranchBelowThreshold);
+    }
+
+    [Fact]
+    public void BelowPercent_ExactlyMetFile_IsNotListed()
+    {
+        // A file at exactly the threshold is not an offender: same comparison as the gate,
+        // so `check` can never fail a report while listing zero files (or vice versa).
+        var report = new CoverageReport([
+            new FileCoverage("exact.cs", 29, 100, 0, 0),
+            new FileCoverage("below.cs", 28, 100, 0, 0),
+        ]);
+
+        var below = report.BelowPercent(29).ToList();
+
+        Assert.Single(below);
+        Assert.Equal("below.cs", below[0].Path);
+    }
+
+    [Fact]
+    public void ToString_FailingRate_RoundsTowardVerdict()
+    {
+        // 1999/2500 = 79.96%. F1-rounding to nearest rendered the self-contradictory
+        // "FAIL: line 80.0% (min 80%)"; a failing dimension must floor so the printed rate
+        // never reads as equal to the minimum it fell short of.
+        var gate = Report(1999, 2500, 0, 0).Evaluate(80);
+
+        Assert.Equal(GateOutcome.Fail, gate.Outcome);
+        Assert.Contains("line 79.9%", gate.ToString());
+        Assert.DoesNotContain("line 80.0%", gate.ToString());
+    }
+
+    [Fact]
+    public void ToString_FailingExactDecimalRate_DoesNotFloorAnExtraTenth()
+    {
+        // Floor-toward-verdict must not eat a tenth off a rate that is already an exact
+        // decimal (62/100 renders 62.0, not 61.9, despite float noise around 62.0).
+        var text = Report(62, 100, 0, 0).Evaluate(80).ToString();
+
+        Assert.Contains("line 62.0%", text);
     }
 
     [Fact]
@@ -161,12 +231,17 @@ public sealed class GateResultTests
     [Fact]
     public void ToString_IsCultureInvariant()
     {
-        // A de-AT host writes 62,0 for 62.0 under current-culture formatting. CI logs and
-        // scripts parse this line, so its shape must not follow the machine's locale.
+        // A comma-decimal host (de-AT) writes 62,0 for 62.0 under current-culture formatting.
+        // CI logs and scripts parse this line, so its shape must not follow the machine's
+        // locale. Built by cloning the invariant culture instead of `new CultureInfo("de-AT")`
+        // so the test also runs under invariant-globalization runtimes (Alpine/ICU-less
+        // containers), where constructing a named culture throws CultureNotFoundException.
         var original = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = new CultureInfo("de-AT");
+            var commaDecimal = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+            commaDecimal.NumberFormat.NumberDecimalSeparator = ",";
+            CultureInfo.CurrentCulture = commaDecimal;
             var text = Report(62, 100, 101, 200).Evaluate(80.5, 70).ToString();
 
             Assert.Contains("line 62.0%", text);

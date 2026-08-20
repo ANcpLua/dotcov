@@ -13,7 +13,11 @@ public readonly record struct FileDelta(
     /// git diff. Surfaces removed-test / removed-import / dependency-change effects that
     /// the file-level <see cref="Delta"/> would otherwise smear into a single number.
     /// </summary>
-    public IReadOnlyList<LineDelta> LineChanges { get; init; } = [];
+    /// <remarks>
+    /// Null-coalesced getter so a <c>default(FileDelta)</c> (array growth, a dictionary
+    /// lookup miss) yields an empty list instead of violating the non-nullable annotation.
+    /// </remarks>
+    public IReadOnlyList<LineDelta> LineChanges { get => field ?? []; init; } = [];
 }
 
 public enum FileChangeKind { Unchanged, Added, Removed, Modified }
@@ -123,8 +127,19 @@ public sealed class CoverageDiffResult(
     /// </summary>
     public double? Delta => AfterRate - BeforeRate;
 
-    public IEnumerable<FileDelta> Regressions => Files.Where(static f => f.Delta < 0);
-    public IEnumerable<FileDelta> Improvements => Files.Where(static f => f.Delta > 0);
+    /// <summary>
+    /// Files whose rate fell. Derived from the <see cref="FileChangeKind"/> that
+    /// <see cref="CoverageDiff.Compare"/> already computed, so a sub-epsilon wobble
+    /// (classified <see cref="FileChangeKind.Unchanged"/>) can never simultaneously be
+    /// "unchanged" here and "a regression" there. Removed files count — losing a measured
+    /// file is a regression of what the report vouches for.
+    /// </summary>
+    public IEnumerable<FileDelta> Regressions =>
+        Files.Where(static f => f.Change is not FileChangeKind.Unchanged && f.Delta < 0);
+
+    /// <summary>Files whose rate rose — same single-classification contract as <see cref="Regressions"/>.</summary>
+    public IEnumerable<FileDelta> Improvements =>
+        Files.Where(static f => f.Change is not FileChangeKind.Unchanged && f.Delta > 0);
     public IEnumerable<FileDelta> Added => Files.Where(static f => f.Change is FileChangeKind.Added);
     public IEnumerable<FileDelta> Removed => Files.Where(static f => f.Change is FileChangeKind.Removed);
 
@@ -141,6 +156,16 @@ public sealed class CoverageDiffResult(
 
 public static class CoverageDiff
 {
+    /// <summary>
+    /// The movement threshold shared by <see cref="Compare"/>'s Unchanged/Modified
+    /// classification, <see cref="CoverageDiffResult.Regressions"/>/<see cref="CoverageDiffResult.Improvements"/>
+    /// (via that classification), and <see cref="Formatters.AnsiPen.Delta"/>'s coloring:
+    /// a rate delta closer to zero than this is measurement noise, not movement. One
+    /// constant so the change kind, the regression list, and the rendered color can
+    /// never disagree about whether coverage moved.
+    /// </summary>
+    public const double MovementEpsilon = 0.0001;
+
     /// <summary>
     /// Compare two reports. Detects added, removed, improved, and regressed files plus
     /// Codecov-style indirect line-level changes inside files that exist on both sides.
@@ -163,7 +188,7 @@ public static class CoverageDiff
                 (true, true) => new FileDelta(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
                     // A null delta means neither side carried line data: unmeasured on both ends is
                     // unchanged, not modified.
-                    (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < 0.0001
+                    (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < MovementEpsilon
                         ? FileChangeKind.Unchanged
                         : FileChangeKind.Modified)
                 {

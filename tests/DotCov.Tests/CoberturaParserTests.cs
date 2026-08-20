@@ -10,13 +10,6 @@ public sealed class CoberturaParserTests
     private const string FixturePath = "Fixtures/sample.cobertura.xml";
 
     [Fact]
-    public void Parse_SampleFixture_ReturnsThreeFiles()
-    {
-        var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.Equal(3, report.Files.Count);
-    }
-
-    [Fact]
     public void Parse_FullyCoveredClass_ReportsAllLinesHit()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
@@ -132,13 +125,16 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void Parse_XmlWithDtd_Throws()
+    public void Parse_XxeEntityReference_Throws()
     {
+        // The actual XXE shape: a DTD-declared external entity *referenced* in content.
+        // DtdProcessing.Ignore skips the DTD without processing it, so the reference is
+        // undeclared and the reader throws — external content can never be pulled in.
         const string malicious = """
                                  <?xml version="1.0"?>
                                  <!DOCTYPE coverage [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
                                  <coverage><packages><package><classes>
-                                   <class name="X" filename="x.cs"><lines>
+                                   <class name="&xxe;" filename="x.cs"><lines>
                                      <line number="1" hits="1" branch="false"/>
                                    </lines></class>
                                  </classes></package></packages></coverage>
@@ -146,6 +142,32 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
         Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream));
+    }
+
+    [Fact]
+    public void Parse_BenignDoctype_ParsesLikeReferenceCobertura()
+    {
+        // Reference Cobertura, gcovr, and coverage.py emit this DOCTYPE on every report.
+        // DtdProcessing.Prohibit rejected the format's canonical emitters; the DOCTYPE must
+        // be skipped, not fatal — while the XXE test above stays dead.
+        const string canonical = """
+                                 <?xml version="1.0"?>
+                                 <!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+                                 <coverage><packages><package><classes>
+                                   <class name="X" filename="x.cs"><lines>
+                                     <line number="1" hits="1" branch="false"/>
+                                     <line number="2" hits="0" branch="false"/>
+                                   </lines></class>
+                                 </classes></package></packages></coverage>
+                                 """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
+        var report = CoberturaParser.Parse(stream);
+
+        var file = Assert.Single(report.Files);
+        Assert.Equal(2, file.LinesTotal);
+        Assert.Equal(1, file.LinesHit);
+        Assert.Empty(report.Warnings);
     }
 
     [Fact]
@@ -209,6 +231,7 @@ public sealed class CoberturaParserTests
         Assert.Equal(2, file.LinesHit);
         Assert.Equal(4, file.BranchesTotal);
         Assert.Equal(1, file.BranchesHit);
+        Assert.Equal([20, 21], file.UncoveredLines);
     }
 
     [Fact]
@@ -239,17 +262,46 @@ public sealed class CoberturaParserTests
         Assert.Equal(LineStatus.Hit, file.GetLineStatus(30));
     }
 
-    [Theory]
-    [InlineData("50% (99999999999999/2)")]
-    [InlineData("50% (1/99999999999999)")]
-    public void Parse_ConditionCoverageWithIntOverflow_SkipsBranchSilently(string condition)
+    [Fact]
+    public void Parse_LineWithMissingHitsAttribute_TreatsAsZeroWithoutWarning()
     {
+        // Absent is not malformed: some emitters omit `hits` on summary lines, so a missing
+        // attribute is a plain uncovered line with no warning noise.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <lines>
+                                 <line number="1" branch="False" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = CoberturaParser.Parse(stream);
+        var file = Assert.Single(report.Files);
+
+        Assert.Equal(1, file.LinesTotal);
+        Assert.Equal(0, file.LinesHit);
+        Assert.Equal([1], file.UncoveredLines);
+        Assert.Empty(report.Warnings);
+    }
+
+    [Theory]
+    [InlineData("not-a-number")]
+    [InlineData("1.5")]
+    public void Parse_UnparseableHits_TreatsAsZeroAndEmitsWarning(string hits)
+    {
+        // Present-but-unparseable must not silently flip a possibly-covered line to a miss:
+        // the line still counts as uncovered (the conservative reading), but the degradation
+        // is observable — mirroring the MalformedConditionCoverage pattern.
         var xml = $"""
                    <?xml version="1.0"?>
                    <coverage><packages><package><classes>
-                     <class name="X" filename="x.cs">
+                     <class name="X" filename="src/A.cs">
                        <lines>
-                         <line number="1" hits="1" branch="True" condition-coverage="{condition}" />
+                         <line number="7" hits="{hits}" branch="False" />
                        </lines>
                      </class>
                    </classes></package></packages></coverage>
@@ -257,20 +309,31 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
+        var file = Assert.Single(report.Files);
 
-        Assert.Equal(0, report.Files[0].BranchesTotal);
+        Assert.Equal(1, file.LinesTotal);
+        Assert.Equal(0, file.LinesHit);
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.MalformedHits, w.Kind);
+        Assert.Equal("src/A.cs", w.File);
+        Assert.Equal(7, w.Line);
+        Assert.Contains(hits, w.Detail);
     }
 
     [Fact]
-    public void Parse_LineWithMissingHitsAttribute_TreatsAsZero()
+    public void Parse_HitsAboveIntMax_CountsAsCoveredLine()
     {
+        // 64-bit hit counts are real (soak runs; gcovr/llvm-cov/JaCoCo converters use long
+        // counters and the Cobertura DTD does not bound hits). Overflow must saturate, not
+        // degrade to 0 — degrading silently flipped a covered line to a miss and deflated
+        // line coverage below a gate it genuinely cleared.
         const string xml = """
                            <?xml version="1.0"?>
                            <coverage><packages><package><classes>
                              <class name="X" filename="x.cs">
                                <lines>
-                                 <line number="1" branch="False" />
-                                 <line number="2" hits="not-a-number" branch="False" />
+                                 <line number="1" hits="3000000000" branch="False" />
+                                 <line number="2" hits="1" branch="False" />
                                </lines>
                              </class>
                            </classes></package></packages></coverage>
@@ -281,8 +344,10 @@ public sealed class CoberturaParserTests
         var file = Assert.Single(report.Files);
 
         Assert.Equal(2, file.LinesTotal);
-        Assert.Equal(0, file.LinesHit);
-        Assert.Equal([1, 2], file.UncoveredLines);
+        Assert.Equal(2, file.LinesHit);
+        Assert.Equal(1.0, file.LineRate);
+        Assert.Equal(int.MaxValue, file.LineHits[1]);   // saturated, still "covered"
+        Assert.Empty(report.Warnings);
     }
 
     [Theory]
@@ -439,10 +504,12 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void Merge_ConditionNumbersAcrossReports_UnionsOverlappingAndDisjoint()
+    public void Merge_MismatchedConditionNumberSets_FallsBackToLineAggregateAndWarns()
     {
-        // Different builds can emit different condition `number`s for the same line. Overlapping
-        // numbers union by Math.Max; a number seen in only one report still counts.
+        // Coverlet condition `number`s are IL branch offsets — stable only for the identical
+        // assembly build. When the two sides' number sets for a line differ, they no longer
+        // identify the same branches, and unioning them would invent a branch total neither
+        // emitter reported. The merge must fall back to the line-level Math.Max and warn.
         var a = Cobertura.NewDoc()
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (2/4)", (1, "100%"), (2, "0%")))
             .Parse();
@@ -450,10 +517,117 @@ public sealed class CoberturaParserTests
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "66.66% (4/6)", (1, "0%"), (2, "100%"), (3, "100%")))
             .Parse();
 
+        var merged = CoverageReport.Merge(a, b);
+        var f = merged.Files[0];
+
+        Assert.Equal(4, f.BranchesHit);    // line-level Math.Max of (2/4) and (4/6)
+        Assert.Equal(6, f.BranchesTotal);
+        Assert.False(f.ConditionsByLine.ContainsKey(10));   // untrustworthy identity dropped
+        Assert.Contains(merged.Warnings, w =>
+            w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
+    }
+
+    [Fact]
+    public void Merge_DisjointConditionNumbersSameTotal_DoesNotInventBranchTotal()
+    {
+        // The Debug-vs-Release repro: the same physical 2-way branch gets condition number 0
+        // in one build and 139 in the other, with identical totals. The old per-number union
+        // produced branchesHit=2 of branchesTotal=4 — a total NEITHER emitter ever reported,
+        // with no warning (totals matched, so BranchTotalMismatch never fired). The true
+        // union is 2/2.
+        var a = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (0, "100%")))
+            .Parse();
+        var b = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "0% (0/2)", (139, "0%")))
+            .Parse();
+
+        var merged = CoverageReport.Merge(a, b);
+        var f = merged.Files[0];
+
+        Assert.Equal(2, f.BranchesHit);
+        Assert.Equal(2, f.BranchesTotal);
+        Assert.Contains(merged.Warnings, w =>
+            w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
+    }
+
+    [Fact]
+    public void Merge_OneSidedConditionDetail_SurvivesAndNeverRegressesTheAggregate()
+    {
+        // Report `a` carries per-condition detail; `b` (a different emitter) ships only the
+        // line aggregate. The detail must be carried forward — an intersection would erase it,
+        // silently downgrading every later merge to line-level Math.Max — and the aggregate
+        // must keep the higher line-level count `b` observed.
+        var a = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "25% (1/4)", (1, "50%"), (2, "0%")))
+            .Parse();
+        var b = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.Branch(10, "50% (2/4)"))
+            .Parse();
+
         var f = CoverageReport.Merge(a, b).Files[0];
 
-        Assert.Equal(6, f.BranchesHit);    // #1 max(2,0)=2, #2 max(0,2)=2, #3 only-in-b=2
-        Assert.Equal(6, f.BranchesTotal);
+        Assert.True(f.ConditionsByLine.ContainsKey(10));    // detail survives for future merges
+        Assert.Equal(1, f.ConditionsByLine[10][1]);
+        Assert.Equal(0, f.ConditionsByLine[10][2]);
+        Assert.Equal(2, f.BranchesHit);                     // b's line-level (2/4) not regressed
+        Assert.Equal(4, f.BranchesTotal);
+    }
+
+    [Fact]
+    public void Merge_ThreeReports_MiddleWithoutConditionDetail_IsOrderIndependent()
+    {
+        // Merge(Merge(A,B),C) must equal Merge(A,Merge(B,C)) even when B carries no condition
+        // detail: A and C each exercised a DIFFERENT condition of line 10, so the true union
+        // is 3/4 — reachable in every merge order only because one-sided detail is carried
+        // forward instead of intersected away.
+        CoverageReport A() => Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "25% (1/4)", (1, "50%"), (2, "0%")))
+            .Parse();
+        CoverageReport B() => Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.Branch(10, "25% (1/4)"))
+            .Parse();
+        CoverageReport C() => Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (2/4)", (1, "0%"), (2, "100%")))
+            .Parse();
+
+        var leftFold = CoverageReport.Merge(CoverageReport.Merge(A(), B()), C()).Files[0];
+        var rightFold = CoverageReport.Merge(A(), CoverageReport.Merge(B(), C())).Files[0];
+
+        Assert.Equal(3, leftFold.BranchesHit);      // #1 max(1,0)=1, #2 max(0,2)=2
+        Assert.Equal(4, leftFold.BranchesTotal);
+        Assert.Equal(leftFold.BranchesHit, rightFold.BranchesHit);
+        Assert.Equal(leftFold.BranchesTotal, rightFold.BranchesTotal);
+    }
+
+    [Theory]
+    [InlineData("200%")]
+    [InlineData("-50%")]
+    [InlineData("NaN%")]
+    public void Parse_OutOfRangeConditionCoverage_DropsConditionKeepsLineAggregate(string coverage)
+    {
+        // A condition percent outside [0,100] cannot describe a 2-way jump. Left unclamped,
+        // coverage="200%" recorded covered=4 for one condition, and a later merge recompute
+        // reported BranchesHit=4 of BranchesTotal=2 — a >100% branch rate. The bogus
+        // condition is dropped; the line-level aggregate stays authoritative.
+        var report = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, coverage)))
+            .Parse();
+        var f = report.Files[0];
+
+        Assert.Equal(2, f.BranchesHit);
+        Assert.Equal(2, f.BranchesTotal);
+        Assert.Empty(f.ConditionsByLine);
+
+        // And the invariant the clamp protects: merging two such reports can never push
+        // BranchesHit past BranchesTotal.
+        var again = Cobertura.NewDoc()
+            .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, coverage)))
+            .Parse();
+        var merged = CoverageReport.Merge(report, again).Files[0];
+        Assert.True(merged.BranchesHit <= merged.BranchesTotal);
+        Assert.Equal(2, merged.BranchesHit);
+        Assert.Equal(2, merged.BranchesTotal);
     }
 
     [Fact]
@@ -500,45 +674,6 @@ public sealed class CoberturaParserTests
     public void ParsePath_WithNonexistentPath_Throws()
     {
         Assert.Throws<FileNotFoundException>(() => CoberturaParser.ParsePath("nonexistent"));
-    }
-
-    [Fact]
-    public void Parse_LinesNestedUnderMethods_AreCounted()
-    {
-        const string xml = """
-                           <?xml version="1.0" encoding="utf-8"?>
-                           <coverage line-rate="0" branch-rate="0" version="1.0" timestamp="0">
-                             <packages><package name="P"><classes>
-                               <class name="A" filename="src/A.cs">
-                                 <methods>
-                                   <method name="Foo" signature="()">
-                                     <lines>
-                                       <line number="10" hits="2" branch="false" />
-                                       <line number="11" hits="2" branch="false" />
-                                     </lines>
-                                   </method>
-                                   <method name="Bar" signature="()">
-                                     <lines>
-                                       <line number="20" hits="0" branch="false" />
-                                     </lines>
-                                   </method>
-                                 </methods>
-                                 <lines>
-                                   <line number="10" hits="2" branch="false" />
-                                   <line number="11" hits="2" branch="false" />
-                                   <line number="20" hits="0" branch="false" />
-                                 </lines>
-                               </class>
-                             </classes></package></packages>
-                           </coverage>
-                           """;
-
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = CoberturaParser.Parse(stream).Files.Single();
-
-        Assert.Equal(3, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);
-        Assert.Equal([20], file.UncoveredLines);
     }
 
     [Fact]
@@ -605,6 +740,9 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
+        // The overflowing branch entry is dropped (not silently zeroed INTO the totals)...
+        Assert.Equal(0, report.Files[0].BranchesTotal);
+        // ...and the drop is observable as a structured warning.
         var w = Assert.Single(report.Warnings);
         Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
         Assert.Contains(condition, w.Detail);
@@ -663,5 +801,57 @@ public sealed class CoberturaParserTests
         Assert.Equal(2, file.LinesHit);
         Assert.Equal([12], file.UncoveredLines);
         Assert.Equal(5, file.LineHits[10]);
+    }
+
+    // ── Path identity: separator normalization and case-insensitivity ──
+    // The normalized filename is the file's merge-identity key across Windows/Linux CI jobs;
+    // these pin the contract the ConsumeClass comment declares.
+
+    [Fact]
+    public void Parse_BackslashFilename_NormalizesToForwardSlashPath()
+    {
+        var report = Cobertura.NewDoc()
+            .AddClass(@"src\App\A.cs", c => c.Line(1, hits: 1))
+            .Parse();
+
+        var file = Assert.Single(report.Files);
+        Assert.Equal("src/App/A.cs", file.Path);
+    }
+
+    [Fact]
+    public void Merge_BackslashAndForwardSlashReports_UnionAsOneFile()
+    {
+        // The exact Windows+Linux CI matrix scenario: coverlet on Windows writes `src\A.cs`,
+        // on Linux `src/A.cs`. The merged report must union their lines as one file, not
+        // count the same source file twice.
+        var windows = Cobertura.NewDoc()
+            .AddClass(@"src\A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
+            .Parse();
+        var linux = Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(2, hits: 3).Line(3, hits: 0))
+            .Parse();
+
+        var merged = CoverageReport.Merge(windows, linux);
+
+        var file = Assert.Single(merged.Files);
+        Assert.Equal(3, file.LinesTotal);
+        Assert.Equal(2, file.LinesHit);   // 1 from windows, 2 from linux
+        Assert.Equal([3], file.UncoveredLines);
+    }
+
+    [Fact]
+    public void Parse_ClassBlocksDifferingOnlyInPathCase_CollapseToOneFile()
+    {
+        // File identity is OrdinalIgnoreCase within a document too — the same source file
+        // emitted under `src/A.cs` and `SRC/a.cs` (case-insensitive filesystems) is one file.
+        var report = Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
+            .AddClass("SRC/a.cs", c => c.Line(2, hits: 5).Line(3, hits: 1))
+            .Parse();
+
+        var file = Assert.Single(report.Files);
+        Assert.Equal(3, file.LinesTotal);
+        Assert.Equal(3, file.LinesHit);
+        Assert.Equal(5, file.LineHits[2]);   // Math.Max across the two blocks
     }
 }

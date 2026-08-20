@@ -311,4 +311,68 @@ public sealed class CoverageDiffTests
         Assert.Equal("newlyHit", Tag(new LineDelta.NewlyHit(3, 0, 4)));
         Assert.Equal("newlyMissed", Tag(new LineDelta.NewlyMissed(4, 7, 0)));
     }
+
+    [Fact]
+    public void Compare_UnmeasuredOnBothSides_IsUnchangedWithNullDelta()
+    {
+        // A file both reports list but neither measured has no rates to compare: unmeasured
+        // on both ends is unchanged, not modified — and the delta is null, not 0.
+        var before = Make(new FileCoverage("empty.cs", 0, 0, 0, 0));
+        var after = Make(new FileCoverage("empty.cs", 0, 0, 0, 0));
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var d = Assert.Single(result.Files);
+        Assert.Equal(FileChangeKind.Unchanged, d.Change);
+        Assert.Null(d.Delta);
+        Assert.Empty(result.Regressions);
+        Assert.Empty(result.Improvements);
+    }
+
+    [Fact]
+    public void Compare_SubEpsilonDelta_IsUnchangedEverywhere_ButLineChangesStillSurface()
+    {
+        // One line flipping in a 20,000-line file moves the rate by 0.00005 — inside
+        // MovementEpsilon. Every movement view must agree it's noise: Change is Unchanged,
+        // the file is in NEITHER Regressions nor Improvements (they derive from the same
+        // classification, so the same object can't be "unchanged" and "a regression" at
+        // once), and AnsiPen renders it dim. The flipped line itself still surfaces via
+        // LineChanges — indirect changes are reported by identity, not magnitude.
+        var before = Make(new FileCoverage("a.cs", 19999, 20000, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 1 }
+        });
+        var after = Make(new FileCoverage("a.cs", 19998, 20000, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [10] = 0 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var d = Assert.Single(result.Files);
+        Assert.Equal(FileChangeKind.Unchanged, d.Change);
+        Assert.Empty(result.Regressions);
+        Assert.Empty(result.Improvements);
+        Assert.Single(d.LineChanges);
+        Assert.IsType<LineDelta.NewlyMissed>(d.LineChanges[0]);
+
+        // The rendered color shares the same epsilon: dim, not red.
+        var pen = new DotCov.Formatters.AnsiPen(enabled: true);
+        Assert.StartsWith("\e[2m", pen.Delta("x", d.Delta));
+    }
+
+    [Fact]
+    public void Regressions_IncludeRemovedFiles_Improvements_IncludeAddedFiles()
+    {
+        // Losing a measured file is a regression of what the report vouches for; a new
+        // covered file is an improvement. Deriving from FileChangeKind must not silently
+        // drop the Added/Removed arms.
+        var before = Make(new FileCoverage("gone.cs", 8, 10, 0, 0));
+        var after = Make(new FileCoverage("fresh.cs", 9, 10, 0, 0));
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Equal("gone.cs", Assert.Single(result.Regressions).Path);
+        Assert.Equal("fresh.cs", Assert.Single(result.Improvements).Path);
+    }
 }

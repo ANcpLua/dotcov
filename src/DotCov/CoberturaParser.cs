@@ -7,7 +7,8 @@ namespace DotCov;
 /// <summary>
 /// Streaming Cobertura XML parser. Same pattern as AccessReportXml:
 /// XmlReader cursor walks the document — XML never held in memory.
-/// Secure: DtdProcessing.Prohibit, XmlResolver = null, character cap.
+/// Secure: DtdProcessing.Ignore + XmlResolver = null (DOCTYPE skipped, entities never
+/// resolve, so XXE payloads still throw), character cap.
 /// </summary>
 public static partial class CoberturaParser
 {
@@ -33,9 +34,23 @@ public static partial class CoberturaParser
         return Parse(stream, maxChars);
     }
 
+    /// <summary>
+    /// Parse and merge every matching report under <paramref name="directory"/>. Only two
+    /// pattern shapes are supported: <c>filename</c> (top level only) and <c>**/filename</c>
+    /// (recursive). Any other directory component throws instead of silently matching
+    /// nothing — a glob that quietly matches zero files flows into
+    /// <see cref="CoverageReport.Evaluate"/> as "nothing was measured", the most invisible
+    /// possible misconfiguration.
+    /// </summary>
     public static CoverageReport ParseDirectory(string directory, string pattern = DefaultPattern)
     {
-        var files = Directory.GetFiles(directory, Path.GetFileName(pattern),
+        var name = Path.GetFileName(pattern);
+        if (pattern[..^name.Length] is not ("" or "**/") || name.Contains('\\'))
+            throw new ArgumentException(
+                $"Unsupported pattern '{pattern}': only 'filename' and '**/filename' are supported.",
+                nameof(pattern));
+
+        var files = Directory.GetFiles(directory, name,
             new EnumerationOptions { RecurseSubdirectories = pattern.Contains("**") });
 
         if (files.Length is 0)
@@ -59,7 +74,14 @@ public static partial class CoberturaParser
 
     private static XmlReaderSettings CreateSecureSettings(long maxChars, bool async = false) => new()
     {
-        DtdProcessing = DtdProcessing.Prohibit,
+        // Ignore, not Prohibit: reference Cobertura, gcovr, and coverage.py all emit
+        // `<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">`
+        // on every report, so Prohibit rejected the format's canonical emitters. Ignore skips
+        // the DTD without processing it; with XmlResolver = null external entities can never
+        // resolve and an entity reference in content still throws — XXE stays dead. The
+        // entity-expansion cap is belt-and-braces for the same threat.
+        DtdProcessing = DtdProcessing.Ignore,
+        MaxCharactersFromEntities = 1024,
         XmlResolver = null,
         IgnoreWhitespace = true,
         MaxCharactersInDocument = maxChars,
@@ -172,7 +194,7 @@ public static partial class CoberturaParser
             if (sub.LocalName == "condition")
             {
                 if (conditionLine >= 0 &&
-                    int.TryParse(sub.GetAttribute("number"), out var condNumber) &&
+                    int.TryParse(sub.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var condNumber) &&
                     TryParseConditionOutcomes(sub.GetAttribute("coverage"), out var condCovered))
                 {
                     acc.AddCondition(conditionLine, condNumber, condCovered);
@@ -183,10 +205,27 @@ public static partial class CoberturaParser
             if (sub.LocalName != "line") continue;
             conditionLine = -1;
 
-            if (!int.TryParse(sub.GetAttribute("number"), out var lineNum))
+            if (!int.TryParse(sub.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lineNum))
                 continue;
 
-            var hits = int.TryParse(sub.GetAttribute("hits"), out var h) ? h : 0;
+            var hitsAttr = sub.GetAttribute("hits");
+            var hits = 0;
+            if (hitsAttr is not null)
+            {
+                // Parse as long and saturate: hit counts above int.MaxValue are real (soak
+                // runs, 64-bit-counter emitters like gcovr/llvm-cov), and only >0 matters
+                // downstream — degrading overflow to 0 silently flipped covered lines to
+                // misses. Present-but-unparseable warns instead of silently recording a miss;
+                // an absent attribute stays a warning-free 0 (some emitters omit it).
+                if (long.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h))
+                    hits = (int)Math.Clamp(h, int.MinValue, int.MaxValue);
+                else
+                    warnings.Add(new CoverageWarning(
+                        CoverageWarningKind.MalformedHits,
+                        filename,
+                        lineNum,
+                        $"hits='{hitsAttr}' could not be parsed - treating as 0"));
+            }
 
             acc.LineHits[lineNum] = acc.LineHits.TryGetValue(lineNum, out var existing)
                 ? Math.Max(existing, hits)
@@ -227,27 +266,6 @@ public static partial class CoberturaParser
         var result = new List<FileCoverage>(files.Count);
         foreach (var (filename, acc) in files)
         {
-            var linesHit = 0;
-            var uncovered = new List<int>();
-            foreach (var (line, hits) in acc.LineHits)
-            {
-                if (hits > 0) linesHit++;
-                else uncovered.Add(line);
-            }
-
-            uncovered.Sort();
-
-            var branchesHit = 0;
-            var branchesTotal = 0;
-            var partialBranches = new List<BranchDetail>();
-            foreach (var (line, b) in acc.BranchesByLine.OrderBy(static kv => kv.Key))
-            {
-                branchesHit += b.Covered;
-                branchesTotal += b.Total;
-                if (b.Covered < b.Total)
-                    partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
-            }
-
             // Keep per-condition detail only where it reconstructs the line aggregate as 2-outcome
             // jumps (the universal case for &&/||/?:/??/?.). If a switch jump-table makes it
             // inconsistent, drop to the line aggregate so merge never invents a total the emitter
@@ -260,17 +278,7 @@ public static partial class CoberturaParser
                 if (conds.Count * 2 == acc.BranchesByLine[line].Total)
                     conditionsByLine[line] = new Dictionary<int, int>(conds);
 
-            var (strict, partial) = FileCoverage.ClassifyLines(acc.LineHits, acc.BranchesByLine);
-            result.Add(new FileCoverage(filename, linesHit, acc.LineHits.Count, branchesHit, branchesTotal)
-            {
-                LineHits = acc.LineHits,
-                BranchesByLine = acc.BranchesByLine,
-                ConditionsByLine = conditionsByLine,
-                UncoveredLines = uncovered,
-                PartialBranches = partialBranches,
-                StrictlyHitLines = strict,
-                PartiallyHitLines = partial
-            });
+            result.Add(FileCoverage.FromLineData(filename, acc.LineHits, acc.BranchesByLine, conditionsByLine));
         }
 
         return new CoverageReport(result) { Warnings = warnings };
@@ -297,6 +305,10 @@ public static partial class CoberturaParser
         var span = coverage.AsSpan().TrimEnd('%');
         if (!double.TryParse(span, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent))
             return false;
+        // Range-gate before rounding (NaN and ±Infinity fail the pattern too): a percent
+        // outside [0,100] would put a covered value outside 0–2 into the per-condition map,
+        // which a later merge recompute turns into BranchesHit > BranchesTotal.
+        if (percent is not (>= 0 and <= 100)) return false;
         covered = (int)Math.Round(percent / 100.0 * 2.0, MidpointRounding.AwayFromZero);
         return true;
     }

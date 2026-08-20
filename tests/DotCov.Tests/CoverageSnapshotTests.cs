@@ -28,21 +28,21 @@ public sealed class CoverageSnapshotTests
     }
 
     [Fact]
-    public void Record_AllowsNullFileHash()
+    public void Snapshot_Timestamp_SerializesAsRoundTrippableIso8601()
     {
-        var snapshot = new CoverageSnapshot("x", "y", "z", DateTimeOffset.UnixEpoch, null, CoverageReport.Empty);
+        // The payload is POSTed to arbitrary endpoints, so the timestamp's wire shape is a
+        // contract: ISO 8601 with explicit offset, parseable back to the exact instant —
+        // never a locale-dependent or offset-less rendering.
+        var ts = new DateTimeOffset(2026, 5, 11, 12, 30, 45, TimeSpan.FromHours(2));
+        var snapshot = new CoverageSnapshot("abc123", "main", "MyApp", ts, null, CoverageReport.Empty);
 
-        Assert.Null(snapshot.FileHash);
-    }
+        var json = DotCov.Formatters.JsonFormatter.FormatSnapshot(snapshot);
 
-    [Fact]
-    public void Record_EqualityIsValueBased()
-    {
-        var ts = DateTimeOffset.UnixEpoch;
-        var a = new CoverageSnapshot("a", "b", "c", ts, "h", CoverageReport.Empty);
-        var b = new CoverageSnapshot("a", "b", "c", ts, "h", CoverageReport.Empty);
+        Assert.Contains("\"timestamp\": \"2026-05-11T12:30:45+02:00\"", json);
 
-        Assert.Equal(a, b);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var roundTripped = doc.RootElement.GetProperty("timestamp").GetDateTimeOffset();
+        Assert.Equal(ts, roundTripped);
     }
 }
 

@@ -35,17 +35,43 @@ public sealed class CoberturaParserAsyncTests
     }
 
     [Fact]
-    public async Task ParseAsync_RejectsDtd()
+    public async Task ParseAsync_XxeEntityReference_Throws()
     {
+        // With DtdProcessing.Ignore the DTD itself is skipped, so the entity reference in
+        // content is undeclared and the reader throws — XXE cannot pull external content.
         const string malicious = """
                                  <?xml version="1.0"?>
-                                 <!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]>
-                                 <coverage><packages></packages></coverage>
+                                 <!DOCTYPE coverage [<!ENTITY e SYSTEM "file:///etc/passwd">]>
+                                 <coverage><packages><package><classes>
+                                   <class name="&e;" filename="x.cs"/>
+                                 </classes></package></packages></coverage>
                                  """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
 
         await Assert.ThrowsAsync<System.Xml.XmlException>(
             async () => await CoberturaParser.ParseAsync(stream));
+    }
+
+    [Fact]
+    public async Task ParseAsync_BenignDoctype_Parses()
+    {
+        // Reference Cobertura emits a DOCTYPE on every report; skipping it (not dying on it)
+        // is what lets the async path read the format's canonical emitters too.
+        const string canonical = """
+                                 <?xml version="1.0"?>
+                                 <!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+                                 <coverage><packages><package><classes>
+                                   <class name="X" filename="x.cs"><lines>
+                                     <line number="1" hits="1" branch="false"/>
+                                   </lines></class>
+                                 </classes></package></packages></coverage>
+                                 """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
+
+        var report = await CoberturaParser.ParseAsync(stream);
+
+        Assert.Single(report.Files);
+        Assert.Equal(1, report.TotalLinesHit);
     }
 
     [Fact]
@@ -74,16 +100,9 @@ public sealed class CoberturaParserAsyncTests
         Assert.Equal(2, partial.Total);
     }
 
-    [Fact]
-    public void Parse_MalformedConditionString_IsIgnoredQuietly()
-    {
-        var report = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Branch(10, "garbage"))
-            .Parse();
-
-        Assert.Single(report.Files);
-        Assert.Equal(0, report.Files[0].BranchesTotal);
-    }
+    // A malformed condition string is NOT ignored quietly — the parser emits a
+    // MalformedConditionCoverage warning. That contract (including BranchesTotal == 0)
+    // is pinned by CoberturaParserTests.Parse_MalformedConditionString_EmitsWarning.
 
     [Fact]
     public void Parse_LineWithoutNumber_IsSkipped()

@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace DotCov;
 
 public readonly record struct BranchDetail(int Line, int Covered, int Total);
@@ -33,7 +35,26 @@ public enum CoverageWarningKind
     /// entry; this warning makes the omission observable so emitter regressions
     /// (e.g. malformed Coverlet output) don't silently zero out branch coverage.
     /// </summary>
-    MalformedConditionCoverage
+    MalformedConditionCoverage,
+
+    /// <summary>
+    /// Two reports both carried per-condition detail for the same source line but with
+    /// different condition <c>number</c> sets. Coverlet's condition numbers are IL branch
+    /// offsets — stable only for the identical assembly build — so unioning across
+    /// mismatched sets would invent branch totals neither emitter reported.
+    /// <see cref="FileCoverage.MergeWith"/> falls back to the line-level <c>Math.Max</c>
+    /// union for that line and records the downgrade here.
+    /// </summary>
+    ConditionIdentityMismatch,
+
+    /// <summary>
+    /// A Cobertura <c>&lt;line&gt;</c> carried a <c>hits</c> attribute that could not be
+    /// parsed as an integer. The parser records the line with zero hits — the conservative
+    /// reading — and surfaces the degradation here instead of silently flipping a possibly
+    /// covered line to a miss. An <em>absent</em> <c>hits</c> attribute is not malformed
+    /// (some emitters omit it on summary lines) and stays a warning-free zero.
+    /// </summary>
+    MalformedHits
 }
 
 /// <summary>
@@ -73,11 +94,24 @@ public readonly record struct FileCoverage(
     /// </summary>
     public bool HasBranchData => BranchesTotal > 0;
 
+    // A `default(FileCoverage)` — array growth, a Dictionary.TryGetValue miss, `default` — never
+    // runs the property initializers below, so every collection accessor null-coalesces to a
+    // shared empty singleton: a default instance behaves as an empty file instead of violating
+    // its own non-nullable annotations and NRE-ing in GetLineStatus/MergeWith.
+    private static readonly IReadOnlyDictionary<int, int> NoHits =
+        ReadOnlyDictionary<int, int>.Empty;
+
+    private static readonly IReadOnlyDictionary<int, (int Covered, int Total)> NoBranches =
+        ReadOnlyDictionary<int, (int Covered, int Total)>.Empty;
+
+    private static readonly IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> NoConditions =
+        ReadOnlyDictionary<int, IReadOnlyDictionary<int, int>>.Empty;
+
     /// <summary>Line numbers with zero hits. Populated by parser — useful for AI test generation.</summary>
-    public IReadOnlyList<int> UncoveredLines { get; init; } = [];
+    public IReadOnlyList<int> UncoveredLines { get => field ?? []; init; } = [];
 
     /// <summary>Branch lines with partial coverage. Shows exactly which conditions need tests.</summary>
-    public IReadOnlyList<BranchDetail> PartialBranches { get; init; } = [];
+    public IReadOnlyList<BranchDetail> PartialBranches { get => field ?? []; init; } = [];
 
     /// <summary>
     /// Per-line hit counts (line number → hits). Cobertura emits the same line number under
@@ -87,8 +121,7 @@ public readonly record struct FileCoverage(
     /// highest hit count seen, matching the per-line semantics every other Cobertura consumer
     /// (Codecov, ReportGenerator, Cobertura's own report.py) uses.
     /// </summary>
-    public IReadOnlyDictionary<int, int> LineHits { get; init; } =
-        new Dictionary<int, int>();
+    public IReadOnlyDictionary<int, int> LineHits { get => field ?? NoHits; init; } = NoHits;
 
     /// <summary>
     /// Per-line branch hit/total counts. Needed for two things:
@@ -108,8 +141,11 @@ public readonly record struct FileCoverage(
     /// observable rather than silent.
     /// </para>
     /// </summary>
-    public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine { get; init; } =
-        new Dictionary<int, (int Covered, int Total)>();
+    public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine
+    {
+        get => field ?? NoBranches;
+        init;
+    } = NoBranches;
 
     /// <summary>
     /// Per-line, per-condition covered-outcome counts: line → (coverlet <c>condition number</c>
@@ -121,9 +157,20 @@ public readonly record struct FileCoverage(
     /// counts — which can't tell "both hit the same branch" from "each hit a different one" and
     /// under-reports the union (the classic false not-hit). Empty for emitters without per-condition
     /// detail or for non-2-way lines (switch jump tables); merge then falls back to the line aggregate.
+    /// <para>
+    /// Merge semantics: <see cref="MergeWith"/> unions per condition number only when both sides
+    /// carry the <em>same</em> number set for the line — the only case where coverlet's IL-offset
+    /// numbers provably identify the same branch. Mismatched sets fall back to the line-level
+    /// aggregate with a <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> warning.
+    /// Detail present on only one side is carried forward unchanged so a later merge can still
+    /// union it; the line aggregate never regresses below what the line-level union observed.
+    /// </para>
     /// </summary>
-    public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine { get; init; } =
-        new Dictionary<int, IReadOnlyDictionary<int, int>>();
+    public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine
+    {
+        get => field ?? NoConditions;
+        init;
+    } = NoConditions;
 
     /// <summary>
     /// Codecov-style three-state classification for a single source line. Returns
@@ -228,10 +275,13 @@ public readonly record struct FileCoverage(
     /// <summary>
     /// Reconcile two reports of the same file into one. Returns the merged
     /// <see cref="FileCoverage"/> alongside a structured warnings list for anomalies the
-    /// silent <c>Math.Max</c> reconciliation would otherwise hide — currently one
+    /// silent <c>Math.Max</c> reconciliation would otherwise hide — one
     /// <see cref="CoverageWarningKind.BranchTotalMismatch"/> per line whose <c>Total</c>
     /// disagrees between the two sides (usually a sign that the reports came from
-    /// different compile targets, e.g. Release vs. Debug builds in different CI jobs).
+    /// different compile targets, e.g. Release vs. Debug builds in different CI jobs), and
+    /// one <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> per line whose
+    /// per-condition number sets disagree (same cause; the per-condition union is skipped
+    /// for that line because the numbers no longer identify the same branches).
     /// <para>
     /// Tuple return is the only signature: callers who don't care about warnings
     /// discard with <c>var (merged, _) = a.MergeWith(b)</c>. The convenience overload
@@ -253,25 +303,8 @@ public readonly record struct FileCoverage(
         var mergedBranches = new Dictionary<int, (int Covered, int Total)>(BranchesByLine);
         var warnings = new List<CoverageWarning>();
 
-        // Correct branch union via per-condition identity: where BOTH reports carry condition
-        // detail for a line, union the covered outcomes per coverlet `number` (Math.Max), then
-        // recompute the line aggregate from the union (2-outcome jumps). This reconstructs the
-        // true union when two runs exercise different conditions of the same line — the case
-        // line-level Math.Max on counts gets wrong (the false not-hit).
-        var mergedConditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
-        foreach (var (line, mine) in ConditionsByLine)
-        {
-            if (!other.ConditionsByLine.TryGetValue(line, out var theirs)) continue;
-            var union = new Dictionary<int, int>(mine);
-            foreach (var (number, covered) in theirs)
-                union[number] = union.TryGetValue(number, out var e) ? Math.Max(e, covered) : covered;
-            mergedConditions[line] = union;
-            mergedBranches[line] = (union.Values.Sum(), union.Count * 2);
-        }
-
         foreach (var (line, b) in other.BranchesByLine)
         {
-            if (mergedConditions.ContainsKey(line)) continue;   // already unioned per-condition above
             if (mergedBranches.TryGetValue(line, out var existing))
             {
                 if (existing.Total != b.Total)
@@ -291,19 +324,102 @@ public readonly record struct FileCoverage(
             }
         }
 
+        // Correct branch union via per-condition identity, overlaid on the line-level union:
+        // where both reports carry condition detail for a line WITH the same condition-number
+        // set, union the covered outcomes per coverlet `number` (Math.Max) and recompute the
+        // line aggregate from the union. This reconstructs the true union when two runs
+        // exercise different conditions of the same line — the case line-level Math.Max on
+        // counts gets wrong (the false not-hit). Condition numbers are IL branch offsets,
+        // stable only within one build, so mismatched sets must NOT union: that would invent
+        // a total neither emitter reported (the same invariant Materialize enforces within a
+        // single report). Mismatches keep the line-level aggregate and warn.
+        var mergedConditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
+        foreach (var (line, mine) in ConditionsByLine)
+        {
+            if (other.ConditionsByLine.TryGetValue(line, out var theirs))
+            {
+                if (mine.Count == theirs.Count && mine.Keys.All(theirs.ContainsKey))
+                {
+                    var union = new Dictionary<int, int>(mine.Count);
+                    foreach (var (number, covered) in mine)
+                        union[number] = Math.Max(covered, theirs[number]);
+                    mergedConditions[line] = union;
+                    OverlayConditionAggregate(mergedBranches, line, union);
+                }
+                else
+                {
+                    warnings.Add(new CoverageWarning(
+                        CoverageWarningKind.ConditionIdentityMismatch,
+                        Path,
+                        line,
+                        $"condition numbers [{string.Join(",", mine.Keys.Order())}] vs " +
+                        $"[{string.Join(",", theirs.Keys.Order())}] - using the line aggregate"));
+                }
+            }
+            else
+            {
+                // One-sided detail (the other emitter shipped no <conditions> for this line):
+                // carry it forward so a later merge can still union per condition instead of
+                // degrading to line-level Math.Max forever — and so merge order cannot change
+                // the outcome.
+                mergedConditions[line] = new Dictionary<int, int>(mine);
+                OverlayConditionAggregate(mergedBranches, line, mine);
+            }
+        }
+
+        foreach (var (line, theirs) in other.ConditionsByLine)
+        {
+            if (ConditionsByLine.ContainsKey(line)) continue;   // handled above
+            mergedConditions[line] = new Dictionary<int, int>(theirs);
+            OverlayConditionAggregate(mergedBranches, line, theirs);
+        }
+
+        return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions), warnings);
+    }
+
+    // The line aggregate for a condition-detailed line is the component-wise Math.Max of the
+    // condition-derived value and the line-level union: condition detail can only raise the
+    // covered count (different conditions exercised by different runs), never regress a count
+    // the line-level union already observed from a condition-less side.
+    private static void OverlayConditionAggregate(
+        Dictionary<int, (int Covered, int Total)> mergedBranches,
+        int line,
+        IReadOnlyDictionary<int, int> conditions)
+    {
+        var derived = (Covered: conditions.Values.Sum(), Total: conditions.Count * 2);
+        mergedBranches[line] = mergedBranches.TryGetValue(line, out var b)
+            ? (Math.Max(derived.Covered, b.Covered), Math.Max(derived.Total, b.Total))
+            : derived;
+    }
+
+    /// <summary>
+    /// Shared construction tail for the parser's <c>Materialize</c> and <see cref="MergeWith"/>:
+    /// derives the uncovered list, branch aggregates, partial branches, and strict classification
+    /// from the raw dicts — one walk of the algorithm instead of two hand-synchronized copies.
+    /// Wraps the dicts read-only so internal accumulator state never escapes mutable behind the
+    /// <c>IReadOnly*</c> surface (a downcast mutation would silently desynchronize
+    /// <see cref="LineHits"/> from the precomputed aggregates).
+    /// </summary>
+    internal static FileCoverage FromLineData(
+        string path,
+        Dictionary<int, int> lineHits,
+        Dictionary<int, (int Covered, int Total)> branchesByLine,
+        Dictionary<int, IReadOnlyDictionary<int, int>> conditionsByLine)
+    {
         var linesHit = 0;
         var uncovered = new List<int>();
-        foreach (var (line, hits) in mergedHits)
+        foreach (var (line, hits) in lineHits)
         {
             if (hits > 0) linesHit++;
             else uncovered.Add(line);
         }
+
         uncovered.Sort();
 
         var branchesHit = 0;
         var branchesTotal = 0;
         var partialBranches = new List<BranchDetail>();
-        foreach (var (line, b) in mergedBranches.OrderBy(static kv => kv.Key))
+        foreach (var (line, b) in branchesByLine.OrderBy(static kv => kv.Key))
         {
             branchesHit += b.Covered;
             branchesTotal += b.Total;
@@ -311,18 +427,17 @@ public readonly record struct FileCoverage(
                 partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
         }
 
-        var (strict, partial) = ClassifyLines(mergedHits, mergedBranches);
-        var merged = new FileCoverage(Path, linesHit, mergedHits.Count, branchesHit, branchesTotal)
+        var (strict, partial) = ClassifyLines(lineHits, branchesByLine);
+        return new FileCoverage(path, linesHit, lineHits.Count, branchesHit, branchesTotal)
         {
-            LineHits = mergedHits,
-            BranchesByLine = mergedBranches,
-            ConditionsByLine = mergedConditions,
+            LineHits = new ReadOnlyDictionary<int, int>(lineHits),
+            BranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(branchesByLine),
+            ConditionsByLine = new ReadOnlyDictionary<int, IReadOnlyDictionary<int, int>>(conditionsByLine),
             UncoveredLines = uncovered,
             PartialBranches = partialBranches,
             StrictlyHitLines = strict,
             PartiallyHitLines = partial
         };
-        return (merged, warnings);
     }
 }
 
@@ -375,10 +490,12 @@ public sealed class CoverageReport
 
     /// <summary>
     /// Files measured below <paramref name="linePercent"/>. Files with no line data are not
-    /// "below" anything and are omitted — they are unmeasured, not failing.
+    /// "below" anything and are omitted — they are unmeasured, not failing. Uses the same
+    /// epsilon-tolerant comparison as <see cref="Evaluate"/>, so a file at exactly the
+    /// threshold is never listed as an offender.
     /// </summary>
     public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
-        Files.Where(f => f.LineRate is { } r && r * 100 < linePercent);
+        Files.Where(f => f.LineRate is { } r && !GateResult.MeetsThreshold(r, linePercent));
 
     /// <summary>
     /// Decide whether this report clears the given thresholds. Returns the full verdict rather
@@ -399,8 +516,12 @@ public sealed class CoverageReport
             return new GateResult(GateOutcome.NoData, LineRate, null, minLinePercent, minBranchPercent,
                 FormattableString.Invariant($"branch threshold of {minBranchPercent}% requested but the report carries no branch data"));
 
-        var lineOk = LineRate * 100 >= minLinePercent;
-        var branchOk = minBranchPercent <= 0 || BranchRate * 100 >= minBranchPercent;
+        // Epsilon-tolerant so an exactly-met threshold passes: 29/100 lines against
+        // --min-line 29 is a pass, not the self-contradictory "FAIL: line 29.0% (min 29%)"
+        // that a raw `rate * 100 >= min` produces when the division lands a ulp low.
+        var lineOk = LineRate is { } lr && GateResult.MeetsThreshold(lr, minLinePercent);
+        var branchOk = minBranchPercent <= 0 ||
+                       (BranchRate is { } br && GateResult.MeetsThreshold(br, minBranchPercent));
 
         return lineOk && branchOk
             ? new GateResult(GateOutcome.Pass, LineRate, BranchRate, minLinePercent, minBranchPercent, "thresholds met")
@@ -410,7 +531,11 @@ public sealed class CoverageReport
                 : "branch coverage below threshold");
     }
 
-    /// <summary>Remove files matching exclusion patterns. Returns a new report.</summary>
+    /// <summary>
+    /// Remove files matching exclusion patterns. Returns a new report. Patterns are
+    /// case-insensitive <em>substring</em> matches against the file path, not globs — see the
+    /// two-parameter overload for the exact matching rules.
+    /// </summary>
     public CoverageReport Exclude(IEnumerable<string> patterns) =>
         Exclude(patterns, keep: []);
 
@@ -421,6 +546,14 @@ public sealed class CoverageReport
     /// default, but a top-level CLI tool's entire surface lives in <c>Program.cs</c> and the
     /// user wants to measure it.
     /// </summary>
+    /// <remarks>
+    /// Patterns are case-insensitive <em>substring</em> matches, not globs: <c>Program.cs</c>
+    /// also matches <c>MyProgram.cs</c>, and a glob like <c>src/**/*.g.cs</c> matches nothing.
+    /// Matching runs against the path with a leading <c>/</c> prepended, so a rule anchored
+    /// with a leading separator (<c>/Program.cs</c>, <c>/obj/</c>) also matches at the top
+    /// level of a prefix-less path — emitters disagree on whether <c>filename</c> carries a
+    /// directory prefix, and the same file must match either way.
+    /// </remarks>
     public CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
     {
         var rules = patterns.ToList();
@@ -430,8 +563,11 @@ public sealed class CoverageReport
 
         var filtered = Files
             .Where(f =>
-                keepRules.Any(k => f.Path.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
-                !rules.Any(p => f.Path.Contains(p, StringComparison.OrdinalIgnoreCase)))
+            {
+                var path = '/' + f.Path;   // virtual root: leading-separator rules anchor at top level
+                return keepRules.Any(k => path.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
+                       !rules.Any(p => path.Contains(p, StringComparison.OrdinalIgnoreCase));
+            })
             .ToList();
 
         return new CoverageReport(filtered) { Warnings = Warnings };
@@ -482,7 +618,11 @@ public static class ExclusionRules
         // so a "d__" path rule is structurally dead (matches nothing). The state machine's branches
         // fuse into the real file; suppress them via coverlet config ([ExcludeFromCodeCoverage] /
         // runsettings), which removes them at the source, not via a path filter that can't fire.
-        "GlobalUsings",   // auto-generated global usings
+        // Anchored to the exact filename: the bare substring "GlobalUsings" also swallowed real
+        // product code in any directory whose *name* contains it (src/GlobalUsingsGenerator/…),
+        // silently flipping a failing gate to PASS. The auto-generated coverlet artifact
+        // ({Project}.GlobalUsings.g.cs under obj/) is already caught by ".g.cs" and "/obj/".
+        "/GlobalUsings.cs",
         "/Program.cs",    // ASP.NET Core / generic host bootstrap — opt back in with --keep Program.cs
     ];
 
