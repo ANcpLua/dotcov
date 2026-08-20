@@ -302,6 +302,42 @@ public sealed class JsonFormatterTests
         Assert.Contains("\"coveredLines\"", json);
     }
 
+    [Fact]
+    public void FormatSnapshot_WithWarnings_IncludesWarningsArray()
+    {
+        // The snapshot is the payload built for remote sinks — the anomaly channel must
+        // survive the pipeline boundary, with the same shape Format emits.
+        var report = new CoverageReport([new FileCoverage("src/A.cs", 1, 1, 0, 0)])
+        {
+            Warnings = [new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 12, "Total 5 vs 7")]
+        };
+        var snapshot = new CoverageSnapshot(
+            CommitSha: "abc123", Branch: "main", Project: "App",
+            Timestamp: DateTimeOffset.UnixEpoch, FileHash: null, Report: report);
+
+        var json = JsonFormatter.FormatSnapshot(snapshot);
+        var warnings = JsonDocument.Parse(json).RootElement.GetProperty("warnings");
+
+        Assert.Equal(1, warnings.GetArrayLength());
+        Assert.Equal("BranchTotalMismatch", warnings[0].GetProperty("kind").GetString());
+        Assert.Equal("src/A.cs", warnings[0].GetProperty("file").GetString());
+        Assert.Equal(12, warnings[0].GetProperty("line").GetInt32());
+        Assert.Equal("Total 5 vs 7", warnings[0].GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public void FormatSnapshot_NoWarnings_OmitsWarningsField()
+    {
+        // Absent-key-when-clean contract holds on the snapshot exactly like on Format.
+        var snapshot = new CoverageSnapshot(
+            CommitSha: "x", Branch: "y", Project: "z",
+            Timestamp: DateTimeOffset.UnixEpoch, FileHash: null, Report: Reports.Mixed);
+
+        var json = JsonFormatter.FormatSnapshot(snapshot);
+
+        Assert.False(JsonDocument.Parse(json).RootElement.TryGetProperty("warnings", out _));
+    }
+
     // ── Warnings: same null-omission contract as `lineChanges` / `uncoveredLines` ──
 
     [Fact]

@@ -119,11 +119,14 @@ public sealed class AnsiTests
     }
 
     [Fact]
-    public void IsSupported_NoArgOverload_DelegatesToConsoleRedirectionState()
+    public void IsSupported_NoArgOverload_UsesActualConsoleRedirectionState()
     {
         using var _ = EnvScope.Clear(AllVars);
 
-        Assert.Equal(Ansi.IsSupported(Console.IsOutputRedirected), Ansi.IsSupported());
+        // Expected value derived from the console state directly, not by re-invoking the
+        // two-arg overload — a no-arg overload that hardcoded either redirection state
+        // would fail this on the runner (where stdout is redirected under `dotnet test`).
+        Assert.Equal(!Console.IsOutputRedirected, Ansi.IsSupported());
     }
 
     [Fact]

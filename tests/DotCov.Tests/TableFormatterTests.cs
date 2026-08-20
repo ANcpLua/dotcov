@@ -6,6 +6,13 @@ namespace DotCov.Tests;
 
 public sealed class TableFormatterTests
 {
+    private static readonly AnsiPen Pen = new(enabled: true);
+
+    // Derives a style's opening escape from AnsiPen itself, so these tests assert
+    // "this cell is styled by pen X" without re-pinning the byte-level codes —
+    // those are pinned exactly once, in AnsiPenTests.
+    private static string Open(Func<string, string> style) => style("\0").Split('\0')[0];
+
     [Fact]
     public void Format_DefaultPlain_ContainsNoAnsiEscapes()
     {
@@ -57,9 +64,10 @@ public sealed class TableFormatterTests
     public void Format_NoBranchData_RendersDashInsteadOfHundredPercent()
     {
         var output = TableFormatter.Format(Reports.LinesOnly);
+        var row = output.Split('\n').Single(l => l.Contains("App.cs")).TrimEnd();
 
-        Assert.DoesNotContain("100.0%", output);
-        Assert.Matches(@"\s-\s", output);
+        // Anchored to the file's own row: line columns populated, both branch columns dashed.
+        Assert.Matches(@"^src/App\.cs\s+410/769\s+53\.3%\s+-\s+-$", row);
     }
 
     [Fact]
@@ -87,17 +95,18 @@ public sealed class TableFormatterTests
         var output = TableFormatter.Format(Reports.Mixed, color: true);
         var totalLine = output.Split('\n').Single(l => l.Contains("TOTAL"));
 
-        Assert.Contains("\e[1m", totalLine);
+        Assert.Contains(Open(Pen.Bold), totalLine);
     }
 
     [Fact]
     public void Format_ColorEnabled_PaintsCyanBoldHeader()
     {
         var output = TableFormatter.Format(Reports.Mixed, color: true);
-        var headerLine = output.Split('\n')[0];
+        var headerLine = output.Split('\n')[0].TrimEnd();
 
-        Assert.Contains("\e[36m", headerLine);
-        Assert.Contains("\e[1m", headerLine);
+        // The header is exactly its plain text run through Bold(Cyan(…)) — rebuilt from
+        // an AnsiPen so a palette change in the pen cannot break a formatter test.
+        Assert.Equal(Pen.Bold(Pen.Cyan(AnsiStrip.From(headerLine))), headerLine);
     }
 
     [Fact]
@@ -119,7 +128,8 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(diff, color: true);
 
-        Assert.Contains("\e[31m", output); // red for the negative delta
+        // The regression's delta cell is painted by the pen's delta rule (red arm).
+        Assert.Contains(Pen.Delta(" -30.0%", diff.Delta), output);
     }
 
     [Fact]
@@ -131,8 +141,7 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(diff, color: true);
 
-        Assert.Contains("\e[32m", output);
-        Assert.Contains("Added", output);
+        Assert.Contains(Pen.Green($"{FileChangeKind.Added,10}"), output);
     }
 
     [Fact]
@@ -143,11 +152,11 @@ public sealed class TableFormatterTests
             CoverageReport.Empty);
 
         var output = TableFormatter.FormatDiff(diff, color: true);
+        var row = AnsiStrip.From(output).Split('\n').Single(l => l.Contains("gone.cs")).TrimEnd();
 
-        Assert.Contains("gone.cs", output);
-        Assert.Contains("Removed", output);
-        Assert.Contains("80.0%", output);   // before column populated
-        Assert.Matches(@"\s-\s", output);    // after column dashed
+        // Before populated, after dashed, delta -before — pinned on the file's own row so
+        // a dash elsewhere (TOTAL row, other columns) cannot satisfy the assertion.
+        Assert.Matches(@"^gone\.cs\s+80\.0%\s+-\s+-80\.0%\s+Removed$", row);
     }
 
     [Fact]
@@ -158,10 +167,9 @@ public sealed class TableFormatterTests
             new CoverageReport([new FileCoverage("fresh.cs", 7, 10, 0, 0)]));
 
         var output = TableFormatter.FormatDiff(diff);
+        var row = output.Split('\n').Single(l => l.Contains("fresh.cs")).TrimEnd();
 
-        Assert.Contains("fresh.cs", output);
-        Assert.Contains("70.0%", output);
-        Assert.Matches(@"\s-\s", output);
+        Assert.Matches(@"^fresh\.cs\s+-\s+70\.0%\s+\+\s+70\.0%\s+Added$", row);
     }
 
     [Fact]
@@ -173,8 +181,8 @@ public sealed class TableFormatterTests
 
         var output = TableFormatter.FormatDiff(diff, color: true);
 
-        Assert.Contains("Unchanged", output);
-        Assert.Contains("\e[2m", output);  // dim color for unchanged
+        // The unchanged file's Change cell is dimmed, not painted with a verdict color.
+        Assert.Contains(Pen.Dim($"{FileChangeKind.Unchanged,10}"), output);
     }
 
     [Fact]
@@ -295,8 +303,8 @@ public sealed class TableFormatterTests
         };
 
         var output = TableFormatter.Format(report, color: true);
-        var trailerLine = output.Split('\n').Single(l => l.Contains("Warnings:"));
+        var trailerLine = output.Split('\n').Single(l => l.Contains("Warnings:")).TrimEnd();
 
-        Assert.Contains("\e[2m", trailerLine);  // dim
+        Assert.Equal(Pen.Dim("Warnings: 1"), trailerLine);
     }
 }
