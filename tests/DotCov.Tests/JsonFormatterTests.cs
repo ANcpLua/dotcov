@@ -102,6 +102,47 @@ public sealed class JsonFormatterTests
     }
 
     [Fact]
+    public void Format_Summary_CarriesBranchTotals()
+    {
+        // totalBranches/coveredBranches are part of the wire contract — asserted by value
+        // so the writer statements cannot be deleted wholesale. WriteSummary is shared, so
+        // this also pins the snapshot and diff summary paths.
+        var json = JsonFormatter.Format(Reports.Mixed);
+        var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
+
+        Assert.Equal(6, summary.GetProperty("totalBranches").GetInt32());
+        Assert.Equal(3, summary.GetProperty("coveredBranches").GetInt32());
+    }
+
+    [Fact]
+    public void Format_PerFile_CarriesAllFourCountFields()
+    {
+        var json = JsonFormatter.Format(Reports.Mixed);
+        var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
+
+        var parser = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Parser.cs");
+        Assert.Equal(3, parser.GetProperty("linesHit").GetInt32());
+        Assert.Equal(5, parser.GetProperty("linesTotal").GetInt32());
+        Assert.Equal(1, parser.GetProperty("branchesHit").GetInt32());
+        Assert.Equal(4, parser.GetProperty("branchesTotal").GetInt32());
+    }
+
+    [Fact]
+    public void Format_EmptyPartialBranches_OmitsKey()
+    {
+        // Absent-key-means-clean: an empty partialBranches list must omit the key entirely,
+        // same contract as uncoveredLines/warnings/lineChanges.
+        var report = new CoverageReport([
+            new FileCoverage("a.cs", 1, 1, 2, 2) { PartialBranches = [] }
+        ]);
+
+        var json = JsonFormatter.Format(report);
+        var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
+
+        Assert.False(file.TryGetProperty("partialBranches", out _));
+    }
+
+    [Fact]
     public void FormatDiff_ProducesValidJsonWithSummaryAndFiles()
     {
         var diff = CoverageDiff.Compare(
@@ -253,6 +294,43 @@ public sealed class JsonFormatterTests
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
         Assert.False(file.TryGetProperty("lineChanges", out _));
+    }
+
+    [Fact]
+    public void FormatDiff_ModifiedFile_CarriesPathAndAfterByValue()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0)]));
+
+        var json = JsonFormatter.FormatDiff(diff);
+        var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
+
+        // path and after asserted by value: existing tests index files positionally and read
+        // "before" only, leaving both writer statements deletable.
+        Assert.Equal("a.cs", file.GetProperty("path").GetString());
+        Assert.Equal(80.0, file.GetProperty("after").GetDouble());
+        Assert.Equal("modified", file.GetProperty("change").GetString());
+    }
+
+    [Fact]
+    public void FormatSnapshot_FilesArray_CarriesPerFileCounts()
+    {
+        // The snapshot's files loop must actually run: an empty "files" array satisfies a
+        // ValueKind.Array check, so pin the length and the first file's counts by value.
+        var snapshot = new CoverageSnapshot(
+            CommitSha: "abc123", Branch: "main", Project: "App",
+            Timestamp: DateTimeOffset.UnixEpoch, FileHash: null, Report: Reports.Mixed);
+
+        var json = JsonFormatter.FormatSnapshot(snapshot);
+        var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
+
+        Assert.Equal(3, files.GetArrayLength());
+        var calc = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Calculator.cs");
+        Assert.Equal(4, calc.GetProperty("linesHit").GetInt32());
+        Assert.Equal(4, calc.GetProperty("linesTotal").GetInt32());
+        Assert.Equal(2, calc.GetProperty("branchesHit").GetInt32());
+        Assert.Equal(2, calc.GetProperty("branchesTotal").GetInt32());
     }
 
     [Fact]

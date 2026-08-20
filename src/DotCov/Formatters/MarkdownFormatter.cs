@@ -7,10 +7,30 @@ public static class MarkdownFormatter
 {
     public static string Format(CoverageReport report, double? threshold = null)
     {
-        var sb = new StringBuilder();
         // A gate that could not evaluate gets its own badge. Rendering NoData/Disabled as ✅
         // is what lets an unmeasured build read as a healthy one in a PR summary.
         var gate = threshold.HasValue ? report.Evaluate(threshold.Value) : (GateResult?)null;
+        var thresholdLine = threshold.HasValue ? Invariant($"**Threshold:** {threshold.Value:F0}%") : null;
+        // Legacy path renders un-floored rates — its output shape is pinned by existing
+        // consumers. The GateResult overload below is the floor-aware presentation.
+        return Render(report, gate, thresholdLine, floorFailing: false);
+    }
+
+    /// <summary>
+    /// Render the report against an already-evaluated <see cref="GateResult"/> — the badge and
+    /// verdict come from <paramref name="gate"/> with no re-evaluation, and any dimension the
+    /// gate failed renders its rates floored (mirroring <see cref="GateResult.ToString"/>'s
+    /// display policy), so the markdown body can never round a failing 79.96% up to the
+    /// self-contradictory <c>80.0%</c> next to a <c>FAIL … 79.9%</c> verdict line.
+    /// </summary>
+    public static string Format(CoverageReport report, GateResult gate) =>
+        Render(report, gate,
+            Invariant($"**Threshold:** line {gate.MinLinePercent}%, branch {gate.MinBranchPercent}%"),
+            floorFailing: true);
+
+    private static string Render(CoverageReport report, GateResult? gate, string? thresholdLine, bool floorFailing)
+    {
+        var sb = new StringBuilder();
         var badge = gate?.Outcome switch
         {
             GateOutcome.Pass => " ✅",
@@ -20,10 +40,15 @@ public static class MarkdownFormatter
             _ => "",
         };
 
+        // Floor only the dimension(s) that actually fell short: flooring a passing rate would
+        // misreport it (2499/2500 must stay 100.0%, not become 99.9%).
+        var floorLine = floorFailing && gate is { LineBelowThreshold: true };
+        var floorBranch = floorFailing && gate is { BranchBelowThreshold: true };
+
         sb.AppendLine($"## Coverage Report{badge}");
         sb.AppendLine();
         sb.AppendLine(report.LineRate is { } lr
-            ? Invariant($"**Line coverage:** {lr * 100:F1}% ({report.TotalLinesHit}/{report.TotalLines})")
+            ? Invariant($"**Line coverage:** {Percent(lr, floorLine)} ({report.TotalLinesHit}/{report.TotalLines})")
             : "**Line coverage:** no data - the report contains no measured lines");
         if (gate is { IsInconclusive: true } g)
         {
@@ -32,21 +57,27 @@ public static class MarkdownFormatter
         }
 
         sb.AppendLine(report.HasBranchData
-            ? Invariant($"**Branch coverage:** {report.BranchRate!.Value * 100:F1}% ({report.TotalBranchesHit}/{report.TotalBranches})")
+            ? Invariant($"**Branch coverage:** {Percent(report.BranchRate!.Value, floorBranch)} ({report.TotalBranchesHit}/{report.TotalBranches})")
             : "**Branch coverage:** _no branch data emitted_");
 
-        if (threshold.HasValue)
-            sb.AppendLine(Invariant($"**Threshold:** {threshold.Value:F0}%"));
+        if (thresholdLine is not null)
+            sb.AppendLine(thresholdLine);
 
         sb.AppendLine();
         sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
         sb.AppendLine("|------|------:|-------:|---------:|---------:|");
 
-        foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
+        foreach (var f in report.Files.WorstFirst())
         {
+            // Per-file flooring follows the same rule as the CLI offender list: only files
+            // genuinely below the missed minimum in a failing dimension floor their display.
+            var floorFileLine = floorLine && gate is { } lg
+                && f.LineRate is { } fileLr && !GateResult.MeetsThreshold(fileLr, lg.MinLinePercent);
+            var floorFileBranch = floorBranch && gate is { } bg
+                && f.BranchRate is { } fileBr && !GateResult.MeetsThreshold(fileBr, bg.MinBranchPercent);
             var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
             sb.AppendLine(
-                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate)} | {branches} | {Pct(f.BranchRate)} |");
+                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate, floorFileLine)} | {branches} | {Pct(f.BranchRate, floorFileBranch)} |");
         }
 
         AppendWarnings(sb, report);
@@ -90,8 +121,19 @@ public static class MarkdownFormatter
         return sb.ToString();
     }
 
-    private static string Pct(double? rate) =>
-        rate is { } r ? Invariant($"{r * 100:F1}%") : "-";
+    private static string Pct(double? rate, bool floorTowardFail = false) =>
+        rate is { } r ? Percent(r, floorTowardFail) : "-";
+
+    // Mirrors GateResult.ToString's display policy through the same internal epsilon: a
+    // failing rate floors at one decimal (79.96% renders 79.9%, never a rounded-up 80.0%
+    // that reads as equal to the minimum it missed), while float noise a hair under a
+    // tenth boundary is absorbed rather than floored an extra tenth down.
+    private static string Percent(double rate, bool floorTowardFail)
+    {
+        var pct = rate * 100;
+        if (floorTowardFail) pct = Math.Floor(pct * 10 + GateResult.RateEpsilon) / 10;
+        return Invariant($"{pct:F1}%");
+    }
 
     private static string SignedPct(double? delta) =>
         delta is { } d ? Invariant($"{(d >= 0 ? "+" : "")}{d * 100:F1}%") : "-";

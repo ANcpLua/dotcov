@@ -70,6 +70,16 @@ public sealed class MarkdownFormatterTests
     }
 
     [Fact]
+    public void Format_FileWithBranches_PopulatesBranchColumns()
+    {
+        // The populated arm of the branch-column convention: exact row shape, so a file
+        // that carries branch data can never regress to the no-data dash.
+        var md = MarkdownFormatter.Format(Reports.Mixed);
+
+        Assert.Contains("| `src/Calculator.cs` | 4/4 | 100.0% | 2/2 | 100.0% |", md);
+    }
+
+    [Fact]
     public void Format_RendersValidMarkdownTable()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed);
