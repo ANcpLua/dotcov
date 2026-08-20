@@ -91,6 +91,54 @@ public sealed class FormatterGateTests
     }
 
     [Fact]
+    public void GateOverload_BranchFails_PassingLineRateNearBoundary_IsNotFloored()
+    {
+        // 2499/2500 = 99.96%: F1 rounds to 100.0%, and flooring is where the two diverge —
+        // only the failing BRANCH dimension may floor. Blanket flooring (both dimensions
+        // whenever the gate failed) would misreport the passing line rate as 99.9%.
+        var report = Reports.Single("src/B.cs", hit: 2499, total: 2500, bHit: 1, bTotal: 2);
+        var gate = report.Evaluate(minLinePercent: 90, minBranchPercent: 80);
+
+        var md = MarkdownFormatter.Format(report, gate);
+
+        Assert.Contains("## Coverage Report ❌", md);
+        Assert.Contains("**Line coverage:** 100.0% (2499/2500)", md);
+        Assert.Contains("**Branch coverage:** 50.0% (1/2)", md);
+        Assert.DoesNotContain("99.9%", md);
+    }
+
+    [Fact]
+    public void GateOverload_LineFails_PassingBranchRateNearBoundary_IsNotFloored()
+    {
+        // Symmetric twin: the branch dimension passes at 2499/2500 = 99.96% and must render
+        // 100.0% while only the failing line dimension floors.
+        var report = Reports.Single("src/B.cs", hit: 1, total: 2, bHit: 2499, bTotal: 2500);
+        var gate = report.Evaluate(minLinePercent: 80, minBranchPercent: 90);
+
+        var md = MarkdownFormatter.Format(report, gate);
+
+        Assert.Contains("## Coverage Report ❌", md);
+        Assert.Contains("**Line coverage:** 50.0% (1/2)", md);
+        Assert.Contains("**Branch coverage:** 100.0% (2499/2500)", md);
+        Assert.DoesNotContain("99.9%", md);
+    }
+
+    [Fact]
+    public void GateOverload_FlooredRateExactlyOnTenthBoundary_AbsorbsFloatNoiseUpward()
+    {
+        // 4/5 = 80%: rate * 100 * 10 computes to exactly 800.0 in IEEE 754, so the floor's
+        // +epsilon must absorb (never amplify) float noise at the boundary — the failing
+        // rate renders 80.0%, not floored an extra tenth down to 79.9%.
+        var report = Reports.Single("src/App.cs", hit: 4, total: 5);
+        var gate = report.Evaluate(90);
+
+        var md = MarkdownFormatter.Format(report, gate);
+
+        Assert.Contains("**Line coverage:** 80.0% (4/5)", md);
+        Assert.DoesNotContain("79.9%", md);
+    }
+
+    [Fact]
     public void GateOverload_RendersBothThresholdsFromGate()
     {
         var report = Reports.Single("src/B.cs", hit: 100, total: 100, bHit: 2400, bTotal: 2500);
@@ -111,6 +159,11 @@ public sealed class FormatterGateTests
         Assert.Contains("## Coverage Report ⚠️", md);
         Assert.Contains("> **No verdict:** report carries no line data - nothing was measured.", md);
         Assert.Contains("**Line coverage:** no data", md);
+        // Blank line after the blockquote: without it, CommonMark lazy continuation renders
+        // the branch-coverage line INSIDE the quote in the GitHub step summary.
+        Assert.Contains(
+            $"> **No verdict:** report carries no line data - nothing was measured.{Environment.NewLine}{Environment.NewLine}**Branch coverage:**",
+            md);
     }
 
     [Fact]
@@ -123,6 +176,25 @@ public sealed class FormatterGateTests
         Assert.Contains("## Coverage Report ⚠️", md);
         Assert.Contains("> **No verdict:** no positive threshold - this gate cannot fail.", md);
         Assert.Contains("**Threshold:** line 0%, branch 0%", md);
+        // Same lazy-continuation guard as the NoData case: the quote must close before the
+        // branch-coverage line.
+        Assert.Contains(
+            $"> **No verdict:** no positive threshold - this gate cannot fail.{Environment.NewLine}{Environment.NewLine}**Branch coverage:**",
+            md);
+    }
+
+    [Fact]
+    public void GateOverload_Inconclusive_BlockquoteHoldsExactlyItsOwnLine()
+    {
+        // The No-verdict blockquote is one line: under CommonMark lazy continuation any
+        // directly following paragraph line would render inside the quote, so no other
+        // line of the document may read as a quote continuation.
+        var gate = CoverageReport.Empty.Evaluate(80);
+
+        var md = MarkdownFormatter.Format(CoverageReport.Empty, gate);
+
+        var quoted = md.Split(Environment.NewLine).Where(l => l.StartsWith("> ", StringComparison.Ordinal));
+        Assert.Equal("> **No verdict:** report carries no line data - nothing was measured.", Assert.Single(quoted));
     }
 
     [Fact]

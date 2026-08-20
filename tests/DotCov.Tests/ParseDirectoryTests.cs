@@ -80,6 +80,22 @@ public sealed class ParseDirectoryTests : IDisposable
     }
 
     [Fact]
+    public void ParseDirectory_StarStarInsideNamePortion_DoesNotRecurse()
+    {
+        // '**coverage.xml' has an empty directory prefix, so the pattern gate classifies it
+        // as filename-shaped — top level only. Recursion is decided by the same admitted
+        // '**/' prefix, never re-derived from a '**' that happens to sit inside the name
+        // (which silently pulled in subdirectory files against the documented contract).
+        // The name portion still wildcard-matches top-level files via Directory.GetFiles.
+        Write("coverage.xml", Cobertura.NewDoc().AddClass("top.cs", c => c.Line(1, 1)));
+        Write("nested/coverage.xml", Cobertura.NewDoc().AddClass("deep.cs", c => c.Line(1, 1)));
+
+        var report = CoberturaParser.ParseDirectory(_root, "**coverage.xml");
+
+        Assert.Equal("top.cs", Assert.Single(report.Files).Path);
+    }
+
+    [Fact]
     public void ParsePath_File_DelegatesToParseFile()
     {
         var path = Write("c.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));

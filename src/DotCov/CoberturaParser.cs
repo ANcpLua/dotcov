@@ -40,10 +40,16 @@ public static partial class CoberturaParser
             // XmlException knows line/column but not which file — fatal for directory
             // aggregates, where "Unexpected end of file. Line 2, position 1." names none of
             // the N reports. Rethrow the same exception type (the published contract callers
-            // catch) with the path prefixed. The 2-arg ctor is deliberate: the 4-arg
-            // (message, inner, line, pos) ctor appends " Line X, position Y." a second time,
-            // duplicating the location already present in the inner message.
-            throw new XmlException($"{path}: {ex.Message}", ex);
+            // catch) with the path prefixed. The trailing location sentence is stripped from
+            // the inner message so the 4-arg ctor — the only one that carries
+            // LineNumber/LinePosition, structured data pre-0.0.3 library consumers read —
+            // can re-append it exactly once (it appends " Line X, position Y." whenever the
+            // line is nonzero). On runtimes with non-English satellite resources the strip
+            // is a no-op and the localized sentence appears twice — degraded formatting,
+            // still-correct coordinates; culture-aware stripping is deliberately not attempted.
+            throw new XmlException(
+                $"{path}: {LocationSentencePattern().Replace(ex.Message, "")}",
+                ex, ex.LineNumber, ex.LinePosition);
         }
     }
 
@@ -76,7 +82,10 @@ public static partial class CoberturaParser
                 nameof(pattern));
 
         var files = Directory.GetFiles(directory, name,
-            new EnumerationOptions { RecurseSubdirectories = pattern.Contains("**") });
+            // Recurse exactly when the gate above admitted the "**/" prefix — never re-derived
+            // from the whole pattern: Contains("**") disagreed with the gate for a '**' inside
+            // the NAME portion ('**coverage.xml' is filename-shaped, top level only, yet recursed).
+            new EnumerationOptions { RecurseSubdirectories = pattern.StartsWith("**/", StringComparison.Ordinal) });
 
         if (files.Length is 0)
             return CoverageReport.Empty;
@@ -219,11 +228,19 @@ public static partial class CoberturaParser
         if (reader.IsEmptyElement) return;
         if (!reader.Read() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
 
-        var root = reader.Value.Trim().Replace('\\', '/');
-        if (root.StartsWith("./", StringComparison.Ordinal)) root = root[2..];
-        // "." and "" are no-op roots (grcov emits <source>.</source>): prepending them would
-        // change every key without adding identity information.
-        if (root.Length is 0 || root is ".") return;
+        // Canonical root (PathIdentity.NormalizeRoot): no-op spellings (".", "./" — grcov
+        // emits <source>.</source>) collapse to the "" sentinel, which ResolveFileKey reads
+        // as "leave relative filenames unprefixed" and Materialize hides when it is the only
+        // declared root. The sentinel is RECORDED rather than discarded: a no-op declared
+        // alongside real roots is a second resolution convention, so it must count toward
+        // the multi-root warning, hold its document-order slot (the FIRST declared root wins
+        // resolution, no-op or not), and stay visible to Merge's roots comparison — dropping
+        // it made a ('.', '/real') report indistinguishable from a ('/real') one. Dedup keeps
+        // respellings of one root ("/repo" twice in ReportGenerator's merged output, "." plus
+        // "./", c:\x vs C:/x/) from faking that multiplicity: identical resolution is not
+        // identity ambiguity.
+        var root = PathIdentity.NormalizeRoot(reader.Value);
+        if (sourceRoots.Contains(root)) return;   // List.Contains is Ordinal for strings
 
         sourceRoots.Add(root);
         if (sourceRoots.Count is 2)
@@ -231,7 +248,9 @@ public static partial class CoberturaParser
                 CoverageWarningKind.FileIdentityAmbiguous,
                 "",
                 0,
-                $"multiple <source> roots - resolving relative filenames against the first ('{sourceRoots[0]}'); files may not be attributable to a unique root"));
+                $"multiple <source> roots - {(sourceRoots[0].Length is 0
+                    ? "leaving relative filenames unprefixed (the first declared root is a no-op)"
+                    : $"resolving relative filenames against the first ('{sourceRoots[0]}')")}; files may not be attributable to a unique root"));
     }
 
     private static void ConsumeClass(
@@ -351,11 +370,13 @@ public static partial class CoberturaParser
     /// the disk the report was produced on) and parse emits a
     /// <see cref="CoverageWarningKind.FileIdentityAmbiguous"/> warning. The root is applied
     /// unconditionally, never only on collision — a conditional prefix would make a file's
-    /// identity unstable across runs.
+    /// identity unstable across runs. A first-declared no-op root (the "" sentinel from
+    /// <see cref="ConsumeSource"/>) resolves as "no prefix": first-wins applies to the
+    /// DECLARED order, so a later real root must not jump the queue.
     /// </summary>
     private static string ResolveFileKey(string filename, List<string> sourceRoots)
     {
-        if (sourceRoots.Count > 0 && !IsRooted(filename))
+        if (sourceRoots.Count > 0 && sourceRoots[0].Length > 0 && !IsRooted(filename))
         {
             var root = sourceRoots[0];
             filename = root.EndsWith('/') ? root + filename : $"{root}/{filename}";
@@ -398,7 +419,15 @@ public static partial class CoberturaParser
             result.Add(FileCoverage.FromLineData(filename, acc.LineHits, acc.BranchesByLine, conditionsByLine));
         }
 
-        return new CoverageReport(result) { Warnings = warnings, SourceRoots = sourceRoots };
+        return new CoverageReport(result)
+        {
+            Warnings = warnings,
+            // A report whose ONLY declared root is the no-op sentinel exposes no roots at
+            // all — lone <source>.</source> adds no identity information (pinned public
+            // behavior). Mixed declarations keep the sentinel so Merge can tell
+            // ('.', '/real') — relative filenames unprefixed — apart from ('/real').
+            SourceRoots = sourceRoots is [""] ? [] : sourceRoots
+        };
     }
 
     private static bool TryParseConditionCoverage(string cond, out int covered, out int total)
@@ -432,4 +461,10 @@ public static partial class CoberturaParser
 
     [GeneratedRegex(@"\((\d+)/(\d+)\)")]
     private static partial Regex ConditionPattern();
+
+    // The trailing " Line X, position Y." sentence XmlException appends to its message when
+    // it carries nonzero coordinates. ParseFile strips it from the inner message before the
+    // path-prefixing rethrow so the 4-arg ctor can re-append it exactly once.
+    [GeneratedRegex(@"\s*Line \d+, position \d+\.$")]
+    private static partial Regex LocationSentencePattern();
 }

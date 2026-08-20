@@ -126,6 +126,34 @@ public sealed class CoreParserRobustnessTests
     }
 
     [Fact]
+    public void ParseFile_MalformedXml_RethrowKeepsLineAndPositionCoordinates()
+    {
+        // The path-prefixing rethrow must not cost the structured coordinates 0.0.2-era
+        // library consumers read off the exception: LineNumber/LinePosition carry over from
+        // the inner XmlException (via the 4-arg ctor), and the message stays byte-identical
+        // to the plain "{path}: {inner.Message}" shape — the location sentence is stripped
+        // before the ctor re-appends it, so it appears exactly once.
+        var root = Directory.CreateTempSubdirectory("dotcov-coords-").FullName;
+        try
+        {
+            var path = Path.Combine(root, "bad.xml");
+            File.WriteAllText(path, "<coverage><packa");
+
+            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseFile(path));
+
+            var inner = Assert.IsType<XmlException>(ex.InnerException);
+            Assert.NotEqual(0, inner.LineNumber);
+            Assert.Equal(inner.LineNumber, ex.LineNumber);
+            Assert.Equal(inner.LinePosition, ex.LinePosition);
+            Assert.Equal($"{path}: {inner.Message}", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
     {
         var root = Directory.CreateTempSubdirectory("dotcov-attr-dir-").FullName;

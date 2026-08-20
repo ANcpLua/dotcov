@@ -58,6 +58,10 @@ public static class MarkdownFormatter
         {
             sb.AppendLine();
             sb.AppendLine($"> **No verdict:** {g.Reason}.");
+            // Blank line closes the blockquote: without it, CommonMark lazy continuation
+            // pulls the branch-coverage and threshold lines into the quote in every
+            // rendered NoData/Disabled step summary.
+            sb.AppendLine();
         }
 
         sb.AppendLine(report.HasBranchData

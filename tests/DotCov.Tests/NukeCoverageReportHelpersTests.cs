@@ -75,6 +75,69 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
         Assert.Equal("Total 4 vs 2 — keeping 4", warning.Detail);
     }
 
+    [Fact]
+    public void LoadReport_CustomPattern_DiscoversNonCoverletReportNames()
+    {
+        // gcovr and coverage.py emit coverage.xml — invisible to the default pattern, the
+        // exact parity gap the CLI's --pattern already closes for terminal users.
+        Write("job/coverage.xml", Cobertura.NewDoc().AddClass("a.c", c => c.Line(1, 1)));
+
+        Assert.Same(CoverageReport.Empty, CoverageReportHelpers.LoadReport(_root));
+        Assert.Single(CoverageReportHelpers.LoadReport(_root, "**/coverage.xml", 50_000_000).Files);
+    }
+
+    [Fact]
+    public void LoadReport_UnsupportedPattern_ThrowsNamingTheParameter()
+    {
+        // ParseDirectory's ArgumentException surfaces as a parameter error naming
+        // "Coverage Pattern", consistent with the strict parsers below.
+        var ex = Assert.Throws<ArgumentException>(
+            () => CoverageReportHelpers.LoadReport(_root, "cov/*.xml", 50_000_000));
+
+        Assert.Contains("Coverage Pattern", ex.Message);
+        Assert.Contains("'cov/*.xml'", ex.Message);
+    }
+
+    [Fact]
+    public void LoadReport_MaxChars_EnforcesPerFileCap()
+    {
+        Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
+
+        Assert.Throws<System.Xml.XmlException>(
+            () => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
+        Assert.Single(
+            CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 1_000_000).Files);
+    }
+
+    [Fact]
+    public void LoadReport_MissingDirectory_WithExplicitPattern_ReturnsEmptySingleton() =>
+        Assert.Same(CoverageReport.Empty,
+            CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"), "**/coverage.xml", 50_000_000));
+
+    // ── ParseMaxChars ─────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("50000000", 50_000_000L)]
+    [InlineData("0", 0L)] // 0 = no cap (XmlReaderSettings.MaxCharactersInDocument semantics)
+    [InlineData("1024", 1024L)]
+    public void ParseMaxChars_ValidValue_Parses(string value, long expected) =>
+        Assert.Equal(expected, CoverageReportHelpers.ParseMaxChars(value, "Coverage MaxCharsParam"));
+
+    [Theory]
+    [InlineData("-1")] // digits only, mirroring the CLI's --max-chars: a sign is invalid
+    [InlineData("+1")]
+    [InlineData("1_000")]
+    [InlineData("ten")]
+    [InlineData("")]
+    public void ParseMaxChars_Garbage_ThrowsNamingTheParameter(string value)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => CoverageReportHelpers.ParseMaxChars(value, "Coverage MaxCharsParam"));
+
+        Assert.Contains("Coverage MaxCharsParam", ex.Message);
+        Assert.Contains($"'{value}'", ex.Message);
+    }
+
     // ── ParseThreshold ────────────────────────────────────────────────────────
 
     [Theory]

@@ -32,6 +32,14 @@ public interface ICoverageReport : INukeBuild
 
     bool ExcludeGenerated => CoverageReportHelpers.ParseFlag(ExcludeGeneratedParam, "Coverage ExcludeGeneratedParam");
 
+    [Parameter("Report file name pattern: 'filename' or '**/filename' (gcovr and coverage.py emit coverage.xml)")]
+    string Pattern => TryGetValue(() => Pattern) ?? "**/coverage.cobertura.xml";
+
+    [Parameter("Per-file XML character cap; 0 = no cap")]
+    string MaxCharsParam => TryGetValue(() => MaxCharsParam) ?? "50000000";
+
+    long MaxChars => CoverageReportHelpers.ParseMaxChars(MaxCharsParam, "Coverage MaxCharsParam");
+
     AbsolutePath CoverageSearchDirectory => RootDirectory / "TestResults";
 
     Target ReportCoverage => d => d
@@ -39,13 +47,14 @@ public interface ICoverageReport : INukeBuild
         .TryDependsOn<ICompile>()
         .Executes(() =>
         {
-            var report = CoverageReportHelpers.LoadReport(CoverageSearchDirectory);
+            var report = CoverageReportHelpers.LoadReport(CoverageSearchDirectory, Pattern, MaxChars);
 
             // LoadReport yields the CoverageReport.Empty singleton only when discovery matched
             // no files; a file that parsed to zero coverage is a distinct instance and flows to
-            // the NoData gate below.
+            // the NoData gate below. The message names the configured pattern — hard-coding the
+            // default file name would lie once --coverage-pattern is set.
             Assert.True(!ReferenceEquals(report, CoverageReport.Empty),
-                $"No coverage.cobertura.xml files found in {CoverageSearchDirectory}");
+                $"No files matching '{Pattern}' found in {CoverageSearchDirectory}");
 
             if (ExcludeGenerated)
                 report = report.Exclude(ExclusionRules.WellKnown);

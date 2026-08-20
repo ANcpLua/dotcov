@@ -174,18 +174,25 @@ public static class CoverageDiff
     /// on the case-sensitive filesystems Cobertura's native emitters run on), then falls back
     /// to pairing leftover files by unique file name: a file present only in Before pairs
     /// with a file present only in After when their final path segments match (whole-segment,
-    /// Ordinal) and the match is unambiguous on BOTH sides. That keeps a path-convention
-    /// change — a source-root migration, DeterministicSourcePaths turned on, a pre-source-root
-    /// snapshot diffed against a post-source-root report — reading as the same file's movement
-    /// instead of a full removed+added churn, while anything ambiguous (two candidates named
-    /// <c>app/main.py</c>) honestly stays removed+added rather than being guessed together.
+    /// Ordinal), the match is unambiguous on BOTH sides, and there is evidence of a
+    /// path-convention change — the two reports declared different source roots (judged by
+    /// <see cref="PathIdentity.RootsDiffer"/>, the same predicate the merge's ambiguity scan
+    /// uses), the paths agree on a whole-segment suffix of at least two segments, or the
+    /// paths are equal ignoring case (a directory-casing drift). That keeps a source-root
+    /// migration, DeterministicSourcePaths turned on, or a pre-source-root snapshot diffed
+    /// against a post-source-root report reading as the same file's movement instead of a
+    /// full removed+added churn, while anything ambiguous (two candidates named
+    /// <c>app/main.py</c>) or evidence-free (an unrelated <c>svc-b/Program.cs</c> appearing
+    /// as <c>svc-a/Program.cs</c> disappears) honestly stays removed+added rather than being
+    /// guessed together.
     /// </para>
     /// </summary>
     public static CoverageDiffResult Compare(CoverageReport before, CoverageReport after)
     {
         var beforeLookup = before.Files.ToDictionary(static f => f.Path, StringComparer.Ordinal);
         var afterLookup = after.Files.ToDictionary(static f => f.Path, StringComparer.Ordinal);
-        var suffixPairs = PairByUniqueFileName(beforeLookup, afterLookup);
+        var suffixPairs = PairByUniqueFileName(beforeLookup, afterLookup,
+            PathIdentity.RootsDiffer(before.SourceRoots, after.SourceRoots));
         var pairedAfterPaths = new HashSet<string>(suffixPairs.Values, StringComparer.Ordinal);
 
         var deltas = new List<FileDelta>(beforeLookup.Count + afterLookup.Count);
@@ -234,28 +241,36 @@ public static class CoverageDiff
     /// <c>MyCalculator.cs</c> never pairs with <c>Calculator.cs</c> despite the raw string
     /// suffix, and any name carried by two leftover files on either side (the monorepo
     /// <c>svc-a/app/main.py</c> vs <c>svc-b/app/main.py</c> shape) pairs nothing.
+    /// When the two reports' declared roots do NOT differ (<paramref name="rootsDiffer"/> —
+    /// the merge-side predicate, so diff and merge agree on what a convention change is),
+    /// uniqueness alone is not enough: the pair must also carry path evidence via
+    /// <see cref="EvidencesSameFile"/>, because with equal roots a bare name collision is
+    /// exactly as likely to be an unrelated deleted+added file pair.
     /// </summary>
     private static Dictionary<string, string> PairByUniqueFileName(
         Dictionary<string, FileCoverage> beforeLookup,
-        Dictionary<string, FileCoverage> afterLookup)
+        Dictionary<string, FileCoverage> afterLookup,
+        bool rootsDiffer)
     {
         var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var afterOnlyByName = afterLookup.Keys
             .Where(k => !beforeLookup.ContainsKey(k))
-            .GroupBy(FileNameOf, StringComparer.Ordinal)
+            .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal)
             .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
 
         if (afterOnlyByName.Count is 0) return pairs;
 
         foreach (var group in beforeLookup.Keys
                      .Where(k => !afterLookup.ContainsKey(k))
-                     .GroupBy(FileNameOf, StringComparer.Ordinal))
+                     .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal))
         {
             var befores = group.ToList();
             if (befores.Count is not 1) continue;   // ambiguous on the Before side
             if (!afterOnlyByName.TryGetValue(group.Key, out var afters) || afters.Count is not 1)
                 continue;                           // no match, or ambiguous on the After side
+            if (!rootsDiffer && !EvidencesSameFile(befores[0], afters[0]))
+                continue;                           // same roots, no path evidence: honestly distinct
 
             pairs[befores[0]] = afters[0];
         }
@@ -263,7 +278,30 @@ public static class CoverageDiff
         return pairs;
     }
 
-    private static string FileNameOf(string path) => path[(path.LastIndexOf('/') + 1)..];
+    /// <summary>
+    /// Path evidence that two leftover same-named files are ONE file spelled under two
+    /// conventions, consulted only when the reports' declared roots do not differ (differing
+    /// roots are themselves the evidence). Either the paths agree on a whole-segment Ordinal
+    /// suffix of at least two segments (a prefix migration: <c>src/MyApp/Calculator.cs</c> vs
+    /// <c>/_/src/MyApp/Calculator.cs</c>) or they are equal ignoring case (a directory-casing
+    /// drift: <c>SRC/App.cs</c> vs <c>src/App.cs</c> — never <c>xt_TCPMSS.c</c> vs
+    /// <c>xt_tcpmss.c</c>, whose final segments already fail the Ordinal name grouping).
+    /// A bare final-segment match is NOT evidence: <c>svc-a/Program.cs</c> deleted while
+    /// <c>svc-b/Program.cs</c> appears would otherwise fuse into a fabricated Modified entry
+    /// with line changes neither report contains.
+    /// </summary>
+    private static bool EvidencesSameFile(string before, string after)
+    {
+        if (string.Equals(before, after, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var b = before.Split('/');
+        var a = after.Split('/');
+        var limit = Math.Min(b.Length, a.Length);
+        var agree = 0;
+        while (agree < limit && string.Equals(b[^(agree + 1)], a[^(agree + 1)], StringComparison.Ordinal))
+            agree++;
+        return agree >= 2;
+    }
 
     private static List<LineDelta> ComputeLineChanges(FileCoverage before, FileCoverage after)
     {

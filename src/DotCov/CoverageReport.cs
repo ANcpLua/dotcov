@@ -521,10 +521,15 @@ public sealed class CoverageReport
     public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 
     /// <summary>
-    /// The <c>&lt;source&gt;</c> roots the report declared, separator-normalized, in document
-    /// order. Relative class filenames were resolved against the first of these to form
-    /// <see cref="FileCoverage.Path"/>, so the same relative name under two different roots
-    /// (monorepo services, per-job checkouts) stays two distinct files. Empty for hand-built
+    /// The <c>&lt;source&gt;</c> roots the report declared, normalized (separators flipped,
+    /// drive letter uppercased, trailing <c>/</c> trimmed above one character) and
+    /// deduplicated, in document order. Relative class filenames were resolved against the
+    /// first of these to form <see cref="FileCoverage.Path"/>, so the same relative name
+    /// under two different roots (monorepo services, per-job checkouts) stays two distinct
+    /// files. A no-op root (<c>.</c>, <c>./</c>) declared alongside real roots appears as an
+    /// empty-string entry — it holds the resolution slot (a no-op FIRST root leaves relative
+    /// filenames unprefixed) and keeps the mixed declaration distinguishable at merge time;
+    /// a report whose only root is a no-op exposes no roots at all. Empty for hand-built
     /// reports and documents without a <c>&lt;sources&gt;</c> element. <see cref="Merge"/>
     /// compares the two sides' roots to detect cross-convention identity ambiguity and unions
     /// them on the merged report.
@@ -694,23 +699,26 @@ public sealed class CoverageReport
     /// <see cref="CoverageWarningKind.FileIdentityAmbiguous"/> warning naming both keys.
     /// Same-roots merges (the overwhelmingly common same-pipeline case) skip the scan, so
     /// partitioned test runs never see noise from genuinely distinct same-named files.
+    /// "Same" is judged by <see cref="PathIdentity.RootsDiffer"/> — normalized sequence
+    /// identity, not raw spelling — so drive-letter case, a trailing slash, or a
+    /// hand-built report's unnormalized roots never fake a convention change; reordered
+    /// roots still count as differing because relative filenames resolve against the first.
     /// </summary>
     private static void WarnOnAmbiguousFileIdentity(CoverageReport a, CoverageReport b, List<CoverageWarning> warnings)
     {
-        if (a.SourceRoots.Count is 0 && b.SourceRoots.Count is 0) return;
-        if (a.SourceRoots.SequenceEqual(b.SourceRoots, StringComparer.Ordinal)) return;
+        if (!PathIdentity.RootsDiffer(a.SourceRoots, b.SourceRoots)) return;
 
         var aPaths = new HashSet<string>(a.Files.Select(static f => f.Path), StringComparer.Ordinal);
         var bPaths = new HashSet<string>(b.Files.Select(static f => f.Path), StringComparer.Ordinal);
 
         var bOnlyByName = b.Files.Select(static f => f.Path)
             .Where(p => !aPaths.Contains(p))
-            .GroupBy(FileNameOf, StringComparer.Ordinal)
+            .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal)
             .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
 
         foreach (var pa in a.Files.Select(static f => f.Path).Where(p => !bPaths.Contains(p)))
         {
-            if (!bOnlyByName.TryGetValue(FileNameOf(pa), out var candidates)) continue;
+            if (!bOnlyByName.TryGetValue(PathIdentity.FileNameOf(pa), out var candidates)) continue;
             foreach (var pb in candidates)
                 warnings.Add(new CoverageWarning(
                     CoverageWarningKind.FileIdentityAmbiguous,
@@ -719,8 +727,6 @@ public sealed class CoverageReport
                     $"'{pa}' and '{pb}' share a file name under different source roots - if they are the same file, its coverage is double-counted in the merged totals"));
         }
     }
-
-    private static string FileNameOf(string path) => path[(path.LastIndexOf('/') + 1)..];
 }
 
 /// <summary>

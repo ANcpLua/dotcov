@@ -60,6 +60,26 @@ public sealed class MarkdownFormatterTests
     }
 
     [Fact]
+    public void Format_UnmeasuredFile_RendersFirst_BeforeZeroAndCoveredFiles()
+    {
+        // Shared worst-first contract with the table formatter: an unmeasured file (null
+        // line rate, rendered "-") sorts ahead of even a 0%-covered file.
+        var report = new CoverageReport([
+            new FileCoverage("covered.cs", 1, 2, 0, 0),
+            new FileCoverage("zero.cs", 0, 3, 0, 0),
+            new FileCoverage("unmeasured.cs", 0, 0, 0, 0)
+        ]);
+
+        var md = MarkdownFormatter.Format(report);
+
+        Assert.Contains("| `unmeasured.cs` | 0/0 | - | - | - |", md);
+        var unmeasuredIdx = md.IndexOf("`unmeasured.cs`", StringComparison.Ordinal);
+        var zeroIdx = md.IndexOf("`zero.cs`", StringComparison.Ordinal);
+        var coveredIdx = md.IndexOf("`covered.cs`", StringComparison.Ordinal);
+        Assert.True(unmeasuredIdx >= 0 && unmeasuredIdx < zeroIdx && zeroIdx < coveredIdx);
+    }
+
+    [Fact]
     public void Format_FilesWithNoBranches_RenderDashesForBranchColumns()
     {
         var md = MarkdownFormatter.Format(Reports.LinesOnly);

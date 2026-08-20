@@ -16,9 +16,44 @@ public static class CoverageReportHelpers
     /// which lets callers distinguish "no files discovered" from a parsed-but-empty report.
     /// </summary>
     public static CoverageReport LoadReport(string searchDirectory) =>
-        Directory.Exists(searchDirectory)
-            ? CoberturaParser.ParseDirectory(searchDirectory)
-            : CoverageReport.Empty;
+        LoadReport(searchDirectory, "**/coverage.cobertura.xml", 50_000_000);
+
+    /// <summary>
+    /// <see cref="LoadReport(string)"/> with an explicit report-name pattern and per-file
+    /// character cap — the NUKE-side twin of the CLI's <c>--pattern</c>/<c>--max-chars</c>
+    /// (gcovr and coverage.py emit <c>coverage.xml</c>, which the default pattern never
+    /// matches). A separate overload, not optional parameters on the existing signature:
+    /// defaults are baked into compiled callers, so widening the published signature would
+    /// be binary-breaking. An unsupported pattern (<see cref="CoberturaParser.ParseDirectory(string, string, long)"/>
+    /// accepts only <c>filename</c> and <c>**/filename</c>) rethrows as a parameter error
+    /// naming <c>Coverage Pattern</c>, consistent with the strict parsers below.
+    /// </summary>
+    public static CoverageReport LoadReport(string searchDirectory, string pattern, long maxChars)
+    {
+        if (!Directory.Exists(searchDirectory)) return CoverageReport.Empty;
+        try
+        {
+            return CoberturaParser.ParseDirectory(searchDirectory, pattern, maxChars);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException(
+                $"Invalid Coverage Pattern: '{pattern}' (only 'filename' and '**/filename' are supported).", ex);
+        }
+    }
+
+    /// <summary>
+    /// Strict per-file character-cap parse mirroring the CLI's <c>--max-chars</c>: digits
+    /// only (<see cref="NumberStyles.None"/> — a sign or separator is invalid, so negatives
+    /// are rejected here rather than crashing <see cref="System.Xml.XmlReaderSettings"/>),
+    /// and 0 means no cap (<see cref="System.Xml.XmlReaderSettings.MaxCharactersInDocument"/>
+    /// semantics).
+    /// </summary>
+    public static long ParseMaxChars(string value, string parameterName) =>
+        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new ArgumentException(
+                $"Invalid {parameterName}: '{value}' (expected a non-negative integer; 0 = no cap).");
 
     /// <summary>Culture-invariant numeric parse; throws naming the parameter on garbage.</summary>
     public static double ParseThreshold(string value, string parameterName) =>

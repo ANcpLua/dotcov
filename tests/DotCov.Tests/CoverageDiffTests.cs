@@ -118,6 +118,50 @@ public sealed class CoverageDiffTests
     }
 
     [Fact]
+    public void Compare_SingleSameNamedPairUnderEqualRoots_StaysRemovedPlusAdded()
+    {
+        // svc-a/Program.cs deleted while svc-b/Program.cs appears: the names collide but the
+        // reports carry no evidence of a path-convention change (roots equal — here both
+        // empty — no multi-segment suffix agreement, not a casing drift). Pairing them would
+        // fabricate a Modified entry with line changes neither report contains and suppress
+        // the honest Removed record; the fallback must leave them apart.
+        var before = Make(new FileCoverage("svc-a/Program.cs", 8, 10, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 1 }
+        });
+        var after = Make(new FileCoverage("svc-b/Program.cs", 1, 10, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 0 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Equal(2, result.Files.Count);
+        Assert.Equal("svc-a/Program.cs", Assert.Single(result.Removed).Path);
+        Assert.Equal("svc-b/Program.cs", Assert.Single(result.Added).Path);
+        Assert.DoesNotContain(result.Files, f => f.Change is FileChangeKind.Modified);
+        Assert.All(result.Files, f => Assert.Empty(f.LineChanges));
+    }
+
+    [Fact]
+    public void Compare_MultiSegmentSuffixAgreement_PairsEvenWithoutDeclaredRoots()
+    {
+        // Hand-built snapshots carry no source roots, so a prefix migration must pair through
+        // path evidence alone: two whole trailing segments agree (MyApp/Calculator.cs) —
+        // which a bare name collision (svc-a/Program.cs vs svc-b/Program.cs) never satisfies.
+        var before = Make(new FileCoverage("src/MyApp/Calculator.cs", 1, 3, 0, 0));
+        var after = Make(new FileCoverage("/_/src/MyApp/Calculator.cs", 2, 3, 0, 0));
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var d = Assert.Single(result.Files);
+        Assert.Equal(FileChangeKind.Modified, d.Change);
+        Assert.Equal("/_/src/MyApp/Calculator.cs", d.Path);
+        Assert.Empty(result.Added);
+        Assert.Empty(result.Removed);
+    }
+
+    [Fact]
     public void Compare_CaseDistinctFileNames_StayDistinctAndMatchExactly()
     {
         // xt_TCPMSS.c and xt_tcpmss.c genuinely coexist (linux/net/netfilter). Under the old

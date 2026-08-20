@@ -378,6 +378,75 @@ public sealed class TableFormatterTests
         Assert.True(dividerLength > "very/long/nested/path/to/some/source.cs".Length);
     }
 
+    [Fact]
+    public void Format_ShortPathRow_PadsToTheLongestPath_SoColumnsAlign()
+    {
+        // The column width is Max(header, longest path) — asserting the padded ROW text
+        // itself is what pins Max: a Min would still produce a long-enough divider (the
+        // numeric columns alone exceed any path here), but it cannot align the cells.
+        const string longPath = "very/long/nested/path/to/source.cs";
+        var report = new CoverageReport([
+            new FileCoverage("short.cs", 1, 2, 0, 0),
+            new FileCoverage(longPath, 2, 2, 0, 0)
+        ]);
+
+        var lines = TableFormatter.Format(report).Split(Environment.NewLine);
+        var shortRow = lines.Single(l => l.StartsWith("short.cs", StringComparison.Ordinal));
+        var longRow = lines.Single(l => l.StartsWith("very/", StringComparison.Ordinal));
+
+        // The path cell is padded to the longest path, so the short row carries the padding…
+        Assert.StartsWith("short.cs" + new string(' ', longPath.Length - "short.cs".Length) + "  ",
+            shortRow, StringComparison.Ordinal);
+        // …and the right-aligned Lines cells start at the same absolute column in both rows.
+        Assert.Equal(longPath.Length + 2 + 7, shortRow.IndexOf("1/2", StringComparison.Ordinal));
+        Assert.Equal(longPath.Length + 2 + 7, longRow.IndexOf("2/2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FormatDiff_ShortPathRow_PadsToTheLongestPath_SoColumnsAlign()
+    {
+        // Same Max(header, longest path) contract on the diff table.
+        const string longPath = "very/long/nested/path/to/source.cs";
+        var before = new CoverageReport([
+            new FileCoverage("short.cs", 1, 2, 0, 0),
+            new FileCoverage(longPath, 1, 2, 0, 0)
+        ]);
+        var after = new CoverageReport([
+            new FileCoverage("short.cs", 2, 2, 0, 0),
+            new FileCoverage(longPath, 1, 2, 0, 0)
+        ]);
+
+        var lines = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after))
+            .Split(Environment.NewLine);
+        var shortRow = lines.Single(l => l.StartsWith("short.cs", StringComparison.Ordinal));
+        var longRow = lines.Single(l => l.StartsWith("very/", StringComparison.Ordinal));
+
+        Assert.StartsWith("short.cs" + new string(' ', longPath.Length - "short.cs".Length) + "  ",
+            shortRow, StringComparison.Ordinal);
+        // Before cells (8 wide, right-aligned "   50.0%"/"  100.0%") start at the same column.
+        Assert.Equal(longPath.Length + 2, shortRow.IndexOf("   50.0%", StringComparison.Ordinal));
+        Assert.Equal(longPath.Length + 2, longRow.IndexOf("   50.0%", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Format_UnmeasuredFile_SortsFirst_BeforeZeroAndCoveredFiles()
+    {
+        // The documented worst-first contract: unmeasured files (null line rate) outrank
+        // even 0%-covered files — there is no number to vouch for at all. A positive null
+        // fallback in the ordering key would silently bury them last.
+        var report = new CoverageReport([
+            new FileCoverage("covered.cs", 1, 2, 0, 0),
+            new FileCoverage("zero.cs", 0, 3, 0, 0),
+            new FileCoverage("unmeasured.cs", 0, 0, 0, 0)
+        ]);
+
+        var lines = TableFormatter.Format(report).Split(Environment.NewLine);
+
+        Assert.StartsWith("unmeasured.cs", lines[2], StringComparison.Ordinal);
+        Assert.StartsWith("zero.cs", lines[3], StringComparison.Ordinal);
+        Assert.StartsWith("covered.cs", lines[4], StringComparison.Ordinal);
+    }
+
     // ── Warnings trailer: one-line `Warnings: N`, silent when empty ──
 
     [Fact]

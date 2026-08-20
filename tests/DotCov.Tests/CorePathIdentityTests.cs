@@ -101,6 +101,68 @@ public sealed class CorePathIdentityTests
     }
 
     [Fact]
+    public void Parse_NoOpRootAlongsideRealRoot_FirstDeclaredStillWins_AndWarns()
+    {
+        // coverage.py shape: <source>.</source> (the project dir) alongside a site-packages
+        // root. The no-op is still the FIRST declared root, so relative filenames stay
+        // unprefixed — resolving them against the later real root would rewrite every key
+        // against the documented first-wins contract — and the guaranteed multi-root
+        // ambiguity warning fires: two declared conventions, files not attributable to a
+        // unique root. The no-op keeps its slot in SourceRoots (as "") so a merge can tell
+        // this report apart from one that declared only the real root.
+        var report = ParseXml(Doc([".", "/usr/lib/python3/dist-packages"], "app/main.py"));
+
+        Assert.Equal("app/main.py", Assert.Single(report.Files).Path);
+        Assert.Equal(["", "/usr/lib/python3/dist-packages"], report.SourceRoots);
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
+        Assert.Contains("unprefixed", w.Detail);
+    }
+
+    [Fact]
+    public void Parse_RealRootThenNoOpRoot_ResolvesAgainstTheRealFirst_AndWarns()
+    {
+        // Declaration order decides: with the real root first, relative filenames prefix
+        // against it; the trailing no-op still counts as a second convention and warns.
+        var report = ParseXml(Doc(["/repo", "."], "app/main.py"));
+
+        Assert.Equal("/repo/app/main.py", Assert.Single(report.Files).Path);
+        Assert.Equal(["/repo", ""], report.SourceRoots);
+        var w = Assert.Single(report.Warnings);
+        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
+        Assert.Contains("'/repo'", w.Detail);
+    }
+
+    [Fact]
+    public void Parse_RepeatedNoOpRoots_AreOneEffectiveRoot_NoWarning()
+    {
+        // "." and "./" spell the same no-op; both resolve identically, so there is no
+        // identity ambiguity to warn about — and the report still declares no roots,
+        // byte-identical to the lone-"." behavior.
+        var report = ParseXml(Doc([".", "./"], "src/main.rs"));
+
+        Assert.Equal("src/main.rs", Assert.Single(report.Files).Path);
+        Assert.Empty(report.SourceRoots);
+        Assert.Empty(report.Warnings);
+    }
+
+    [Fact]
+    public void Parse_DuplicateIdenticalRoots_DeduplicateWithoutWarning()
+    {
+        // ReportGenerator's merged output repeats the same <source> once per input report:
+        // one distinct root, no multi-root ambiguity — and the deduplicated list keeps the
+        // merge fast path against a single-root sibling.
+        var report = ParseXml(Doc(["/repo", "/repo"], "src/A.cs"));
+
+        Assert.Equal("/repo/src/A.cs", Assert.Single(report.Files).Path);
+        Assert.Equal(["/repo"], report.SourceRoots);
+        Assert.Empty(report.Warnings);
+
+        var sibling = ParseXml(Doc(["/repo"], "src/B.cs"));
+        Assert.Empty(CoverageReport.Merge(report, sibling).Warnings);
+    }
+
+    [Fact]
     public void Parse_MultipleSourceRoots_FirstWinsDeterministically_AndWarns()
     {
         // The analyzing machine cannot probe the disk the report came from, so with several
@@ -206,6 +268,35 @@ public sealed class CorePathIdentityTests
     {
         var a = new CoverageReport([new FileCoverage("x/Program.cs", 1, 2, 0, 0)]);
         var b = new CoverageReport([new FileCoverage("y/Program.cs", 2, 2, 0, 0)]);
+
+        Assert.Empty(CoverageReport.Merge(a, b).Warnings);
+    }
+
+    [Fact]
+    public void Merge_RootSpellingVariants_TakeTheSameRootsFastPath()
+    {
+        // Drive-letter case and a trailing slash are spellings, not identities: partitioned
+        // Windows CI jobs (c:\agent\work\repo vs C:/agent/work/repo/) key their files under
+        // one normalized root, so the merge must treat them as the same-pipeline case —
+        // zero cross-convention warnings for genuinely distinct same-named files.
+        var a = ParseXml(Doc([@"c:\agent\work\repo"], "src/A/Util.cs"));
+        var b = ParseXml(Doc(["C:/agent/work/repo/"], "src/B/Util.cs"));
+
+        var merged = CoverageReport.Merge(a, b);
+
+        Assert.Equal(2, merged.Files.Count);
+        Assert.Empty(merged.Warnings);
+        Assert.Equal(["C:/agent/work/repo"], merged.SourceRoots);
+    }
+
+    [Fact]
+    public void Merge_HandBuiltRootSpellingVariants_CompareByNormalizedIdentity()
+    {
+        // Programmatically constructed reports never pass through the parser's root
+        // normalization; the merge-side comparison must normalize for itself rather than
+        // read raw spelling as a convention change.
+        var a = new CoverageReport([new FileCoverage("x/Util.cs", 1, 2, 0, 0)]) { SourceRoots = [@"c:\repo"] };
+        var b = new CoverageReport([new FileCoverage("y/Util.cs", 2, 2, 0, 0)]) { SourceRoots = ["C:/repo/"] };
 
         Assert.Empty(CoverageReport.Merge(a, b).Warnings);
     }
