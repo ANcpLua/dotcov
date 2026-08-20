@@ -1,4 +1,3 @@
-using System.Globalization;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Components;
@@ -31,7 +30,7 @@ public interface ICoverageReport : INukeBuild
     [Parameter("Exclude generated files, migrations, state machines")]
     string ExcludeGeneratedParam => TryGetValue(() => ExcludeGeneratedParam) ?? "false";
 
-    bool ExcludeGenerated => bool.TryParse(ExcludeGeneratedParam, out var v) && v;
+    bool ExcludeGenerated => CoverageReportHelpers.ParseFlag(ExcludeGeneratedParam, "Coverage ExcludeGeneratedParam");
 
     AbsolutePath CoverageSearchDirectory => RootDirectory / "TestResults";
 
@@ -40,24 +39,19 @@ public interface ICoverageReport : INukeBuild
         .TryDependsOn<ICompile>()
         .Executes(() =>
         {
-            var coberturaFiles = CoverageSearchDirectory
-                .GlobFiles("**/coverage.cobertura.xml")
-                .ToList();
+            var report = CoverageReportHelpers.LoadReport(CoverageSearchDirectory);
 
-            Assert.NotEmpty(coberturaFiles,
+            // LoadReport yields the CoverageReport.Empty singleton only when discovery matched
+            // no files; a file that parsed to zero coverage is a distinct instance and flows to
+            // the NoData gate below.
+            Assert.True(!ReferenceEquals(report, CoverageReport.Empty),
                 $"No coverage.cobertura.xml files found in {CoverageSearchDirectory}");
-
-            var report = coberturaFiles
-                .Select(f => CoberturaParser.ParseFile(f))
-                .Aggregate(CoverageReport.Merge);
 
             if (ExcludeGenerated)
                 report = report.Exclude(ExclusionRules.WellKnown);
 
-            Assert.True(double.TryParse(MinLine, NumberStyles.Float, CultureInfo.InvariantCulture, out var minLine),
-                $"Invalid Coverage MinLine: '{MinLine}' (expected a number).");
-            Assert.True(double.TryParse(MinBranch, NumberStyles.Float, CultureInfo.InvariantCulture, out var minBranch),
-                $"Invalid Coverage MinBranch: '{MinBranch}' (expected a number).");
+            var minLine = CoverageReportHelpers.ParseThreshold(MinLine, "Coverage MinLine");
+            var minBranch = CoverageReportHelpers.ParseThreshold(MinBranch, "Coverage MinBranch");
 
             var output = Format switch
             {
@@ -81,7 +75,8 @@ public interface ICoverageReport : INukeBuild
     private static void WriteGitHubStepSummary(string markdown)
     {
         var path = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY");
-        if (path is null) return;
-        File.AppendAllText(path, markdown);
+        if (string.IsNullOrEmpty(path)) return;
+        if (!CoverageReportHelpers.TryAppendGitHubStepSummary(path, markdown))
+            Serilog.Log.Warning("Could not write GitHub step summary to {Path}", path);
     }
 }
