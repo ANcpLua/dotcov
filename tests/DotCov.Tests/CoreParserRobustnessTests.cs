@@ -77,17 +77,114 @@ public sealed class CoreParserRobustnessTests
     [InlineData("coverage/*.xml")]
     [InlineData("unit/**/coverage.cobertura.xml")]
     [InlineData(@"src\coverage.cobertura.xml")]
+    [InlineData("")]
+    [InlineData("**/")]
     public void ParseDirectory_PatternWithDirectoryComponent_Throws(string pattern)
     {
         // The parameter is not a glob: any directory component used to be silently discarded,
         // so "coverage/*.xml" matched the wrong scope (or nothing) and flowed into Evaluate
         // as NoData — the most invisible misconfiguration. Only 'filename' and '**/filename'
-        // are supported; everything else must throw.
+        // are supported; everything else must throw. "" and "**/" are the empty-filename
+        // holes: Directory.GetFiles(dir, "") matches nothing, so both silently returned an
+        // empty report — the exact failure this gate exists to prevent.
         var root = Directory.CreateTempSubdirectory("dotcov-pattern-").FullName;
         try
         {
             var ex = Assert.Throws<ArgumentException>(() => CoberturaParser.ParseDirectory(root, pattern));
             Assert.Equal("pattern", ex.ParamName);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ── C23: parse errors must name the offending file ──
+
+    [Fact]
+    public void ParseFile_MalformedXml_ExceptionMessageNamesTheFile()
+    {
+        // XmlException knows line/column but not which file. The library prefixes the path —
+        // still as XmlException, the published contract type — so directory aggregates and
+        // Nuke consumers get attribution without a CLI-side re-discovery fork.
+        var root = Directory.CreateTempSubdirectory("dotcov-attr-").FullName;
+        try
+        {
+            var path = Path.Combine(root, "bad.xml");
+            File.WriteAllText(path, "<coverage><packa");
+
+            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseFile(path));
+
+            Assert.StartsWith($"{path}: ", ex.Message, StringComparison.Ordinal);
+            var inner = Assert.IsType<XmlException>(ex.InnerException);
+            Assert.DoesNotContain(path, inner.Message);   // prefixed once, not recursively
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
+    {
+        var root = Directory.CreateTempSubdirectory("dotcov-attr-dir-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "good"));
+            Directory.CreateDirectory(Path.Combine(root, "bad"));
+            File.WriteAllBytes(Path.Combine(root, "good", "coverage.cobertura.xml"),
+                Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+            var badPath = Path.Combine(root, "bad", "coverage.cobertura.xml");
+            File.WriteAllText(badPath, "<coverage><packages>");
+
+            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseDirectory(root));
+
+            // ParseDirectory routes through ParseFile, so the message carries exactly one
+            // path prefix — the malformed report, not the healthy one.
+            Assert.StartsWith($"{badPath}: ", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ── C18: maxChars threading through the path-level entry points ──
+
+    [Fact]
+    public void ParseDirectory_MaxCharsOverload_EnforcesPerFileCap()
+    {
+        var root = Directory.CreateTempSubdirectory("dotcov-maxchars-").FullName;
+        try
+        {
+            File.WriteAllBytes(Path.Combine(root, "coverage.cobertura.xml"),
+                Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+
+            Assert.Throws<XmlException>(() =>
+                CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 50));
+            Assert.Single(
+                CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 1_000_000).Files);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParsePath_MaxCharsOverload_AppliesToBothFileAndDirectoryInputs()
+    {
+        var root = Directory.CreateTempSubdirectory("dotcov-maxchars-path-").FullName;
+        try
+        {
+            var file = Path.Combine(root, "coverage.cobertura.xml");
+            File.WriteAllBytes(file, Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+
+            Assert.Throws<XmlException>(() => CoberturaParser.ParsePath(file, maxChars: 50));
+            Assert.Throws<XmlException>(() => CoberturaParser.ParsePath(root, maxChars: 50));
+            Assert.Single(CoberturaParser.ParsePath(file, maxChars: 1_000_000).Files);
+            Assert.Single(CoberturaParser.ParsePath(root, maxChars: 1_000_000).Files);
         }
         finally
         {

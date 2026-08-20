@@ -54,7 +54,21 @@ public enum CoverageWarningKind
     /// covered line to a miss. An <em>absent</em> <c>hits</c> attribute is not malformed
     /// (some emitters omit it on summary lines) and stays a warning-free zero.
     /// </summary>
-    MalformedHits
+    MalformedHits,
+
+    /// <summary>
+    /// File identity could not be established unambiguously. Emitted in two situations:
+    /// (1) a report declared multiple <c>&lt;source&gt;</c> roots — relative filenames are
+    /// resolved against the first, deterministically, because the analyzing machine cannot
+    /// probe the disk the report came from; (2) <see cref="CoverageReport.Merge"/> combined
+    /// reports whose source roots differ and found files unique to each side that share the
+    /// same file name — the same source file uploaded under two path conventions (e.g.
+    /// Coverlet default vs <c>DeterministicSourcePaths</c>) looks exactly like this, and if
+    /// that is what happened its coverage is double-counted in the merged totals. The merge
+    /// keeps the entries separate — fusing them would silently erase a genuinely distinct
+    /// file's misses — and surfaces the ambiguity here instead.
+    /// </summary>
+    FileIdentityAmbiguous
 }
 
 /// <summary>
@@ -148,6 +162,21 @@ public readonly record struct FileCoverage(
     } = NoBranches;
 
     /// <summary>
+    /// Merge-state twin of <see cref="BranchesByLine"/>: the raw line-level union with NO
+    /// condition-derived overlay applied. <see cref="MergeWith"/> folds these — never the
+    /// presented values — because an overlaid aggregate baked into merge state cannot be
+    /// un-maxed when a later report poisons the line's condition identity, which made the
+    /// merged result depend on fold order. Unset (null field) for hand-built records, where
+    /// the presented map IS the raw map; <see cref="FromLineData"/> sets it whenever an
+    /// overlay changed the presentation.
+    /// </summary>
+    internal IReadOnlyDictionary<int, (int Covered, int Total)> RawBranchesByLine
+    {
+        get => field ?? BranchesByLine;
+        init;
+    }
+
+    /// <summary>
     /// Per-line, per-condition covered-outcome counts: line → (coverlet <c>condition number</c>
     /// → covered outcomes of that 2-way branch, 0–2). Populated only when the emitter ships
     /// <c>&lt;conditions&gt;&lt;condition number= coverage=/&gt;</c> children (coverlet does) AND they
@@ -160,10 +189,15 @@ public readonly record struct FileCoverage(
     /// <para>
     /// Merge semantics: <see cref="MergeWith"/> unions per condition number only when both sides
     /// carry the <em>same</em> number set for the line — the only case where coverlet's IL-offset
-    /// numbers provably identify the same branch. Mismatched sets fall back to the line-level
-    /// aggregate with a <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> warning.
-    /// Detail present on only one side is carried forward unchanged so a later merge can still
-    /// union it; the line aggregate never regresses below what the line-level union observed.
+    /// numbers provably identify the same branch. Mismatched sets emit a
+    /// <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> warning and permanently
+    /// poison the line's condition identity: the merged entry becomes an <em>empty</em>
+    /// dictionary (real entries are never empty), an absorbing sentinel no later merge may
+    /// union or resurrect detail through — otherwise the merged aggregate depended on the
+    /// order reports were folded in. A poisoned line contributes only its raw line-level
+    /// aggregate. Detail present on only one side is carried forward unchanged so a later
+    /// merge can still union it; the line aggregate never regresses below what the
+    /// line-level union observed.
     /// </para>
     /// </summary>
     public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine
@@ -300,10 +334,16 @@ public readonly record struct FileCoverage(
         // Math.Max per line — at least N branches were exercised by some run, and Total is
         // the upper bound. Summing instead would double-count when the same file shows up in
         // multiple uploads (unit + integration test runs from the same CI workflow).
-        var mergedBranches = new Dictionary<int, (int Covered, int Total)>(BranchesByLine);
+        //
+        // Folded over the RAW line-level maps, not the presented ones: keywise Math.Max over
+        // raw values is associative, and the condition-derived overlay is applied only at
+        // presentation time (FromLineData). Persisting the overlay into merge state made the
+        // outcome fold-order-dependent — an overlaid Math.Max survives a later condition-
+        // identity poisoning and cannot be un-maxed.
+        var mergedBranches = new Dictionary<int, (int Covered, int Total)>(RawBranchesByLine);
         var warnings = new List<CoverageWarning>();
 
-        foreach (var (line, b) in other.BranchesByLine)
+        foreach (var (line, b) in other.RawBranchesByLine)
         {
             if (mergedBranches.TryGetValue(line, out var existing))
             {
@@ -324,27 +364,35 @@ public readonly record struct FileCoverage(
             }
         }
 
-        // Correct branch union via per-condition identity, overlaid on the line-level union:
-        // where both reports carry condition detail for a line WITH the same condition-number
-        // set, union the covered outcomes per coverlet `number` (Math.Max) and recompute the
-        // line aggregate from the union. This reconstructs the true union when two runs
-        // exercise different conditions of the same line — the case line-level Math.Max on
-        // counts gets wrong (the false not-hit). Condition numbers are IL branch offsets,
-        // stable only within one build, so mismatched sets must NOT union: that would invent
-        // a total neither emitter reported (the same invariant Materialize enforces within a
-        // single report). Mismatches keep the line-level aggregate and warn.
+        // Correct branch union via per-condition identity: where both reports carry condition
+        // detail for a line WITH the same condition-number set, union the covered outcomes per
+        // coverlet `number` (Math.Max). FromLineData later overlays the derived aggregate onto
+        // the presented line aggregate — reconstructing the true union when two runs exercise
+        // different conditions of the same line, the case line-level Math.Max on counts gets
+        // wrong (the false not-hit). Condition numbers are IL branch offsets, stable only
+        // within one build, so mismatched sets must NOT union: that would invent a total
+        // neither emitter reported (the same invariant Materialize enforces within a single
+        // report). A mismatch warns and POISONS the line with the empty-dict sentinel: an
+        // absorbing marker no later merge may union or resurrect detail through. Without it,
+        // a mismatched middle report was forgotten while a later one-sided carry resurrected
+        // detail, making the fold order decide the merged aggregate.
         var mergedConditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
         foreach (var (line, mine) in ConditionsByLine)
         {
             if (other.ConditionsByLine.TryGetValue(line, out var theirs))
             {
-                if (mine.Count == theirs.Count && mine.Keys.All(theirs.ContainsKey))
+                if (mine.Count is 0 || theirs.Count is 0)
+                {
+                    // Already poisoned on a side by an earlier merge (which warned then):
+                    // absorbing, and no redundant per-merge warning.
+                    mergedConditions[line] = PoisonedConditions;
+                }
+                else if (mine.Count == theirs.Count && mine.Keys.All(theirs.ContainsKey))
                 {
                     var union = new Dictionary<int, int>(mine.Count);
                     foreach (var (number, covered) in mine)
                         union[number] = Math.Max(covered, theirs[number]);
                     mergedConditions[line] = union;
-                    OverlayConditionAggregate(mergedBranches, line, union);
                 }
                 else
                 {
@@ -354,6 +402,7 @@ public readonly record struct FileCoverage(
                         line,
                         $"condition numbers [{string.Join(",", mine.Keys.Order())}] vs " +
                         $"[{string.Join(",", theirs.Keys.Order())}] - using the line aggregate"));
+                    mergedConditions[line] = PoisonedConditions;
                 }
             }
             else
@@ -361,36 +410,27 @@ public readonly record struct FileCoverage(
                 // One-sided detail (the other emitter shipped no <conditions> for this line):
                 // carry it forward so a later merge can still union per condition instead of
                 // degrading to line-level Math.Max forever — and so merge order cannot change
-                // the outcome.
-                mergedConditions[line] = new Dictionary<int, int>(mine);
-                OverlayConditionAggregate(mergedBranches, line, mine);
+                // the outcome. A poisoned entry stays poisoned.
+                mergedConditions[line] = mine.Count is 0 ? PoisonedConditions : new Dictionary<int, int>(mine);
             }
         }
 
         foreach (var (line, theirs) in other.ConditionsByLine)
         {
             if (ConditionsByLine.ContainsKey(line)) continue;   // handled above
-            mergedConditions[line] = new Dictionary<int, int>(theirs);
-            OverlayConditionAggregate(mergedBranches, line, theirs);
+            mergedConditions[line] = theirs.Count is 0 ? PoisonedConditions : new Dictionary<int, int>(theirs);
         }
 
         return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions), warnings);
     }
 
-    // The line aggregate for a condition-detailed line is the component-wise Math.Max of the
-    // condition-derived value and the line-level union: condition detail can only raise the
-    // covered count (different conditions exercised by different runs), never regress a count
-    // the line-level union already observed from a condition-less side.
-    private static void OverlayConditionAggregate(
-        Dictionary<int, (int Covered, int Total)> mergedBranches,
-        int line,
-        IReadOnlyDictionary<int, int> conditions)
-    {
-        var derived = (Covered: conditions.Values.Sum(), Total: conditions.Count * 2);
-        mergedBranches[line] = mergedBranches.TryGetValue(line, out var b)
-            ? (Math.Max(derived.Covered, b.Covered), Math.Max(derived.Total, b.Total))
-            : derived;
-    }
+    /// <summary>
+    /// The condition-identity poison sentinel: an empty condition set. Safe to overload as a
+    /// sentinel because neither the parser's Materialize nor AddCondition ever produces an
+    /// empty <see cref="ConditionsByLine"/> entry — only a mismatch downgrade does.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<int, int> PoisonedConditions =
+        ReadOnlyDictionary<int, int>.Empty;
 
     /// <summary>
     /// Shared construction tail for the parser's <c>Materialize</c> and <see cref="MergeWith"/>:
@@ -416,10 +456,31 @@ public readonly record struct FileCoverage(
 
         uncovered.Sort();
 
+        // Presented branch view: overlay the condition-derived aggregate onto the raw
+        // line-level value, component-wise Math.Max. Condition detail can only raise the
+        // covered count (different conditions exercised by different runs or class blocks),
+        // never regress a count the line-level union already observed from a condition-less
+        // side. Poisoned lines (empty sentinel — see MergeWith) keep the raw aggregate:
+        // their per-condition identity is untrustworthy, so nothing may be derived from it.
+        // The overlay lives HERE, not in merge state, so MergeWith stays associative.
+        var presented = branchesByLine;
+        if (conditionsByLine.Count > 0)
+        {
+            presented = new Dictionary<int, (int Covered, int Total)>(branchesByLine);
+            foreach (var (line, conds) in conditionsByLine)
+            {
+                if (conds.Count is 0) continue;   // poisoned: raw line-level aggregate only
+                var derived = (Covered: conds.Values.Sum(), Total: conds.Count * 2);
+                presented[line] = presented.TryGetValue(line, out var b)
+                    ? (Math.Max(derived.Covered, b.Covered), Math.Max(derived.Total, b.Total))
+                    : derived;
+            }
+        }
+
         var branchesHit = 0;
         var branchesTotal = 0;
         var partialBranches = new List<BranchDetail>();
-        foreach (var (line, b) in branchesByLine.OrderBy(static kv => kv.Key))
+        foreach (var (line, b) in presented.OrderBy(static kv => kv.Key))
         {
             branchesHit += b.Covered;
             branchesTotal += b.Total;
@@ -427,11 +488,12 @@ public readonly record struct FileCoverage(
                 partialBranches.Add(new BranchDetail(line, b.Covered, b.Total));
         }
 
-        var (strict, partial) = ClassifyLines(lineHits, branchesByLine);
+        var (strict, partial) = ClassifyLines(lineHits, presented);
         return new FileCoverage(path, linesHit, lineHits.Count, branchesHit, branchesTotal)
         {
             LineHits = new ReadOnlyDictionary<int, int>(lineHits),
-            BranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(branchesByLine),
+            BranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(presented),
+            RawBranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(branchesByLine),
             ConditionsByLine = new ReadOnlyDictionary<int, IReadOnlyDictionary<int, int>>(conditionsByLine),
             UncoveredLines = uncovered,
             PartialBranches = partialBranches,
@@ -457,6 +519,17 @@ public sealed class CoverageReport
     /// taxonomy and <see cref="CoverageWarning"/> for the payload shape.
     /// </summary>
     public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// The <c>&lt;source&gt;</c> roots the report declared, separator-normalized, in document
+    /// order. Relative class filenames were resolved against the first of these to form
+    /// <see cref="FileCoverage.Path"/>, so the same relative name under two different roots
+    /// (monorepo services, per-job checkouts) stays two distinct files. Empty for hand-built
+    /// reports and documents without a <c>&lt;sources&gt;</c> element. <see cref="Merge"/>
+    /// compares the two sides' roots to detect cross-convention identity ambiguity and unions
+    /// them on the merged report.
+    /// </summary>
+    public IReadOnlyList<string> SourceRoots { get; init; } = [];
 
     public int TotalLines => Files.Sum(static f => f.LinesTotal);
     public int TotalLinesHit => Files.Sum(static f => f.LinesHit);
@@ -570,12 +643,15 @@ public sealed class CoverageReport
             })
             .ToList();
 
-        return new CoverageReport(filtered) { Warnings = Warnings };
+        return new CoverageReport(filtered) { Warnings = Warnings, SourceRoots = SourceRoots };
     }
 
     public static CoverageReport Merge(CoverageReport a, CoverageReport b)
     {
-        var merged = new Dictionary<string, FileCoverage>(StringComparer.OrdinalIgnoreCase);
+        // Ordinal, matching the parser's file keying: case-differing paths are distinct files
+        // on the case-sensitive filesystems the format's native emitters run on, and fusing
+        // them silently erased the less-covered file's misses.
+        var merged = new Dictionary<string, FileCoverage>(StringComparer.Ordinal);
         // Carry forward whatever the two sides already observed; new divergences from
         // the per-file MergeWithWarnings calls below are appended in order.
         var warnings = new List<CoverageWarning>(a.Warnings.Count + b.Warnings.Count);
@@ -596,8 +672,55 @@ public sealed class CoverageReport
             }
         }
 
-        return new CoverageReport(merged.Values.ToList()) { Warnings = warnings };
+        WarnOnAmbiguousFileIdentity(a, b, warnings);
+
+        return new CoverageReport(merged.Values.ToList())
+        {
+            Warnings = warnings,
+            SourceRoots = a.SourceRoots.Concat(b.SourceRoots).Distinct(StringComparer.Ordinal).ToList()
+        };
     }
+
+    /// <summary>
+    /// The honest half of the cross-convention file-identity problem: the SAME source file
+    /// uploaded under two path conventions (Coverlet default emits
+    /// <c>&lt;source&gt;/&lt;/source&gt;</c> + machine-absolute filenames;
+    /// DeterministicSourcePaths emits <c>&lt;source&gt;/_/&lt;/source&gt;</c> + repo-relative
+    /// ones) resolves to two different keys no root arithmetic can unify, so the merge keeps
+    /// two entries and the file double-counts. That cannot be fixed without probing a disk
+    /// this machine may not have — but it CAN be surfaced: when the two sides' declared roots
+    /// differ, any file unique to one side whose file name (whole final path segment, Ordinal)
+    /// matches a file unique to the other side gets a
+    /// <see cref="CoverageWarningKind.FileIdentityAmbiguous"/> warning naming both keys.
+    /// Same-roots merges (the overwhelmingly common same-pipeline case) skip the scan, so
+    /// partitioned test runs never see noise from genuinely distinct same-named files.
+    /// </summary>
+    private static void WarnOnAmbiguousFileIdentity(CoverageReport a, CoverageReport b, List<CoverageWarning> warnings)
+    {
+        if (a.SourceRoots.Count is 0 && b.SourceRoots.Count is 0) return;
+        if (a.SourceRoots.SequenceEqual(b.SourceRoots, StringComparer.Ordinal)) return;
+
+        var aPaths = new HashSet<string>(a.Files.Select(static f => f.Path), StringComparer.Ordinal);
+        var bPaths = new HashSet<string>(b.Files.Select(static f => f.Path), StringComparer.Ordinal);
+
+        var bOnlyByName = b.Files.Select(static f => f.Path)
+            .Where(p => !aPaths.Contains(p))
+            .GroupBy(FileNameOf, StringComparer.Ordinal)
+            .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
+
+        foreach (var pa in a.Files.Select(static f => f.Path).Where(p => !bPaths.Contains(p)))
+        {
+            if (!bOnlyByName.TryGetValue(FileNameOf(pa), out var candidates)) continue;
+            foreach (var pb in candidates)
+                warnings.Add(new CoverageWarning(
+                    CoverageWarningKind.FileIdentityAmbiguous,
+                    pa,
+                    0,
+                    $"'{pa}' and '{pb}' share a file name under different source roots - if they are the same file, its coverage is double-counted in the merged totals"));
+        }
+    }
+
+    private static string FileNameOf(string path) => path[(path.LastIndexOf('/') + 1)..];
 }
 
 /// <summary>

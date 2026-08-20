@@ -30,8 +30,21 @@ public static partial class CoberturaParser
 
     public static CoverageReport ParseFile(string path, long maxChars = DefaultMaxChars)
     {
-        using var stream = File.OpenRead(path);
-        return Parse(stream, maxChars);
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return Parse(stream, maxChars);
+        }
+        catch (XmlException ex)
+        {
+            // XmlException knows line/column but not which file — fatal for directory
+            // aggregates, where "Unexpected end of file. Line 2, position 1." names none of
+            // the N reports. Rethrow the same exception type (the published contract callers
+            // catch) with the path prefixed. The 2-arg ctor is deliberate: the 4-arg
+            // (message, inner, line, pos) ctor appends " Line X, position Y." a second time,
+            // duplicating the location already present in the inner message.
+            throw new XmlException($"{path}: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -42,10 +55,22 @@ public static partial class CoberturaParser
     /// <see cref="CoverageReport.Evaluate"/> as "nothing was measured", the most invisible
     /// possible misconfiguration.
     /// </summary>
-    public static CoverageReport ParseDirectory(string directory, string pattern = DefaultPattern)
+    public static CoverageReport ParseDirectory(string directory, string pattern = DefaultPattern) =>
+        ParseDirectory(directory, pattern, DefaultMaxChars);
+
+    /// <summary>
+    /// <see cref="ParseDirectory(string, string)"/> with an explicit per-file character cap.
+    /// A distinct overload rather than an optional parameter on the existing signature —
+    /// default arguments are baked into callers at compile time, so widening the published
+    /// signature would be a binary-breaking change for compiled consumers.
+    /// </summary>
+    public static CoverageReport ParseDirectory(string directory, string pattern, long maxChars)
     {
         var name = Path.GetFileName(pattern);
-        if (pattern[..^name.Length] is not ("" or "**/") || name.Contains('\\'))
+        // name.Length == 0 catches "" and "**/": both produce an empty filename that
+        // Directory.GetFiles matches against nothing, silently returning an empty report —
+        // the exact invisible misconfiguration this gate exists to reject.
+        if (name.Length is 0 || pattern[..^name.Length] is not ("" or "**/") || name.Contains('\\'))
             throw new ArgumentException(
                 $"Unsupported pattern '{pattern}': only 'filename' and '**/filename' are supported.",
                 nameof(pattern));
@@ -58,16 +83,23 @@ public static partial class CoberturaParser
 
         return files
             .OrderBy(static f => f, StringComparer.Ordinal)
-            .Select(static f => ParseFile(f))
+            .Select(f => ParseFile(f, maxChars))
             .Aggregate(CoverageReport.Merge);
     }
 
-    public static CoverageReport ParsePath(string path)
+    public static CoverageReport ParsePath(string path) => ParsePath(path, DefaultMaxChars);
+
+    /// <summary>
+    /// <see cref="ParsePath(string)"/> with an explicit character cap, threaded through to
+    /// every file parsed. Same overload-not-optional-parameter rationale as
+    /// <see cref="ParseDirectory(string, string, long)"/>.
+    /// </summary>
+    public static CoverageReport ParsePath(string path, long maxChars)
     {
         if (File.Exists(path))
-            return ParseFile(path);
+            return ParseFile(path, maxChars);
         if (Directory.Exists(path))
-            return ParseDirectory(path);
+            return ParseDirectory(path, DefaultPattern, maxChars);
 
         throw new FileNotFoundException($"No file or directory at '{path}'.");
     }
@@ -124,42 +156,89 @@ public static partial class CoberturaParser
 
     private static CoverageReport ParseCore(XmlReader reader)
     {
-        var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
+        // Ordinal, not OrdinalIgnoreCase: case-differing filenames are genuinely distinct
+        // files on the Linux filesystems the format's native emitters (gcovr, coverage.py,
+        // coverlet-on-Linux) run on — linux/net/netfilter really contains both xt_TCPMSS.c
+        // and xt_tcpmss.c. Case-insensitive keying silently fused such pairs, erasing the
+        // less-covered file's misses. Windows cross-report stability comes from normalizing
+        // the key itself (drive-letter casing, separator direction) in ConsumeClass instead.
+        var files = new Dictionary<string, LineAccumulator>(StringComparer.Ordinal);
         var warnings = new List<CoverageWarning>();
+        var sourceRoots = new List<string>();
 
         while (reader.Read())
         {
+            if (reader is { NodeType: XmlNodeType.Element, LocalName: "source" })
+            {
+                ConsumeSource(reader, sourceRoots, warnings);
+                continue;
+            }
+
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            ConsumeClass(reader, files, warnings);
+            ConsumeClass(reader, files, warnings, sourceRoots);
         }
 
-        return Materialize(files, warnings);
+        return Materialize(files, warnings, sourceRoots);
     }
 
     private static async Task<CoverageReport> ParseCoreAsync(XmlReader reader, CancellationToken ct)
     {
-        var files = new Dictionary<string, LineAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var files = new Dictionary<string, LineAccumulator>(StringComparer.Ordinal);
         var warnings = new List<CoverageWarning>();
+        var sourceRoots = new List<string>();
 
         while (await reader.ReadAsync())
         {
             ct.ThrowIfCancellationRequested();
 
+            if (reader is { NodeType: XmlNodeType.Element, LocalName: "source" })
+            {
+                ConsumeSource(reader, sourceRoots, warnings);
+                continue;
+            }
+
             if (reader is not { NodeType: XmlNodeType.Element, LocalName: "class" })
                 continue;
 
-            ConsumeClass(reader, files, warnings);
+            ConsumeClass(reader, files, warnings, sourceRoots);
         }
 
-        return Materialize(files, warnings);
+        return Materialize(files, warnings, sourceRoots);
+    }
+
+    /// <summary>
+    /// Capture one <c>&lt;source&gt;</c> root. In Cobertura document order <c>&lt;sources&gt;</c>
+    /// precedes <c>&lt;packages&gt;</c>, so the roots are complete before the first
+    /// <c>&lt;class&gt;</c> arrives — no second pass needed. Leaves the reader on the element's
+    /// text node; the caller's next Read lands on the harmless end tag.
+    /// </summary>
+    private static void ConsumeSource(XmlReader reader, List<string> sourceRoots, List<CoverageWarning> warnings)
+    {
+        if (reader.IsEmptyElement) return;
+        if (!reader.Read() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
+
+        var root = reader.Value.Trim().Replace('\\', '/');
+        if (root.StartsWith("./", StringComparison.Ordinal)) root = root[2..];
+        // "." and "" are no-op roots (grcov emits <source>.</source>): prepending them would
+        // change every key without adding identity information.
+        if (root.Length is 0 || root is ".") return;
+
+        sourceRoots.Add(root);
+        if (sourceRoots.Count is 2)
+            warnings.Add(new CoverageWarning(
+                CoverageWarningKind.FileIdentityAmbiguous,
+                "",
+                0,
+                $"multiple <source> roots - resolving relative filenames against the first ('{sourceRoots[0]}'); files may not be attributable to a unique root"));
     }
 
     private static void ConsumeClass(
         XmlReader reader,
         Dictionary<string, LineAccumulator> files,
-        List<CoverageWarning> warnings)
+        List<CoverageWarning> warnings,
+        List<string> sourceRoots)
     {
         var filename = reader.GetAttribute("filename");
         if (filename is null) return;
@@ -168,6 +247,7 @@ public static partial class CoberturaParser
         // regardless of emitter convention (Windows coverlet writes `\`, Linux writes `/`).
         // This string is the file's identity key in Materialize/Merge, so it must be stable.
         filename = filename.Replace('\\', '/');
+        filename = ResolveFileKey(filename, sourceRoots);
 
         if (!files.TryGetValue(filename, out var acc))
         {
@@ -259,9 +339,46 @@ public static partial class CoberturaParser
         }
     }
 
+    /// <summary>
+    /// Resolve a separator-normalized class filename to its identity key by prepending the
+    /// report's <c>&lt;source&gt;</c> root. Cobertura emitters (coverage.py, gcovr, cover2cover)
+    /// write filenames relative to a source root; discarding the root made two DIFFERENT files
+    /// that share a relative name (monorepo <c>svc-a/app/main.py</c> vs <c>svc-b/app/main.py</c>)
+    /// collide on one key and silently fuse via Math.Max. Already-rooted filenames are kept as-is
+    /// — the rooted check is manual (leading '/' or a drive-letter prefix) because
+    /// <c>Path.IsPathRooted("C:/x")</c> is false on Linux and reports cross machines. With
+    /// multiple roots the first is chosen deterministically (the analyzing machine cannot probe
+    /// the disk the report was produced on) and parse emits a
+    /// <see cref="CoverageWarningKind.FileIdentityAmbiguous"/> warning. The root is applied
+    /// unconditionally, never only on collision — a conditional prefix would make a file's
+    /// identity unstable across runs.
+    /// </summary>
+    private static string ResolveFileKey(string filename, List<string> sourceRoots)
+    {
+        if (sourceRoots.Count > 0 && !IsRooted(filename))
+        {
+            var root = sourceRoots[0];
+            filename = root.EndsWith('/') ? root + filename : $"{root}/{filename}";
+        }
+
+        // Uppercase a leading drive letter so `c:\x\A.cs` and `C:/x/A.cs` — the same file
+        // emitted by different Windows toolchains — produce one Ordinal key. Key normalization,
+        // not a case-insensitive comparer: a Dictionary has a single comparer for every key,
+        // and per-key conditional comparison would break hash/equality consistency.
+        if (filename.Length >= 3 && char.IsAsciiLetterLower(filename[0]) && filename[1] == ':' && filename[2] == '/')
+            filename = char.ToUpperInvariant(filename[0]) + filename[1..];
+
+        return filename;
+    }
+
+    private static bool IsRooted(string path) =>
+        path.StartsWith('/') ||
+        (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':');
+
     private static CoverageReport Materialize(
         Dictionary<string, LineAccumulator> files,
-        List<CoverageWarning> warnings)
+        List<CoverageWarning> warnings,
+        List<string> sourceRoots)
     {
         var result = new List<FileCoverage>(files.Count);
         foreach (var (filename, acc) in files)
@@ -281,7 +398,7 @@ public static partial class CoberturaParser
             result.Add(FileCoverage.FromLineData(filename, acc.LineHits, acc.BranchesByLine, conditionsByLine));
         }
 
-        return new CoverageReport(result) { Warnings = warnings };
+        return new CoverageReport(result) { Warnings = warnings, SourceRoots = sourceRoots };
     }
 
     private static bool TryParseConditionCoverage(string cond, out int covered, out int total)

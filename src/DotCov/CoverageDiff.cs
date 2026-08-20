@@ -169,40 +169,101 @@ public static class CoverageDiff
     /// <summary>
     /// Compare two reports. Detects added, removed, improved, and regressed files plus
     /// Codecov-style indirect line-level changes inside files that exist on both sides.
+    /// <para>
+    /// File matching is exact-path first (Ordinal — case-differing paths are distinct files
+    /// on the case-sensitive filesystems Cobertura's native emitters run on), then falls back
+    /// to pairing leftover files by unique file name: a file present only in Before pairs
+    /// with a file present only in After when their final path segments match (whole-segment,
+    /// Ordinal) and the match is unambiguous on BOTH sides. That keeps a path-convention
+    /// change — a source-root migration, DeterministicSourcePaths turned on, a pre-source-root
+    /// snapshot diffed against a post-source-root report — reading as the same file's movement
+    /// instead of a full removed+added churn, while anything ambiguous (two candidates named
+    /// <c>app/main.py</c>) honestly stays removed+added rather than being guessed together.
+    /// </para>
     /// </summary>
     public static CoverageDiffResult Compare(CoverageReport before, CoverageReport after)
     {
-        var beforeLookup = before.Files.ToDictionary(f => f.Path, StringComparer.OrdinalIgnoreCase);
-        var afterLookup = after.Files.ToDictionary(f => f.Path, StringComparer.OrdinalIgnoreCase);
-        var allPaths = beforeLookup.Keys.Union(afterLookup.Keys, StringComparer.OrdinalIgnoreCase);
+        var beforeLookup = before.Files.ToDictionary(static f => f.Path, StringComparer.Ordinal);
+        var afterLookup = after.Files.ToDictionary(static f => f.Path, StringComparer.Ordinal);
+        var suffixPairs = PairByUniqueFileName(beforeLookup, afterLookup);
+        var pairedAfterPaths = new HashSet<string>(suffixPairs.Values, StringComparer.Ordinal);
 
-        // Union guarantees every path is in at least one lookup — the wildcard arm catches the
-        // remaining `(false, true)` case, so no unreachable `_ => throw` arm is needed.
-        var deltas = allPaths.Select(path =>
+        var deltas = new List<FileDelta>(beforeLookup.Count + afterLookup.Count);
+
+        foreach (var (path, b) in beforeLookup)
         {
-            var hasBefore = beforeLookup.TryGetValue(path, out var b);
-            var hasAfter = afterLookup.TryGetValue(path, out var a);
+            if (afterLookup.TryGetValue(path, out var a))
+                deltas.Add(Changed(path, b, a));
+            else if (suffixPairs.TryGetValue(path, out var afterPath))
+                // Suffix-paired: report under the After identity — that is the convention the
+                // codebase now lives under.
+                deltas.Add(Changed(afterPath, b, afterLookup[afterPath]));
+            else
+                deltas.Add(new FileDelta(path, b.LineRate, null, -b.LineRate, FileChangeKind.Removed));
+        }
 
-            return (hasBefore, hasAfter) switch
+        foreach (var (path, a) in afterLookup)
+        {
+            if (beforeLookup.ContainsKey(path) || pairedAfterPaths.Contains(path)) continue;
+            deltas.Add(new FileDelta(path, null, a.LineRate, a.LineRate, FileChangeKind.Added));
+        }
+
+        // OrderBy, not List.Sort: stable, so equal-delta files keep their encounter order
+        // (Before files first, then After-only) — same ordering contract as before.
+        return new CoverageDiffResult(
+            deltas.OrderBy(static d => d.Delta).ToList(),
+            before.LineRate,
+            after.LineRate);
+
+        static FileDelta Changed(string path, FileCoverage b, FileCoverage a) =>
+            new(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
+                // A null delta means neither side carried line data: unmeasured on both ends is
+                // unchanged, not modified.
+                (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < MovementEpsilon
+                    ? FileChangeKind.Unchanged
+                    : FileChangeKind.Modified)
             {
-                (true, true) => new FileDelta(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
-                    // A null delta means neither side carried line data: unmeasured on both ends is
-                    // unchanged, not modified.
-                    (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < MovementEpsilon
-                        ? FileChangeKind.Unchanged
-                        : FileChangeKind.Modified)
-                {
-                    LineChanges = ComputeLineChanges(b, a)
-                },
-                (true, false) => new FileDelta(path, b.LineRate, null, -b.LineRate, FileChangeKind.Removed),
-                _ => new FileDelta(path, null, a.LineRate, a.LineRate, FileChangeKind.Added)
+                LineChanges = ComputeLineChanges(b, a)
             };
-        })
-        .OrderBy(d => d.Delta)
-        .ToList();
-
-        return new CoverageDiffResult(deltas, before.LineRate, after.LineRate);
     }
+
+    /// <summary>
+    /// Pair Before-only paths with After-only paths by file name (final path segment,
+    /// Ordinal). A pair forms only when it is unique on BOTH sides — one leftover Before
+    /// file and one leftover After file carry that name. Whole-segment matching means
+    /// <c>MyCalculator.cs</c> never pairs with <c>Calculator.cs</c> despite the raw string
+    /// suffix, and any name carried by two leftover files on either side (the monorepo
+    /// <c>svc-a/app/main.py</c> vs <c>svc-b/app/main.py</c> shape) pairs nothing.
+    /// </summary>
+    private static Dictionary<string, string> PairByUniqueFileName(
+        Dictionary<string, FileCoverage> beforeLookup,
+        Dictionary<string, FileCoverage> afterLookup)
+    {
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var afterOnlyByName = afterLookup.Keys
+            .Where(k => !beforeLookup.ContainsKey(k))
+            .GroupBy(FileNameOf, StringComparer.Ordinal)
+            .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
+
+        if (afterOnlyByName.Count is 0) return pairs;
+
+        foreach (var group in beforeLookup.Keys
+                     .Where(k => !afterLookup.ContainsKey(k))
+                     .GroupBy(FileNameOf, StringComparer.Ordinal))
+        {
+            var befores = group.ToList();
+            if (befores.Count is not 1) continue;   // ambiguous on the Before side
+            if (!afterOnlyByName.TryGetValue(group.Key, out var afters) || afters.Count is not 1)
+                continue;                           // no match, or ambiguous on the After side
+
+            pairs[befores[0]] = afters[0];
+        }
+
+        return pairs;
+    }
+
+    private static string FileNameOf(string path) => path[(path.LastIndexOf('/') + 1)..];
 
     private static List<LineDelta> ComputeLineChanges(FileCoverage before, FileCoverage after)
     {

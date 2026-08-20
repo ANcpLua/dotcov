@@ -99,15 +99,63 @@ public sealed class CoverageDiffTests
     }
 
     [Fact]
-    public void Compare_CaseInsensitivePaths_MatchesCorrectly()
+    public void Compare_DirectoryCaseDrift_PairsViaUniqueFileNameFallback()
     {
+        // Exact path matching is Ordinal (case-differing paths are distinct files on the
+        // case-sensitive filesystems Cobertura's native emitters run on). A directory-casing
+        // drift between two uploads of the same file still pairs — through the unique
+        // file-name fallback, since 'App.cs' is carried by exactly one leftover file on each
+        // side — instead of reading as removed+added.
         var before = Make(new FileCoverage("SRC/App.cs", 5, 10, 0, 0));
         var after = Make(new FileCoverage("src/App.cs", 8, 10, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Single(result.Files);
-        Assert.NotNull(result.Files[0].Before);
+        var d = Assert.Single(result.Files);
+        Assert.NotNull(d.Before);
+        Assert.Equal(FileChangeKind.Modified, d.Change);
+        Assert.Equal("src/App.cs", d.Path);
+    }
+
+    [Fact]
+    public void Compare_CaseDistinctFileNames_StayDistinctAndMatchExactly()
+    {
+        // xt_TCPMSS.c and xt_tcpmss.c genuinely coexist (linux/net/netfilter). Under the old
+        // OrdinalIgnoreCase lookups this diff couldn't even be built — ToDictionary threw on
+        // the "duplicate" keys. Ordinal keying matches each exactly; the file-name fallback
+        // never crosses them because final-segment comparison is Ordinal too.
+        var before = Make(
+            new FileCoverage("net/xt_TCPMSS.c", 4, 4, 0, 0),
+            new FileCoverage("net/xt_tcpmss.c", 0, 4, 0, 0));
+        var after = Make(
+            new FileCoverage("net/xt_TCPMSS.c", 4, 4, 0, 0),
+            new FileCoverage("net/xt_tcpmss.c", 2, 4, 0, 0));
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Equal(2, result.Files.Count);
+        var upper = result.Files.Single(f => f.Path == "net/xt_TCPMSS.c");
+        var lower = result.Files.Single(f => f.Path == "net/xt_tcpmss.c");
+        Assert.Equal(FileChangeKind.Unchanged, upper.Change);
+        Assert.Equal(FileChangeKind.Modified, lower.Change);
+        Assert.Equal(0.5, lower.Delta);
+    }
+
+    [Fact]
+    public void Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements()
+    {
+        // Zero-delta boundary: an added 0%-file has Delta 0.0 and a removed 0%-file has
+        // Delta -0.0 — both sit exactly ON the strict inequalities gating Regressions
+        // (Delta < 0) and Improvements (Delta > 0). They belong in Added/Removed only.
+        var before = Make(new FileCoverage("gone.cs", 0, 2, 0, 0));
+        var after = Make(new FileCoverage("fresh.cs", 0, 2, 0, 0));
+
+        var result = CoverageDiff.Compare(before, after);
+
+        Assert.Equal("fresh.cs", Assert.Single(result.Added).Path);
+        Assert.Equal("gone.cs", Assert.Single(result.Removed).Path);
+        Assert.Empty(result.Regressions);
+        Assert.Empty(result.Improvements);
     }
 
     [Fact]

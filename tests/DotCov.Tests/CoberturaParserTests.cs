@@ -522,7 +522,10 @@ public sealed class CoberturaParserTests
 
         Assert.Equal(4, f.BranchesHit);    // line-level Math.Max of (2/4) and (4/6)
         Assert.Equal(6, f.BranchesTotal);
-        Assert.False(f.ConditionsByLine.ContainsKey(10));   // untrustworthy identity dropped
+        // The untrustworthy identity is not merely dropped but POISONED: the empty sentinel
+        // entry marks the line so no later merge can resurrect one side's detail and make
+        // the aggregate depend on fold order (see MergeConditionIdentityTests).
+        Assert.Empty(f.ConditionsByLine[10]);
         Assert.Contains(merged.Warnings, w =>
             w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
     }
@@ -840,18 +843,23 @@ public sealed class CoberturaParserTests
     }
 
     [Fact]
-    public void Parse_ClassBlocksDifferingOnlyInPathCase_CollapseToOneFile()
+    public void Parse_ClassBlocksDifferingOnlyInPathCase_StayDistinctFiles()
     {
-        // File identity is OrdinalIgnoreCase within a document too — the same source file
-        // emitted under `src/A.cs` and `SRC/a.cs` (case-insensitive filesystems) is one file.
+        // File identity is Ordinal: case-differing filenames are genuinely distinct files on
+        // the case-sensitive filesystems Cobertura's native emitters run on —
+        // linux/net/netfilter really contains both xt_TCPMSS.c and xt_tcpmss.c. The old
+        // OrdinalIgnoreCase keying fused such pairs via Math.Max, silently erasing the
+        // fully-uncovered file's misses and reporting 100% where the truth is 50%.
         var report = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
-            .AddClass("SRC/a.cs", c => c.Line(2, hits: 5).Line(3, hits: 1))
+            .AddClass("net/netfilter/xt_TCPMSS.c", c => c.Line(1, hits: 1).Line(2, hits: 1))
+            .AddClass("net/netfilter/xt_tcpmss.c", c => c.Line(1, hits: 0).Line(2, hits: 0))
             .Parse();
 
-        var file = Assert.Single(report.Files);
-        Assert.Equal(3, file.LinesTotal);
-        Assert.Equal(3, file.LinesHit);
-        Assert.Equal(5, file.LineHits[2]);   // Math.Max across the two blocks
+        Assert.Equal(2, report.Files.Count);
+        Assert.Equal(4, report.TotalLines);
+        Assert.Equal(2, report.TotalLinesHit);
+        Assert.Equal(0.5, report.LineRate);
+        var uncoveredFile = report.Files.Single(f => f.Path == "net/netfilter/xt_tcpmss.c");
+        Assert.Equal(0.0, uncoveredFile.LineRate);
     }
 }
