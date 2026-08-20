@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.6666" branch-rate="0.5" version="1.9" timestamp="1755600100" lines-covered="2" lines-valid="3" branches-covered="1" branches-valid="2">
+  <sources>
+    <source>/_/</source>
+  </sources>
+  <packages>
+    <package name="MyApp" line-rate="0.6666" branch-rate="0.5" complexity="2">
+      <classes>
+        <class name="MyApp.Calculator" filename="src/MyApp/Calculator.cs" line-rate="0.6666" branch-rate="0.5" complexity="2">
+          <methods>
+            <method name="Add" signature="(System.Int32,System.Int32)" line-rate="0.6666" branch-rate="0.5" complexity="2">
+              <lines>
+                <line number="10" hits="1" branch="False" />
+                <line number="11" hits="1" branch="True" condition-coverage="50% (1/2)">
+                  <conditions>
+                    <condition number="23" type="jump" coverage="50%" />
+                  </conditions>
+                </line>
+                <line number="12" hits="0" branch="False" />
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="10" hits="1" branch="False" />
+            <line number="11" hits="1" branch="True" condition-coverage="50% (1/2)">
+              <conditions>
+                <condition number="23" type="jump" coverage="50%" />
+              </conditions>
+            </line>
+            <line number="12" hits="0" branch="False" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+<coverage line-rate="0.8333" branch-rate="0.6" lines-covered="5" lines-valid="6" branches-covered="3" branches-valid="5" complexity="NaN" version="0" timestamp="1755600000">
+  <sources>
+    <source>/home/runner/work/app</source>
+  </sources>
+  <packages>
+    <package name="MyApp" line-rate="0.8333" branch-rate="0.6" complexity="NaN">
+      <classes>
+        <class name="MyApp.Calculator" filename="src/MyApp/Calculator.cs" line-rate="0.8333" branch-rate="0.6" complexity="NaN">
+          <methods>
+            <method name="Add" signature="(System.Int32,System.Int32)" line-rate="1" branch-rate="1" complexity="1">
+              <lines>
+                <line number="10" hits="4" branch="false"/>
+                <line number="11" hits="4" branch="true" condition-coverage="100% (2/2)"/>
+              </lines>
+            </method>
+            <method name="Div" signature="(System.Int32,System.Int32)" line-rate="0.75" branch-rate="0.3333" complexity="2">
+              <lines>
+                <line number="20" hits="2" branch="false"/>
+                <line number="21" hits="2" branch="true" condition-coverage="33% (1/3)"/>
+                <line number="22" hits="1" branch="false"/>
+                <line number="24" hits="0" branch="false"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="10" hits="4" branch="false"/>
+            <line number="11" hits="4" branch="true" condition-coverage="100% (2/2)"/>
+            <line number="20" hits="2" branch="false"/>
+            <line number="21" hits="2" branch="true" condition-coverage="33% (1/3)"/>
+            <line number="22" hits="1" branch="false"/>
+            <line number="24" hits="0" branch="false"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

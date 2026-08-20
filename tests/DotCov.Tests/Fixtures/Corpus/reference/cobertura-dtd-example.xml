@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+<coverage line-rate="0.8333" branch-rate="0.75" lines-covered="5" lines-valid="6" branches-covered="3" branches-valid="4" complexity="1.5" version="2.1.1" timestamp="1187353249043">
+  <sources>
+    <source>C:/local/mvn-project/src/main/java</source>
+  </sources>
+  <packages>
+    <package name="search" line-rate="0.8333" branch-rate="0.75" complexity="1.5">
+      <classes>
+        <class name="search.BinarySearch" filename="search/BinarySearch.java" line-rate="0.8333" branch-rate="0.75" complexity="1.5">
+          <methods>
+            <method name="binarySearch" signature="([II)I" line-rate="0.8333" branch-rate="0.75">
+              <lines>
+                <line number="12" hits="3" branch="false"/>
+                <line number="13" hits="19" branch="true" condition-coverage="100% (2/2)">
+                  <conditions>
+                    <condition number="0" type="jump" coverage="100%"/>
+                  </conditions>
+                </line>
+                <line number="16" hits="16" branch="true" condition-coverage="50% (1/2)">
+                  <conditions>
+                    <condition number="0" type="jump" coverage="50%"/>
+                  </conditions>
+                </line>
+                <line number="17" hits="9" branch="false"/>
+                <line number="19" hits="7" branch="false"/>
+                <line number="24" hits="0" branch="false"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="12" hits="3" branch="false"/>
+            <line number="13" hits="19" branch="true" condition-coverage="100% (2/2)">
+              <conditions>
+                <condition number="0" type="jump" coverage="100%"/>
+              </conditions>
+            </line>
+            <line number="16" hits="16" branch="true" condition-coverage="50% (1/2)">
+              <conditions>
+                <condition number="0" type="jump" coverage="50%"/>
+              </conditions>
+            </line>
+            <line number="17" hits="9" branch="false"/>
+            <line number="19" hits="7" branch="false"/>
+            <line number="24" hits="0" branch="false"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

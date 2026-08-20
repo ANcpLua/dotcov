@@ -54,7 +54,9 @@ public sealed class CliGitHubSummaryTests : IDisposable
         Assert.Equal(1, code);
         var summary = File.ReadAllText(SummaryPath);
         Assert.Contains("## Coverage Report ❌", summary);
-        Assert.Contains("FAIL", summary);
+        // Verdict line comes from MarkdownFormatter.Format(report, gate) — backticked and
+        // built from the same GateResult as the exit code.
+        Assert.Contains("`FAIL:", summary);
         Assert.Contains("branch coverage below threshold", summary);
     }
 
@@ -70,7 +72,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         Assert.Equal(0, code);
         var summary = File.ReadAllText(SummaryPath);
         Assert.Contains("## Coverage Report ✅", summary);
-        Assert.Contains("PASS", summary);
+        Assert.Contains("`PASS:", summary);
     }
 
     [Fact]

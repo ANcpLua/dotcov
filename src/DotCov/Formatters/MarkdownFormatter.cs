@@ -21,12 +21,16 @@ public static class MarkdownFormatter
     /// verdict come from <paramref name="gate"/> with no re-evaluation, and any dimension the
     /// gate failed renders its rates floored (mirroring <see cref="GateResult.ToString"/>'s
     /// display policy), so the markdown body can never round a failing 79.96% up to the
-    /// self-contradictory <c>80.0%</c> next to a <c>FAIL … 79.9%</c> verdict line.
+    /// self-contradictory <c>80.0%</c> next to a <c>FAIL … 79.9%</c> verdict line. The
+    /// backticked one-line <see cref="GateResult.ToString"/> verdict CI logs grep for closes
+    /// the document — rendered here, not spliced on by callers, so badge, body, and verdict
+    /// can never come from different evaluations.
     /// </summary>
     public static string Format(CoverageReport report, GateResult gate) =>
         Render(report, gate,
             Invariant($"**Threshold:** line {gate.MinLinePercent}%, branch {gate.MinBranchPercent}%"),
-            floorFailing: true);
+            floorFailing: true)
+        + Invariant($"{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
     private static string Render(CoverageReport report, GateResult? gate, string? thresholdLine, bool floorFailing)
     {

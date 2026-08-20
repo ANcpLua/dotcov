@@ -102,8 +102,11 @@ public static class DotCovCli
         // Written on pass AND fail, and derived from the same GateResult as the exit code.
         // Previously the summary was fail-only and re-evaluated with min-branch 0, so a
         // branch-gate failure exited 1 while the PR summary showed a green ✅ badge.
+        // MarkdownFormatter.Format(report, gate) renders badge, both thresholds, floored
+        // failing-dimension rates, AND the one-line verdict from the same precomputed
+        // GateResult — no re-evaluation, no CLI-side splicing.
         if (opts.ContainsKey("github-summary"))
-            WriteGitHubSummary(GateSummary(report, gate), stderr);
+            WriteGitHubSummary(MarkdownFormatter.Format(report, gate), stderr);
 
         if (gate.IsPass)
         {
@@ -345,13 +348,6 @@ public static class DotCovCli
 
         return report.Exclude(ExclusionRules.WellKnown, keep);
     }
-
-    // The check summary's badge must derive from the SAME verdict as the exit code.
-    // MarkdownFormatter.Format(report, gate) renders badge, both thresholds, and floored
-    // failing-dimension rates from the precomputed GateResult — no re-evaluation, no badge
-    // duplicate, no header splicing. The CLI only appends the one-line verdict CI logs grep for.
-    static string GateSummary(CoverageReport report, GateResult gate) =>
-        FormattableString.Invariant($"{MarkdownFormatter.Format(report, gate)}{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
     // Display flooring for a rate in a FAILING dimension, one decimal: 79.96% renders 79.9%,
     // never a rounded-up 80.0% that reads as equal to the minimum it missed. GateResult owns

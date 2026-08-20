@@ -6,10 +6,11 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// The <see cref="MarkdownFormatter.Format(CoverageReport, GateResult)"/> overload: badge and
-/// verdict come from the precomputed <see cref="GateResult"/> (no re-evaluation), and any
+/// verdict come from the precomputed <see cref="GateResult"/> (no re-evaluation), any
 /// dimension the gate failed renders floored — mirroring <see cref="GateResult.ToString"/> —
 /// so the markdown body can never round a failing 79.96% up to a self-contradictory 80.0%
-/// beside a <c>FAIL … 79.9%</c> verdict line.
+/// beside a <c>FAIL … 79.9%</c> verdict line, and the backticked one-line verdict itself
+/// closes the document (rendered by the formatter, not spliced on by the CLI).
 /// </summary>
 public sealed class FormatterGateTests
 {
@@ -27,6 +28,32 @@ public sealed class FormatterGateTests
         Assert.Contains("**Line coverage:** 79.9% (1999/2500)", md);
         Assert.Contains("| `src/App.cs` | 1999/2500 | 79.9% | - | - |", md);
         Assert.DoesNotContain("80.0%", md);
+    }
+
+    [Fact]
+    public void GateOverload_ClosesWithBacktickedVerdictLine()
+    {
+        // The one-line verdict CI logs grep for is part of the formatter's output — the CLI
+        // no longer splices it on, so it must end the document, backticked, byte-identical
+        // to GateResult.ToString().
+        var report = Reports.Single("src/App.cs", hit: 1999, total: 2500);
+        var gate = report.Evaluate(80);
+
+        var md = MarkdownFormatter.Format(report, gate);
+
+        Assert.EndsWith($"`{gate}`{Environment.NewLine}", md);
+        Assert.Contains("`FAIL: line 79.9% (min 80%), branch n/a (min 0%) - line coverage below threshold`", md);
+    }
+
+    [Fact]
+    public void GateOverload_Pass_VerdictLineRendersPass()
+    {
+        var gate = Reports.FullyCovered.Evaluate(80);
+
+        var md = MarkdownFormatter.Format(Reports.FullyCovered, gate);
+
+        Assert.EndsWith($"`{gate}`{Environment.NewLine}", md);
+        Assert.Contains("`PASS:", md);
     }
 
     [Fact]
