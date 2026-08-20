@@ -3,10 +3,14 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Referencing DotCov.Nuke pulls Nuke.Common's vulnerable transitives (see DotCov.Nuke.csproj). -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DotCov\DotCov.csproj" />
+    <ProjectReference Include="..\..\src\DotCov.Tool\DotCov.Tool.csproj" />
+    <ProjectReference Include="..\..\src\DotCov.Nuke\DotCov.Nuke.csproj" />
   </ItemGroup>
 
   <ItemGroup>
