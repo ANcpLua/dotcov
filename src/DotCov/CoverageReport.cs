@@ -506,7 +506,7 @@ public sealed class CoverageReport
     {
         if (minLinePercent <= 0 && minBranchPercent <= 0)
             return new GateResult(GateOutcome.Disabled, LineRate, BranchRate, minLinePercent, minBranchPercent,
-                "both thresholds are 0 - this gate cannot fail");
+                "no positive threshold - this gate cannot fail");
 
         if (!HasLineData)
             return new GateResult(GateOutcome.NoData, null, null, minLinePercent, minBranchPercent,

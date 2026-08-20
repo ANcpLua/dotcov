@@ -20,7 +20,12 @@ public sealed class FormatterCultureTests
         var original = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = new CultureInfo("de-AT");
+            // Clone InvariantCulture instead of loading a real locale so the test also runs
+            // under DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 (same approach as GateResultTests).
+            var commaCulture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+            commaCulture.NumberFormat.NumberDecimalSeparator = ",";
+            commaCulture.NumberFormat.PercentDecimalSeparator = ",";
+            CultureInfo.CurrentCulture = commaCulture;
             return render();
         }
         finally

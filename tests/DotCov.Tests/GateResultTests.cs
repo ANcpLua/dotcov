@@ -188,8 +188,10 @@ public sealed class GateResultTests
         // The one test allowed to know the wording. Everything else asserts structure
         // (Outcome, LineBelowThreshold, BranchBelowThreshold), so rewording the prose is a
         // one-test change instead of a scatter of false failures.
-        Assert.Equal("both thresholds are 0 - this gate cannot fail",
+        Assert.Equal("no positive threshold - this gate cannot fail",
             Report(1, 100, 0, 0).Evaluate(0, 0).Reason);
+        Assert.Equal("no positive threshold - this gate cannot fail",
+            Report(1, 100, 0, 0).Evaluate(-5).Reason);
         Assert.Equal("report carries no line data - nothing was measured",
             CoverageReport.Empty.Evaluate(95, 75).Reason);
         Assert.Equal("branch threshold of 75% requested but the report carries no branch data",

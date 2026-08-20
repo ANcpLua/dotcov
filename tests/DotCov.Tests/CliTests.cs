@@ -257,15 +257,15 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
-    public async Task Report_DtdProhibited_FriendlyError_Exits1()
+    public async Task Report_DoctypeHeader_ParsesSuccessfully_Exits0()
     {
+        // Reference Cobertura always emits a DOCTYPE; the parser ignores the DTD without resolving it.
         var path = WriteFile("dtd.xml",
             """<?xml version="1.0"?><!DOCTYPE coverage [<!ENTITY x "y">]><coverage></coverage>""");
 
-        var (code, _, stderr) = await Run("report", path);
+        var (code, _, _) = await Run("report", path);
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
+        Assert.Equal(0, code);
     }
 
     [Fact]
