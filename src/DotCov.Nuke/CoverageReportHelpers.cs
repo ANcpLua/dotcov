@@ -36,6 +36,20 @@ public static class CoverageReportHelpers
             : throw new ArgumentException($"Invalid {parameterName}: '{value}' (expected 'true' or 'false').");
 
     /// <summary>
+    /// Strict format parse returning the canonical format name — "md" canonicalizes to
+    /// "markdown". Anything but table/json/markdown/md throws naming the parameter instead
+    /// of silently falling back to table.
+    /// </summary>
+    public static string ParseFormat(string value, string parameterName) =>
+        value switch
+        {
+            "table" or "json" or "markdown" => value,
+            "md" => "markdown",
+            _ => throw new ArgumentException(
+                $"Invalid {parameterName}: '{value}' (expected 'table', 'json', 'markdown', or 'md').")
+        };
+
+    /// <summary>
     /// Appends <paramref name="markdown"/> to the GitHub step summary at <paramref name="path"/>.
     /// Returns false — never throws — when the path is null/empty or cannot be written:
     /// a bad <c>GITHUB_STEP_SUMMARY</c> must not fail an otherwise green build.

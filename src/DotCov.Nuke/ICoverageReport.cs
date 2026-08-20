@@ -24,7 +24,7 @@ public interface ICoverageReport : INukeBuild
     [Parameter("Minimum branch coverage percentage")]
     string MinBranch => TryGetValue(() => MinBranch) ?? "0";
 
-    [Parameter("Output format: table, json, markdown")]
+    [Parameter("Output format: table, json, markdown (md)")]
     string Format => TryGetValue(() => Format) ?? "table";
 
     [Parameter("Exclude generated files, migrations, state machines")]
@@ -53,11 +53,12 @@ public interface ICoverageReport : INukeBuild
             var minLine = CoverageReportHelpers.ParseThreshold(MinLine, "Coverage MinLine");
             var minBranch = CoverageReportHelpers.ParseThreshold(MinBranch, "Coverage MinBranch");
 
-            var output = Format switch
+            var output = CoverageReportHelpers.ParseFormat(Format, "Coverage Format") switch
             {
                 "json" => JsonFormatter.Format(report),
-                "markdown" or "md" => MarkdownFormatter.Format(report, minLine),
-                _ => TableFormatter.Format(report)
+                "markdown" => MarkdownFormatter.Format(report, minLine),
+                "table" => TableFormatter.Format(report),
+                _ => throw new InvalidOperationException("Unreachable: ParseFormat returns canonical values only.")
             };
 
             Serilog.Log.Information("Coverage:\n{Output}", output);

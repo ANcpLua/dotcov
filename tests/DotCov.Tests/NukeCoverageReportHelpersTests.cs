@@ -121,6 +121,30 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
         Assert.Contains($"'{value}'", ex.Message);
     }
 
+    // ── ParseFormat ───────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("table", "table")]
+    [InlineData("json", "json")]
+    [InlineData("markdown", "markdown")]
+    [InlineData("md", "markdown")] // alias canonicalizes
+    public void ParseFormat_KnownFormat_ReturnsCanonicalName(string value, string expected) =>
+        Assert.Equal(expected, CoverageReportHelpers.ParseFormat(value, "Coverage Format"));
+
+    [Theory]
+    [InlineData("markdwon")] // the typo the old silent-table fallback swallowed
+    [InlineData("xml")]
+    [InlineData("TABLE")] // case-sensitive, matching the original switch arms
+    [InlineData("")]
+    public void ParseFormat_UnknownFormat_FailsLoudlyInsteadOfSilentTable(string value)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => CoverageReportHelpers.ParseFormat(value, "Coverage Format"));
+
+        Assert.Contains("Coverage Format", ex.Message);
+        Assert.Contains($"'{value}'", ex.Message);
+    }
+
     // ── TryAppendGitHubStepSummary ────────────────────────────────────────────
 
     [Fact]
