@@ -33,11 +33,13 @@ public readonly struct AnsiPen(bool enabled)
     /// Color a delta cell — green for improvement, red for regression, dim for unchanged.
     /// Shares <see cref="CoverageDiff.MovementEpsilon"/> with the diff classification so a
     /// delta never colors as movement while the diff calls it unchanged (or vice versa).
+    /// A delta of exactly ±epsilon counts as movement, matching
+    /// <see cref="CoverageDiff.Compare"/>'s strict "closer to zero than epsilon" noise test.
     /// </summary>
     public string Delta(string text, double? delta) => delta switch
     {
-        > CoverageDiff.MovementEpsilon => Green(text),
-        < -CoverageDiff.MovementEpsilon => Red(text),
+        >= CoverageDiff.MovementEpsilon => Green(text),
+        <= -CoverageDiff.MovementEpsilon => Red(text),
         _ => Dim(text)
     };
 }

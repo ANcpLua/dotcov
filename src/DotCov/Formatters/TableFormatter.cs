@@ -19,19 +19,21 @@ public static class TableFormatter
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
-        foreach (var f in report.Files.OrderBy(static f => f.LineRate ?? -1))
+        foreach (var f in report.Files.WorstFirst())
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
             var linePct = Pct(f.LineRate);
             var branches = (f.HasBranchData ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-").PadLeft(10);
             var branchPct = Pct(f.BranchRate);
 
+            // Branch cells route through pen.Rate unconditionally: BranchRate is null exactly
+            // when the file has no branch data, and a null rate falls to the pen's dim arm.
             sb.AppendLine(
                 $"{f.Path.PadRight(maxPath)}  " +
                 $"{pen.Rate(lines, f.LineRate)}  " +
                 $"{pen.Rate(linePct, f.LineRate)}  " +
-                $"{(f.HasBranchData ? pen.Rate(branches, f.BranchRate) : pen.Dim(branches))}  " +
-                $"{(f.HasBranchData ? pen.Rate(branchPct, f.BranchRate) : pen.Dim(branchPct))}");
+                $"{pen.Rate(branches, f.BranchRate)}  " +
+                $"{pen.Rate(branchPct, f.BranchRate)}");
         }
 
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
@@ -46,8 +48,8 @@ public static class TableFormatter
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
             $"{pen.Bold(pen.Rate(totalLines, report.LineRate))}  " +
             $"{pen.Bold(pen.Rate(totalLinePct, report.LineRate))}  " +
-            $"{pen.Bold(report.HasBranchData ? pen.Rate(totalBranches, report.BranchRate) : pen.Dim(totalBranches))}  " +
-            $"{pen.Bold(report.HasBranchData ? pen.Rate(totalBranchPct, report.BranchRate) : pen.Dim(totalBranchPct))}");
+            $"{pen.Bold(pen.Rate(totalBranches, report.BranchRate))}  " +
+            $"{pen.Bold(pen.Rate(totalBranchPct, report.BranchRate))}");
 
         // One-line trailer; markdown owns the detailed list. Stays silent when nothing
         // is wrong so existing CLI users see no visual change for clean reports.
@@ -73,26 +75,22 @@ public static class TableFormatter
         {
             var before = Pct(d.Before);
             var after = Pct(d.After);
-            var indicator = d.Delta switch { > 0 => "+", < 0 => "", _ => " " };
-            var deltaText = d.Delta is { } dv ? Invariant($"{indicator}{dv * 100,6:F1}%") : "       -";
             var change = $"{d.Change,10}";
 
             sb.AppendLine(
                 $"{d.Path.PadRight(maxPath)}  " +
                 $"{before}  " +
                 $"{after}  " +
-                $"{pen.Delta(deltaText, d.Delta)}  " +
+                $"{pen.Delta(DeltaCell(d.Delta), d.Delta)}  " +
                 $"{ColorChange(pen, change, d.Change)}");
         }
 
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
-        var sign = diff.Delta >= 0 ? "+" : "";
-        var totalDeltaText = diff.Delta is { } td ? Invariant($"{sign}{td * 100,6:F1}%") : "       -";
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
             $"{pen.Bold(Pct(diff.BeforeRate))}  " +
             $"{pen.Bold(Pct(diff.AfterRate))}  " +
-            $"{pen.Bold(pen.Delta(totalDeltaText, diff.Delta))}");
+            $"{pen.Bold(pen.Delta(DeltaCell(diff.Delta), diff.Delta))}");
 
         // Codecov-style indirect-change summary: one line, only when there's anything to show.
         // Detailed per-file breakdown lives in the markdown formatter where it fits better.
@@ -113,6 +111,13 @@ public static class TableFormatter
     private static string Pct(double? rate) =>
         rate is { } r ? Invariant($"{r * 100,7:F1}%") : "       -";
 
+    // The one delta cell policy, shared by per-file rows and the TOTAL row (and matching the
+    // markdown formatter's sign convention): sign rendered as part of the number — '+' for
+    // deltas >= 0, the value's own '-' otherwise — then right-aligned to 8 chars so the sign
+    // can never detach from its digits. Null (unmeasured on either side) renders the dash cell.
+    private static string DeltaCell(double? delta) =>
+        (delta is { } d ? Invariant($"{(d >= 0 ? "+" : "")}{d * 100:F1}%") : "-").PadLeft(8);
+
     private static string ColorChange(AnsiPen pen, string text, FileChangeKind kind) => kind switch
     {
         FileChangeKind.Added => pen.Green(text),
@@ -120,4 +125,16 @@ public static class TableFormatter
         FileChangeKind.Modified => pen.Yellow(text),
         _ => pen.Dim(text)
     };
+}
+
+/// <summary>
+/// The single worst-first file ordering policy shared by the human-facing text formatters
+/// (table and markdown): unmeasured files (null line rate) sort first, then ascending line
+/// rate; ties keep document order (stable sort). JSON deliberately keeps document order —
+/// machines sort as they need — see the note in <see cref="JsonFormatter.Format"/>.
+/// </summary>
+internal static class FormatterOrdering
+{
+    internal static IOrderedEnumerable<FileCoverage> WorstFirst(this IReadOnlyList<FileCoverage> files) =>
+        files.OrderBy(static f => f.LineRate ?? -1);
 }

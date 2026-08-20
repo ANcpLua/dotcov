@@ -80,6 +80,50 @@ public sealed class TableFormatterTests
     }
 
     [Fact]
+    public void Format_FileWithBranches_PopulatesBranchCell()
+    {
+        // The populated arm of the branch-cell convention: a file that carries branch data
+        // renders hit/total, never the no-data dash.
+        var output = TableFormatter.Format(Reports.Mixed);
+        var calcRow = output.Split('\n').Single(l => l.Contains("Calculator.cs"));
+
+        Assert.Contains("2/2", calcRow);
+    }
+
+    [Fact]
+    public void Format_TotalRow_PopulatesAggregateBranchCell()
+    {
+        // TOTAL branch cell is the branch aggregate (2+1+0)/(2+4+0), not the lines cell.
+        var output = TableFormatter.Format(Reports.Mixed);
+        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL"));
+
+        Assert.Contains("3/6", totalRow);
+    }
+
+    [Fact]
+    public void Format_NoBranchData_TotalRowRendersDashInBranchColumns()
+    {
+        var output = TableFormatter.Format(Reports.LinesOnly);
+        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+
+        // Anchored to the TOTAL row itself: line columns populated, both branch columns dashed.
+        Assert.Matches(@"^TOTAL\s+410/769\s+53\.3%\s+-\s+-$", totalRow);
+    }
+
+    [Fact]
+    public void Format_ColorEnabled_PaintsBranchCellsByBranchRate()
+    {
+        // Branch cells are painted by pen.Rate over the branch rate — per-file
+        // (Calculator.cs: 2/2 → green) and TOTAL (3/6 = 50% → yellow, bold).
+        var output = TableFormatter.Format(Reports.Mixed, color: true);
+
+        // Asserted as the adjacent branches+branch% cell pair so the line-% cell (also
+        // green "  100.0%" for Calculator.cs) cannot satisfy the branch-cell assertion.
+        Assert.Contains($"{Pen.Rate($"{"2/2",10}", 1.0)}  {Pen.Rate("  100.0%", 1.0)}", output);
+        Assert.Contains($"{Pen.Bold(Pen.Rate($"{"3/6",10}", 0.5))}  {Pen.Bold(Pen.Rate("   50.0%", 0.5))}", output);
+    }
+
+    [Fact]
     public void Format_EmptyReport_RendersHeaderAndTotalOnly()
     {
         var output = TableFormatter.Format(Reports.Empty);
@@ -129,7 +173,8 @@ public sealed class TableFormatterTests
         var output = TableFormatter.FormatDiff(diff, color: true);
 
         // The regression's delta cell is painted by the pen's delta rule (red arm).
-        Assert.Contains(Pen.Delta(" -30.0%", diff.Delta), output);
+        // Cell is the full 8-char unit — sign attached to the digits, then right-aligned.
+        Assert.Contains(Pen.Delta("  -30.0%", diff.Delta), output);
     }
 
     [Fact]
@@ -169,7 +214,82 @@ public sealed class TableFormatterTests
         var output = TableFormatter.FormatDiff(diff);
         var row = output.Split('\n').Single(l => l.Contains("fresh.cs")).TrimEnd();
 
-        Assert.Matches(@"^fresh\.cs\s+-\s+70\.0%\s+\+\s+70\.0%\s+Added$", row);
+        // The '+' sign is attached to its digits — never a detached "+  70.0%".
+        Assert.Matches(@"^fresh\.cs\s+-\s+70\.0%\s+\+70\.0%\s+Added$", row);
+    }
+
+    // ── Delta cell policy: sign attached to digits, one 8-char unit, rows and TOTAL alike ──
+
+    [Fact]
+    public void FormatDiff_TotalRow_RendersAggregateDeltaWithAttachedSign()
+    {
+        // Multi-file diff whose TOTAL delta (+25.0%) differs from every per-file delta
+        // (+30.0%, +20.0%), so this pins the TOTAL arithmetic itself — a whole-output
+        // Contains would otherwise be satisfied by a per-file cell.
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([
+                new FileCoverage("a.cs", 5, 10, 0, 0),
+                new FileCoverage("b.cs", 5, 10, 0, 0)
+            ]),
+            new CoverageReport([
+                new FileCoverage("a.cs", 8, 10, 0, 0),
+                new FileCoverage("b.cs", 7, 10, 0, 0)
+            ]));
+
+        var output = TableFormatter.FormatDiff(diff);
+        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+
+        Assert.Matches(@"^TOTAL\s+50\.0%\s+75\.0%\s+\+25\.0%$", totalRow);
+        Assert.Contains("  +25.0%", totalRow); // full 8-char cell: sign never detaches
+    }
+
+    [Fact]
+    public void FormatDiff_ZeroDelta_RowAndTotalUseSamePlusZeroCell()
+    {
+        // One sign policy everywhere: zero renders '+0.0%' in per-file rows and TOTAL alike
+        // (previously the row showed '    0.0%' while TOTAL showed '+   0.0%').
+        var diff = CoverageDiff.Compare(
+            Reports.Single("same.cs", hit: 5, total: 10),
+            Reports.Single("same.cs", hit: 5, total: 10));
+
+        var output = TableFormatter.FormatDiff(diff);
+        var fileRow = output.Split('\n').Single(l => l.Contains("same.cs")).TrimEnd();
+        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+
+        Assert.Contains("   +0.0%", fileRow);
+        Assert.Contains("   +0.0%", totalRow);
+    }
+
+    [Fact]
+    public void FormatDiff_NegativeDelta_CellIsEightCharsWithOwnMinusSign()
+    {
+        var diff = CoverageDiff.Compare(
+            Reports.Single("down.cs", hit: 9, total: 10),
+            Reports.Single("down.cs", hit: 6, total: 10));
+
+        var output = TableFormatter.FormatDiff(diff);
+        var fileRow = output.Split('\n').Single(l => l.Contains("down.cs")).TrimEnd();
+        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+
+        // Negative cells align with every other delta state: 8 chars, no '+' anywhere.
+        Assert.Contains("  -30.0%", fileRow);
+        Assert.Contains("  -30.0%", totalRow);
+        Assert.DoesNotContain("+", fileRow);
+    }
+
+    [Fact]
+    public void FormatDiff_NullDelta_RendersDashCell()
+    {
+        // A 0/0 file has null rates on both sides → null delta → the 8-char dash cell.
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]),
+            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
+
+        var output = TableFormatter.FormatDiff(diff);
+        var fileRow = output.Split('\n').Single(l => l.Contains("empty.cs")).TrimEnd();
+
+        Assert.Matches(@"^empty\.cs\s+-\s+-\s+-\s+Unchanged$", fileRow);
+        Assert.Contains("       -", fileRow); // dash keeps the 8-char cell width
     }
 
     [Fact]
