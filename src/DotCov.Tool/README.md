@@ -13,6 +13,8 @@ dotcov diff     before.xml after.xml --format md                 # compare two r
 dotcov snapshot TestResults/ --commit SHA --branch main --project MyApp
 ```
 
-Global flags: `--exclude-generated`, `--upload <url>`, `--github-summary`.
+Global flags: `--exclude-generated`, `--keep <substrings>`, `--pattern <glob>` (directory-scan filename, `filename` or `**/filename`; default `**/coverage.cobertura.xml` — override for gcovr/coverage.py names like `coverage.xml`), `--max-chars <N>` (per-file XML character cap, default `50000000`; `0` = no cap), `--upload <url>`, `--github-summary`.
+
+Exit codes: `0` success (gate passed) · `1` gate failed or inconclusive (`NODATA`/`DISABLED`), or the command could not run (parse/IO/size-cap error, invalid flag value, upload failure) — the first stderr token (`FAIL:`/`NODATA:`/`DISABLED:`/`error:`) distinguishes these · `2` unknown command.
 
 [Docs](https://github.com/ANcpLua/dotcov#readme) · [Library — DotCov](https://www.nuget.org/packages/DotCov/) · [NUKE — DotCov.Nuke](https://www.nuget.org/packages/DotCov.Nuke/) · [MIT](https://github.com/ANcpLua/dotcov/blob/main/LICENSE)

@@ -414,4 +414,273 @@ public sealed class CliTests : IDisposable
         // Trailing flag with no value is recorded as "true", not dropped.
         Assert.Equal("true", options["github-summary"]);
     }
+
+    [Fact]
+    public void ParseArgs_BooleanFlagBeforePositional_DoesNotSwallowPath()
+    {
+        // Standard flag-before-path ordering: a valueless flag must not consume the path.
+        var (_, options) = DotCovCli.ParseArgs(
+            ["report", "--exclude-generated", "cov.xml", "--github-summary", "--format", "json"]);
+
+        Assert.Equal("cov.xml", options["file"]);
+        Assert.Equal("true", options["exclude-generated"]);
+        Assert.Equal("true", options["github-summary"]);
+        Assert.Equal("json", options["format"]);
+    }
+
+    [Fact]
+    public async Task Report_BooleanFlagBeforePath_Exits0()
+    {
+        var (code, stdout, _) = await Run("report", "--exclude-generated", HalfCovered());
+
+        Assert.Equal(0, code);
+        Assert.Contains("src/A.cs", stdout);
+    }
+
+    // ── Directory-scan error attribution ──
+
+    [Fact]
+    public async Task DirectoryScan_MalformedFile_PrefixesPathExactlyOnce()
+    {
+        // The library's ParseFile prefixes the failing path; the CLI must not prefix again
+        // ("error: {path}: {path}: ...").
+        var bad = WriteFile("once/coverage.cobertura.xml", "<coverage><packa");
+
+        var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "once"));
+
+        Assert.Equal(1, code);
+        Assert.Contains($"error: {bad}:", stderr);
+        Assert.DoesNotContain($"{bad}: {bad}:", stderr);
+    }
+
+    // ── --pattern ──
+
+    [Fact]
+    public async Task Report_Pattern_DiscoversNonDefaultFilenames()
+    {
+        HalfCovered("gcovr/sub/coverage.xml");
+        var dir = Path.Combine(_dir.FullName, "gcovr");
+
+        // Default scan only matches **/coverage.cobertura.xml — the gcovr-named report is invisible.
+        var (defaultCode, defaultOut, _) = await Run("report", dir);
+        Assert.Equal(0, defaultCode);
+        Assert.DoesNotContain("src/A.cs", defaultOut);
+
+        var (code, stdout, _) = await Run("report", dir, "--pattern", "**/coverage.xml");
+        Assert.Equal(0, code);
+        Assert.Contains("src/A.cs", stdout);
+    }
+
+    [Fact]
+    public async Task Report_Pattern_TopLevelShape_DoesNotRecurse()
+    {
+        HalfCovered("toplevel/cobertura.xml");
+        BranchHalf("toplevel/nested/cobertura.xml");
+
+        var (code, stdout, _) = await Run(
+            "report", Path.Combine(_dir.FullName, "toplevel"), "--pattern", "cobertura.xml");
+
+        Assert.Equal(0, code);
+        Assert.Contains("src/A.cs", stdout);
+        Assert.DoesNotContain("src/B.cs", stdout);
+    }
+
+    [Fact]
+    public async Task Check_Pattern_GatesNonDefaultFilenames()
+    {
+        HalfCovered("chk/coverage.xml");
+
+        var (code, _, stderr) = await Run(
+            "check", Path.Combine(_dir.FullName, "chk"), "--min-line", "90", "--pattern", "**/coverage.xml");
+
+        Assert.Equal(1, code);
+        Assert.Contains("FAIL", stderr);
+    }
+
+    [Fact]
+    public async Task Report_InvalidPattern_FriendlyError_Exits1()
+    {
+        // ParseDirectory's pattern gate throws ArgumentException, which is not in RunAsync's
+        // catch filter — the CLI must translate it, not crash with a stack trace.
+        var dir = Directory.CreateDirectory(Path.Combine(_dir.FullName, "pat")).FullName;
+
+        var (code, _, stderr) = await Run("report", dir, "--pattern", "sub/coverage.xml");
+
+        Assert.Equal(1, code);
+        AssertFriendlyError(stderr);
+        Assert.Contains("Unsupported pattern", stderr);
+    }
+
+    // ── --max-chars ──
+
+    [Fact]
+    public async Task Report_MaxChars_BelowDocumentSize_FriendlyError_Exits1()
+    {
+        var path = HalfCovered();
+
+        var (code, _, stderr) = await Run("report", path, "--max-chars", "10");
+
+        Assert.Equal(1, code);
+        AssertFriendlyError(stderr);
+        Assert.Contains(path, stderr);
+        Assert.Contains("MaxCharactersInDocument", stderr);
+    }
+
+    [Fact]
+    public async Task Report_MaxChars_ZeroDisablesCap_Exits0()
+    {
+        var (code, _, _) = await Run("report", HalfCovered(), "--max-chars", "0");
+
+        Assert.Equal(0, code);
+    }
+
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("-1")]
+    [InlineData("1.5")]
+    public async Task Report_InvalidMaxChars_Exits1_AndNamesValue(string value)
+    {
+        var (code, _, stderr) = await Run("report", HalfCovered(), "--max-chars", value);
+
+        Assert.Equal(1, code);
+        Assert.Contains($"Invalid --max-chars value: '{value}'", stderr);
+    }
+
+    [Fact]
+    public async Task Check_MaxChars_CapOverflow_IsErrorNotFail()
+    {
+        // A size-cap overflow during check is a could-not-measure error ("error:" first token),
+        // never presented as a coverage FAIL — the exit code is 1 either way (documented
+        // contract), so the stderr first token is the only discriminator.
+        var (code, _, stderr) = await Run(
+            "check", HalfCovered(), "--min-line", "40", "--max-chars", "10");
+
+        Assert.Equal(1, code);
+        Assert.StartsWith("error:", stderr);
+        Assert.DoesNotContain("FAIL", stderr);
+    }
+
+    // ── Offender list scoping and flooring ──
+
+    [Fact]
+    public async Task Check_LineFailure_LabelsOffenderList()
+    {
+        var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "90");
+
+        Assert.Equal(1, code);
+        Assert.Contains("files below line threshold:", stderr);
+        Assert.Contains("src/A.cs: 50.0%", stderr);
+    }
+
+    [Fact]
+    public async Task Check_BranchOnlyFailure_PrintsNoLineOffenderList()
+    {
+        // Line gate passes overall (5/7 ≈ 71.4% ≥ 50) but B.cs sits below min-line; the branch
+        // gate fails. B.cs has zero failing branches and must not be blamed for the failure.
+        var path = WriteFile("mixed.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 1).Line(3, hits: 1).Branch(4, "50% (1/2)"))
+            .AddClass("src/B.cs", c => c.Line(1, hits: 1).Line(2, hits: 0).Line(3, hits: 0))
+            .ToBytes());
+
+        var (code, _, stderr) = await Run("check", path, "--min-line", "50", "--min-branch", "90");
+
+        Assert.Equal(1, code);
+        Assert.Contains("FAIL", stderr);
+        Assert.Contains("branch coverage below threshold", stderr);
+        Assert.DoesNotContain("files below line threshold", stderr);
+        Assert.DoesNotContain("src/B.cs", stderr);
+    }
+
+    [Fact]
+    public async Task Check_NoData_PrintsNoOffenderList()
+    {
+        var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty-nolist")).FullName;
+
+        var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
+
+        Assert.Equal(1, code);
+        Assert.Contains("NODATA", stderr);
+        Assert.DoesNotContain("files below line threshold", stderr);
+    }
+
+    [Fact]
+    public async Task Check_OffenderList_FloorsFailingRate()
+    {
+        // 1999/2500 = 79.96%: must floor to 79.9%, never F1-round up to the missed minimum.
+        var path = WriteFile("floor.cobertura.xml", NearlyEighty().ToBytes());
+
+        var (code, _, stderr) = await Run("check", path, "--min-line", "80");
+
+        Assert.Equal(1, code);
+        Assert.Contains("src/F.cs: 79.9%", stderr);
+        Assert.DoesNotContain("80.0%", stderr);
+    }
+
+    internal static Cobertura NearlyEighty() => Cobertura.NewDoc()
+        .AddClass("src/F.cs", c =>
+        {
+            for (var i = 1; i <= 1999; i++) c.Line(i, hits: 1);
+            for (var i = 2000; i <= 2500; i++) c.Line(i, hits: 0);
+        });
+
+    // ── Unsupported upload scheme ──
+
+    [Fact]
+    public async Task Report_UploadUnsupportedScheme_FriendlyError_Exits1()
+    {
+        // HttpClient throws NotSupportedException for non-http(s) schemes before any
+        // connection is attempted — must be a one-liner, not an unhandled crash.
+        var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "ftp://example.invalid/x");
+
+        Assert.Equal(1, code);
+        Assert.Contains("Upload failed: ftp://example.invalid/x", stderr);
+        Assert.DoesNotContain("Unhandled exception", stderr);
+    }
+
+    // ── Snapshot identity defaults ──
+
+    [Fact]
+    public async Task Snapshot_MissingIdentityFlags_WarnsButExits0()
+    {
+        var (code, stdout, stderr) = await Run("snapshot", HalfCovered());
+
+        Assert.Equal(0, code);
+        Assert.Contains("unknown", stdout);
+        Assert.Contains(
+            "warning: --commit, --branch, --project not provided; snapshot stamped 'unknown'", stderr);
+    }
+
+    [Fact]
+    public async Task Snapshot_PartialIdentityFlags_WarnsOnlyMissing()
+    {
+        var (code, _, stderr) = await Run("snapshot", HalfCovered(), "--commit", "abc123");
+
+        Assert.Equal(0, code);
+        Assert.Contains("--branch, --project not provided", stderr);
+        Assert.DoesNotContain("--commit", stderr);
+    }
+
+    [Fact]
+    public async Task Snapshot_AllIdentityFlags_NoWarning()
+    {
+        var (code, _, stderr) = await Run(
+            "snapshot", HalfCovered(), "--commit", "abc123", "--branch", "main", "--project", "MyApp");
+
+        Assert.Equal(0, code);
+        Assert.DoesNotContain("warning:", stderr);
+    }
+
+    // ── Documented CLI contract ──
+
+    [Fact]
+    public async Task Help_DocumentsExitCodesAndNewFlags()
+    {
+        var (code, stdout, _) = await Run("help");
+
+        Assert.Equal(0, code);
+        Assert.Contains("Exit codes:", stdout);
+        Assert.Contains("2  unknown command", stdout);
+        Assert.Contains("--pattern", stdout);
+        Assert.Contains("--max-chars", stdout);
+    }
 }

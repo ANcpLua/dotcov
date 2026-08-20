@@ -8,7 +8,7 @@
 
 # DotCov
 
-Streaming Cobertura XML coverage toolkit — zero-dependency parser, `dotnet` global tool, and NUKE build extension. Handles 50 MB+ reports without loading the DOM.
+Streaming Cobertura XML coverage toolkit — zero-dependency parser, `dotnet` global tool, and NUKE build extension. Streams without loading the DOM; per-file input is capped at 50,000,000 XML characters by default (~50 MB), raisable via the CLI's `--max-chars` flag or the library's `maxChars` overloads.
 
 ## Packages
 
@@ -27,6 +27,9 @@ dotnet tool install -g DotCov.Tool
 
 # Parse and render (auto-discovers **/coverage.cobertura.xml under a directory)
 dotcov report TestResults/
+
+# Non-Coverlet report names (gcovr, coverage.py, ReportGenerator): override the scan filename
+dotcov report gcovr-output/ --pattern "**/coverage.xml"
 
 # CI gate — exits 1 if below threshold, writes markdown to $GITHUB_STEP_SUMMARY
 dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
@@ -92,7 +95,7 @@ var report = await CoberturaParser.ParseAsync(stream, ct: cancellationToken);
 
 ## Features
 
-- **Streaming `XmlReader`** — no `XDocument.Load`, no full-DOM allocation. Per-class cursor walks the document; safe on 50 MB+ files (configurable `maxChars`).
+- **Streaming `XmlReader`** — no `XDocument.Load`, no full-DOM allocation. Per-class cursor walks the document with bounded memory; the per-file character cap defaults to 50,000,000 chars (~50 MB) and is configurable via the `maxChars` overloads and the CLI's `--max-chars` flag (`0` = no cap).
 - **Hardened XML** — `DtdProcessing.Prohibit`, `XmlResolver = null`, character cap. No XXE / billion-laughs / external-entity surface.
 - **Three output formats** — `table` (terminal), `json` (pipelines, snapshots, `--upload`), `markdown` (PR comments, `$GITHUB_STEP_SUMMARY`).
 - **CI gating** — `check` and `ReportCoverage` both exit non-zero when line/branch coverage is below threshold, with the offending files listed in the failure output.
@@ -112,16 +115,33 @@ Commands:
   report   <path> [--format table|json|md] [--threshold N]      Parse and display coverage
   check    <path> --min-line N [--min-branch N]                 CI gate (exit 1 if below)
   diff     <before> <after> [--format table|json|md]            Compare two reports
-  snapshot <path> --commit SHA --branch B --project P           Pipeline-ready JSON payload
+  snapshot <path> [--commit SHA] [--branch B] [--project P]     Pipeline-ready JSON payload
+                                                                (identity defaults to 'unknown')
   version                                                       Show version
 
 Global flags:
   --exclude-generated       Skip generated files, migrations, state machines
+  --keep <substrings>       Exempt comma-separated paths from --exclude-generated
+  --pattern <glob>          Report filename to scan directories for: 'filename'
+                            (top level only) or '**/filename' (recursive)
+                            (default **/coverage.cobertura.xml)
+  --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
   --upload <url>            POST JSON payload to any endpoint
   --github-summary          Write markdown to $GITHUB_STEP_SUMMARY
 
-<path> can be a file or a directory. Directories are scanned for **/coverage.cobertura.xml.
+<path> can be a file or a directory. Directories are scanned for **/coverage.cobertura.xml;
+override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
 ```
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success; for `check`, the gate passed. |
+| `1` | The gate failed or was inconclusive (`NODATA` — nothing measured, `DISABLED` — all thresholds 0), or the command could not run: parse/IO/size-cap error, invalid flag value, upload failure. |
+| `2` | Unknown command. |
+
+Exit 1 deliberately fails closed across all of those conditions. The first stderr token (`FAIL:` / `NODATA:` / `DISABLED:` / `error:`) is the machine-readable discriminator between a genuine coverage failure, an inconclusive gate, and a could-not-measure error.
 
 ## NUKE Parameters
 
@@ -147,7 +167,9 @@ public static class CoberturaParser
     Task<CoverageReport> ParseAsync(Stream stream, long maxChars = 50_000_000, CancellationToken ct = default);
     CoverageReport ParseFile(string path, long maxChars = 50_000_000);
     CoverageReport ParseDirectory(string directory, string pattern = "**/coverage.cobertura.xml");
+    CoverageReport ParseDirectory(string directory, string pattern, long maxChars);   // cap override
     CoverageReport ParsePath(string path);   // dispatches on file vs. directory
+    CoverageReport ParsePath(string path, long maxChars);                             // cap override
 }
 
 public sealed class CoverageReport

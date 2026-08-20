@@ -86,6 +86,27 @@ public sealed class CliGitHubSummaryTests : IDisposable
     }
 
     [Fact]
+    public async Task Check_FailingRate_SummaryFloorsBodyToMatchVerdict()
+    {
+        // 1999/2500 = 79.96% under min-line 80: the verdict line floors to 79.9%, and the
+        // markdown body (headline AND the offender file's table row) must floor with it —
+        // never F1-round up to a self-contradictory 80.0% three lines below a FAIL.
+        using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
+        var path = WriteFixture("nearly80.cobertura.xml", CliTests.NearlyEighty());
+
+        var (code, _, _) = await Run("check", path, "--min-line", "80", "--github-summary");
+
+        Assert.Equal(1, code);
+        var summary = File.ReadAllText(SummaryPath);
+        Assert.Contains("## Coverage Report ❌", summary);
+        Assert.Contains("FAIL", summary);
+        Assert.Contains("**Line coverage:** 79.9% (1999/2500)", summary);
+        Assert.Contains("| `src/F.cs` | 1999/2500 | 79.9% |", summary);
+        Assert.Contains("**Threshold:** line 80%, branch 0%", summary);
+        Assert.DoesNotContain("80.0%", summary);
+    }
+
+    [Fact]
     public async Task Report_WritesSummary()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));

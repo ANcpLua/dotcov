@@ -61,7 +61,9 @@ public static class DotCovCli
             threshold = parsed;
         }
 
-        var report = ApplyExclusions(ParseInput(path), opts);
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+
+        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
 
         var output = format switch
         {
@@ -92,7 +94,9 @@ public static class DotCovCli
         if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
             return 1;
 
-        var report = ApplyExclusions(ParseInput(path), opts);
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+
+        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
         var gate = report.Evaluate(minLine, minBranch);
 
         // Written on pass AND fail, and derived from the same GateResult as the exit code.
@@ -109,22 +113,28 @@ public static class DotCovCli
 
         stderr.WriteLine(gate.ToString());
 
-        foreach (var f in report.BelowPercent(minLine))
+        // The offender list answers "which files caused the line-gate failure", so it prints
+        // only when the LINE gate actually failed. A branch-only failure listing line-threshold
+        // files (possibly with 100% branch coverage) blamed the wrong files; NoData/Disabled
+        // have no offenders at all.
+        if (gate.LineBelowThreshold)
         {
-            // Floor like GateResult.ToString does for a failing dimension, so a 79.96% file
-            // can't list as "80.0%" under a min-line-80 failure.
-            var pct = Math.Floor(f.LineRate!.Value * 1000 + 1e-9) / 10;
-            stderr.WriteLine(FormattableString.Invariant($"  {f.Path}: {pct:F1}%"));
+            stderr.WriteLine("files below line threshold:");
+            foreach (var f in report.BelowPercent(minLine))
+                stderr.WriteLine(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
         }
 
         // Failing runs upload too — red runs are the ones a coverage dashboard most needs.
         // The gate's exit 1 wins regardless of the upload outcome.
         await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
 
-        // POLICY (shell, not core - open question for the effectful pass): NoData and Disabled both
-        // exit 1 here, deliberately conservative. Whether they deserve a distinct exit code (2?) is a
-        // CLI contract change that ripples into every consumer's CI, so it is not decided in this
-        // change. GateResult.Outcome carries the distinction whenever that call gets made.
+        // POLICY (shell, not core): NoData and Disabled both exit 1 here, deliberately
+        // conservative — a gate that cannot see must not exit 0. The contract (0 = pass,
+        // 1 = fail or inconclusive or could-not-measure, 2 = unknown command) is documented in
+        // help and both READMEs; the stderr first token (FAIL:/NODATA:/DISABLED:/error:) is the
+        // only machine-readable discriminator today. A distinct inconclusive exit code would be
+        // a CLI contract change that ripples into every consumer's CI, so it stays opt-in-later;
+        // GateResult.Outcome carries the distinction whenever that call gets made.
         return 1;
     }
 
@@ -138,7 +148,10 @@ public static class DotCovCli
 
         if (!TryGetFormat(opts, stderr, out var format)) return 1;
 
-        var result = CoverageDiff.Compare(ParseInput(before), ParseInput(after));
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+
+        var result = CoverageDiff.Compare(
+            ParseInput(before, pattern, maxChars), ParseInput(after, pattern, maxChars));
 
         stdout.Write(format switch
         {
@@ -154,12 +167,25 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            stderr.WriteLine("Usage: dotcov snapshot <path> --commit <sha> --branch <branch> --project <name>");
+            stderr.WriteLine("Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
             return 1;
         }
 
-        var report = ApplyExclusions(ParseInput(path), opts);
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+
+        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
         var fileHash = File.Exists(path) ? FileHasher.ComputeHash(path) : null;
+
+        // Identity flags default to 'unknown' so local experimentation stays frictionless, but
+        // the degradation must not be silent — 'unknown' snapshots land in exactly the --upload
+        // dashboard path where commit/branch/project identity matters most. Warned only once a
+        // snapshot is actually being produced, so parse failures keep a clean "error:" stderr.
+        var missing = new List<string>(3);
+        if (!opts.ContainsKey("commit")) missing.Add("--commit");
+        if (!opts.ContainsKey("branch")) missing.Add("--branch");
+        if (!opts.ContainsKey("project")) missing.Add("--project");
+        if (missing.Count > 0)
+            stderr.WriteLine($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
 
         var snapshot = new CoverageSnapshot(
             CommitSha: opts.GetValueOrDefault("commit", "unknown"),
@@ -197,7 +223,8 @@ public static class DotCovCli
               report   <path> [--format table|json|md] [--threshold N]    Parse and display coverage
               check    <path> --min-line N [--min-branch N]               CI gate (exit 1 if below)
               diff     <before> <after> [--format table|json|md]          Compare two reports
-              snapshot <path> --commit SHA --branch B --project P         Create pipeline-ready JSON
+              snapshot <path> [--commit SHA] [--branch B] [--project P]   Create pipeline-ready JSON
+                                                                          (identity defaults to 'unknown')
               version                                                     Show version
 
             Global flags:
@@ -205,15 +232,28 @@ public static class DotCovCli
               --keep <substrings>       Exempt comma-separated paths from --exclude-generated by
                                         case-insensitive substring match, not globs
                                         (e.g. --keep Program.cs to measure a CLI tool's entry point)
+              --pattern <glob>          Report filename to scan directories for: 'filename'
+                                        (top level only) or '**/filename' (recursive)
+                                        (default **/coverage.cobertura.xml)
+              --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
               --upload <url>            POST JSON payload to any endpoint
               --github-summary          Write markdown to $GITHUB_STEP_SUMMARY
 
-            <path> can be a file or directory. Directories are scanned for **/coverage.cobertura.xml.
+            <path> can be a file or directory. Directories are scanned for **/coverage.cobertura.xml;
+            override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
+
+            Exit codes:
+              0  success; for check, the gate passed
+              1  gate failed or was inconclusive (NODATA/DISABLED), or the command could not
+                 run: parse/IO/size-cap error, invalid flag value, upload failure. The stderr
+                 first token (FAIL:/NODATA:/DISABLED:/error:) distinguishes these.
+              2  unknown command
 
             Examples:
               dotcov report TestResults/
               dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
               dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
+              dotcov report gcovr-output/ --pattern "**/coverage.xml"   # non-Coverlet report names
               dotcov report TestResults/ --exclude-generated --keep Program.cs   # measure host bootstrap
               dotcov snapshot TestResults/ --commit abc123 --branch main --project MyApp --upload https://qyl/api/v1/coverage
               dotcov diff before.cobertura.xml after.cobertura.xml --format md
@@ -226,42 +266,53 @@ public static class DotCovCli
     /// <summary>An expected CLI failure whose message is already user-ready (path included).</summary>
     sealed class CliError(string message, Exception? inner = null) : Exception(message, inner);
 
-    // CLI-layer parse shell: same file/directory semantics as CoberturaParser.ParsePath, but
-    // errors carry the offending file's path — including which report in a directory aggregate
-    // was malformed — without touching the library's exception contract.
-    static CoverageReport ParseInput(string path)
+    // Mirror of the library defaults (default parameter values are baked into callers at
+    // compile time anyway) — these are the values the help text and READMEs document.
+    const string DefaultPattern = "**/coverage.cobertura.xml";
+    const long DefaultMaxChars = 50_000_000;
+
+    // Thin dispatch onto the library: CoberturaParser.ParseFile already rethrows XmlExceptions
+    // with the failing file's path prefixed (so directory aggregates name the malformed report),
+    // and FileNotFoundException is an IOException — both land in RunAsync's catch as one-line
+    // errors. Only ParseDirectory's unsupported-pattern ArgumentException needs translating:
+    // it is not in RunAsync's catch filter and would otherwise crash with a stack trace.
+    static CoverageReport ParseInput(string path, string pattern, long maxChars)
     {
         if (File.Exists(path))
-            return ParseReportFile(path);
+            return CoberturaParser.ParseFile(path, maxChars);
 
         if (Directory.Exists(path))
         {
-            var files = Directory.GetFiles(path, "coverage.cobertura.xml",
-                new EnumerationOptions { RecurseSubdirectories = true });
-
-            if (files.Length is 0)
-                return CoverageReport.Empty;
-
-            return files
-                .OrderBy(static f => f, StringComparer.Ordinal)
-                .Select(ParseReportFile)
-                .Aggregate(CoverageReport.Merge);
+            try
+            {
+                return CoberturaParser.ParseDirectory(path, pattern, maxChars);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new CliError(ex.Message, ex);
+            }
         }
 
         throw new CliError($"No file or directory at '{path}'.");
     }
 
-    static CoverageReport ParseReportFile(string path)
+    /// <summary>Resolve --pattern / --max-chars for the commands that parse coverage input.</summary>
+    static bool TryGetParseOptions(
+        Dictionary<string, string> opts, TextWriter stderr, out string pattern, out long maxChars)
     {
-        try
+        pattern = opts.GetValueOrDefault("pattern", DefaultPattern);
+        maxChars = DefaultMaxChars;
+
+        if (opts.TryGetValue("max-chars", out var raw) &&
+            // NumberStyles.None: digits only — a sign or separator makes the value invalid,
+            // so negatives are rejected here rather than crashing XmlReaderSettings.
+            !long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out maxChars))
         {
-            return CoberturaParser.ParseFile(path);
+            stderr.WriteLine($"Invalid --max-chars value: '{raw}' (expected a non-negative integer; 0 = no cap).");
+            return false;
         }
-        catch (XmlException ex)
-        {
-            // XmlException knows line/column but not which file — add the path.
-            throw new CliError($"{path}: {ex.Message}", ex);
-        }
+
+        return true;
     }
 
     static bool TryGetFormat(Dictionary<string, string> opts, TextWriter stderr, out string format)
@@ -296,25 +347,18 @@ public static class DotCovCli
     }
 
     // The check summary's badge must derive from the SAME verdict as the exit code.
-    // MarkdownFormatter's single-threshold overload re-evaluates with min-branch 0, so the
-    // badge and verdict line are injected here from the precomputed GateResult instead.
-    static string GateSummary(CoverageReport report, GateResult gate)
-    {
-        var badge = gate.Outcome switch
-        {
-            GateOutcome.Pass => " ✅",
-            GateOutcome.Fail => " ❌",
-            _ => " ⚠️",
-        };
+    // MarkdownFormatter.Format(report, gate) renders badge, both thresholds, and floored
+    // failing-dimension rates from the precomputed GateResult — no re-evaluation, no badge
+    // duplicate, no header splicing. The CLI only appends the one-line verdict CI logs grep for.
+    static string GateSummary(CoverageReport report, GateResult gate) =>
+        FormattableString.Invariant($"{MarkdownFormatter.Format(report, gate)}{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
-        var body = MarkdownFormatter.Format(report);
-        const string header = "## Coverage Report";
-        if (body.StartsWith(header, StringComparison.Ordinal))
-            body = body[header.Length..].TrimStart('\r', '\n');
-
-        var nl = Environment.NewLine;
-        return $"{header}{badge}{nl}{nl}`{gate}`{nl}{nl}{body}";
-    }
+    // Display flooring for a rate in a FAILING dimension, one decimal: 79.96% renders 79.9%,
+    // never a rounded-up 80.0% that reads as equal to the minimum it missed. GateResult owns
+    // this policy (its ToString and the markdown gate overload apply the same floor through
+    // the internal GateResult.RateEpsilon = 1e-9, which this epsilon mirrors); this is the
+    // single copy on the DotCov.Tool side of the assembly boundary.
+    static double FloorFailingPercent(double rate) => Math.Floor(rate * 1000 + 1e-9) / 10;
 
     static void WriteGitHubSummary(string markdown, TextWriter stderr)
     {
@@ -355,14 +399,22 @@ public static class DotCovCli
             stderr.WriteLine($"Upload failed: {url} ({response.StatusCode})");
             return 1;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or NotSupportedException)
         {
             // InvalidOperationException/UriFormatException: malformed or relative URL.
             // TaskCanceledException: the 30-second timeout above.
+            // NotSupportedException: documented HttpClient behavior for non-http(s) schemes
+            // (e.g. ftp://) — thrown before any connection is attempted.
             stderr.WriteLine($"Upload failed: {url} ({ex.Message})");
             return 1;
         }
     }
+
+    // Flags that never take a value. Recorded as "true" the moment the token is seen, so a
+    // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
+    // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
+    static readonly HashSet<string> ValuelessFlags =
+        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "github-summary" };
 
     public static (string command, Dictionary<string, string> options) ParseArgs(string[] raw)
     {
@@ -378,7 +430,16 @@ public static class DotCovCli
             if (raw[i].StartsWith("--"))
             {
                 if (pendingKey is not null) parsed[pendingKey] = "true";
-                pendingKey = raw[i][2..];
+                var key = raw[i][2..];
+                if (ValuelessFlags.Contains(key))
+                {
+                    parsed[key] = "true";
+                    pendingKey = null;
+                }
+                else
+                {
+                    pendingKey = key;
+                }
             }
             else if (pendingKey is not null)
             {
