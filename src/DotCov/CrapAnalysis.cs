@@ -183,11 +183,19 @@ public static class CrapAnalysis
                 continue;
 
             int? arity = folded ? null : MethodIdentity.SignatureArity(mc.Signature);
-            var key = Invariant($"{typeKey}|{methodKey}|{(arity is { } a ? a : "?")}");
+
+            // Direct entries key by the raw IL SIGNATURE, not arity: same-arity overloads
+            // (Frob(Int32) vs Frob(String)) are distinct source methods, and collapsing them
+            // would dilute an uncovered overload's CRAP with a covered sibling's lines.
+            // Folded entries (state machines, lambdas) lost their origin's signature, so all
+            // synthetic material for one origin name shares a single folded group.
+            var key = folded
+                ? Invariant($"{typeKey}|{methodKey}|<folded>")
+                : Invariant($"{typeKey}|{methodKey}|{mc.Signature}");
 
             if (!byKey.TryGetValue(key, out var logical))
             {
-                logical = new LogicalMethod(typeKey, methodKey, arity, mc.File);
+                logical = new LogicalMethod(typeKey, methodKey, arity, folded, mc.File);
                 byKey[key] = logical;
                 order.Add(logical);
             }
@@ -197,15 +205,15 @@ public static class CrapAnalysis
                 logical.EmbeddedComplexity = logical.EmbeddedComplexity is { } e ? Math.Max(e, c) : c;
         }
 
-        // ── 2. Fold arity-less synthetic groups into their origin method ─────
+        // ── 2. Fold synthetic groups into their origin method ────────────────
         // A lambda's lines belong inside its origin method's body: merging them makes cov(m)
         // span the same code Roslyn's complexity counts. Only an UNAMBIGUOUS origin (exactly one
-        // same-named overload) absorbs; otherwise the folded group stands as its own row rather
-        // than guessing.
+        // same-named overload) absorbs; otherwise — including same-arity overload sets, which
+        // step 1 keeps distinct — the folded group stands as its own row rather than guessing.
         var byName = new Dictionary<string, List<LogicalMethod>>(StringComparer.Ordinal);
         foreach (var logical in order)
         {
-            if (logical.Arity is null) continue;
+            if (logical.Folded) continue;
             var nameKey = $"{logical.TypeKey}|{logical.MethodKey}";
             if (!byName.TryGetValue(nameKey, out var list)) byName[nameKey] = list = [];
             list.Add(logical);
@@ -213,7 +221,7 @@ public static class CrapAnalysis
 
         foreach (var logical in order)
         {
-            if (logical.Arity is not null) continue;
+            if (!logical.Folded) continue;
             if (!byName.TryGetValue($"{logical.TypeKey}|{logical.MethodKey}", out var candidates) ||
                 candidates.Count != 1)
                 continue;
@@ -294,11 +302,12 @@ public static class CrapAnalysis
         return methods.Where(m => !ExclusionRules.Excluded(m.File, rules, keepRules)).ToList();
     }
 
-    private sealed class LogicalMethod(string typeKey, string methodKey, int? arity, string file)
+    private sealed class LogicalMethod(string typeKey, string methodKey, int? arity, bool folded, string file)
     {
         public readonly string TypeKey = typeKey;
         public readonly string MethodKey = methodKey;
         public readonly int? Arity = arity;
+        public readonly bool Folded = folded;
         public readonly string File = file;
         public readonly Dictionary<int, int> Lines = new();
         public int? EmbeddedComplexity;

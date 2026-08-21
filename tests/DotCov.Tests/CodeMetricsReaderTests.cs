@@ -73,6 +73,20 @@ public sealed class CodeMetricsReaderTests
     }
 
     [Fact]
+    public void TopLevelStatements_EntryPointDisplay_NormalizesToMain()
+    {
+        // Roslyn names the synthesized top-level-statements entry point `<Main>$`; it must
+        // normalize to `Main` — the identity MethodIdentity gives the coverage side — instead
+        // of being generic-stripped down to a bare `$`.
+        var members = Parse(Method("void Program.&lt;Main&gt;$(string[] args)", 4), type: "Program");
+
+        var m = Assert.Single(members);
+        Assert.Equal("Main", m.MemberName);
+        Assert.Equal(1, m.Arity);
+        Assert.Equal(CodeMetricsMemberKind.Method, m.Kind);
+    }
+
+    [Fact]
     public void TypeAndNamespaceMetrics_NeverLeakIntoMembers()
     {
         // Assembly (999), namespace (888), and type (777) CyclomaticComplexity nodes surround

@@ -258,6 +258,12 @@ public static class CodeMetricsReader
             return (OperatorMethodName(head[(opIdx + ".operator ".Length)..].Trim(), arity), arity,
                 CodeMetricsMemberKind.Method);
 
+        // Top-level statements: Roslyn names the synthesized entry point `<Main>$` — normalized
+        // to `Main`, the same identity MethodIdentity gives the coverage side, so the two match.
+        // (StripGenericsPerSegment below would otherwise reduce it to `$`.)
+        if (segment is "<Main>$")
+            return ("Main", arity, CodeMetricsMemberKind.Method);
+
         segment = StripGenericsPerSegment(segment);
 
         // Constructor: no return type (the head IS the dotted name — no top-level space) and

@@ -175,6 +175,128 @@ public sealed class CrapAnalysisTests
         Assert.Equal("MyApp.Outer.Inner.M", Assert.Single(report.Methods).Method);
     }
 
+    // ── Nested mangled names: async lambdas, top-level statements, local fns ──
+
+    [Fact]
+    public void AsyncLambdaStateMachine_InsideDisplayClass_FoldsAndMergesIntoOriginMethod()
+    {
+        // Real coverlet shape for `async () => …` inside RunAsync: the lambda's state machine
+        // nests INSIDE the display class — Ns.Type/<>c/<<RunAsync>b__0_0>d + MoveNext.
+        // Regression: first-'>' bracket parsing dropped this entry entirely (it appeared in
+        // neither Methods nor Unscored), turning the gate falsely green.
+        var origin = Method("Probe.Lib", "RunAsync", "()", complexity: 1, lines: [(5, 1)]);
+        var lambda = Method("Probe.Lib/<>c/<<RunAsync>b__0_0>d", "MoveNext", "()", complexity: 6,
+            lines: [(10, 0), (11, 0), (12, 0)]);
+
+        var report = CrapAnalysis.Analyze([origin, lambda]);
+
+        var m = Assert.Single(report.Methods);
+        Assert.Equal("Probe.Lib.RunAsync", m.Method);
+        Assert.Equal(6, m.Complexity);          // Math.Max of origin and folded state machine
+        Assert.Equal(0.25, m.Coverage);         // line 5 hit; 10–12 missed
+    }
+
+    [Fact]
+    public void AsyncLambdaStateMachine_WithoutOriginEntry_StandsAsItsOwnRow_AndFailsGate()
+    {
+        var lambda = Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "MoveNext", "()", complexity: 9,
+            lines: [(20, 0), (21, 0), (22, 0)]);
+
+        var report = CrapAnalysis.Analyze([lambda]);
+
+        var m = Assert.Single(report.Methods);
+        Assert.Equal("MyApp.Svc.Run", m.Method);
+        Assert.Equal(90.0, m.Score);            // 9²·1³ + 9
+        Assert.Equal(GateOutcome.Fail, report.Evaluate(6).Outcome);
+    }
+
+    [Fact]
+    public void AsyncLambdaStateMachine_InsideCapturingDisplayClass_FoldsToOriginMethod()
+    {
+        // A capturing async lambda nests its state machine inside <>c__DisplayClass…, not <>c.
+        var sm = Method("MyApp.C/<>c__DisplayClass3_0/<<M>b__0>d", "MoveNext", "()",
+            complexity: 2, lines: [(7, 1)]);
+
+        Assert.Equal("MyApp.C.M", Assert.Single(CrapAnalysis.Analyze([sm]).Methods).Method);
+    }
+
+    [Fact]
+    public void AsyncLambdaStateMachine_Infrastructure_IsDropped()
+    {
+        var report = CrapAnalysis.Analyze([
+            Method("MyApp.Svc/<>c/<<Run>b__2_0>d", ".ctor", "()", complexity: 1, lines: [(1, 1)]),
+            Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "SetStateMachine",
+                "(System.Runtime.CompilerServices.IAsyncStateMachine)", complexity: 1, lines: [(1, 1)]),
+        ]);
+
+        Assert.Empty(report.Methods);
+        Assert.Empty(report.Unscored);
+    }
+
+    [Fact]
+    public void TopLevelStatements_AsyncEntryPoint_NormalizesToProgramMain()
+    {
+        // Program/<<Main>$>d__0 + MoveNext: the '$' suffix and the nested brackets both parse.
+        var sm = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: 3,
+            lines: [(1, 1), (2, 0)]);
+
+        var m = Assert.Single(CrapAnalysis.Analyze([sm]).Methods);
+        Assert.Equal("Program.Main", m.Method);
+        Assert.Equal(3, m.Complexity);
+    }
+
+    [Fact]
+    public void TopLevelStatements_SyncEntryPoint_NormalizesToProgramMain()
+    {
+        var mc = Method("Program", "<Main>$", "(System.String[])", complexity: 1, lines: [(1, 1)]);
+
+        Assert.Equal("Program.Main", Assert.Single(CrapAnalysis.Analyze([mc]).Methods).Method);
+    }
+
+    [Fact]
+    public void AsyncLocalFunction_StateMachine_FoldsToContainingMethod()
+    {
+        var sm = Method("MyApp.C/<<M>g__Local|0_0>d", "MoveNext", "()", complexity: 2, lines: [(3, 1)]);
+
+        Assert.Equal("MyApp.C.M", Assert.Single(CrapAnalysis.Analyze([sm]).Methods).Method);
+    }
+
+    // ── Same-arity overloads stay distinct ────────────────────────────────────
+
+    [Fact]
+    public void SameArityOverloads_StayDistinct_UncoveredOverloadStillFailsGate()
+    {
+        // Regression: keying logical methods by ARITY merged Frob(Int32) into Frob(String),
+        // diluting the uncovered comp-20 overload's CRAP 420 to a passing 23.2.
+        var risky = Method("MyApp.Svc", "Frob", "(System.Int32)", complexity: 20,
+            lines: [(10, 0), (11, 0), (12, 0), (13, 0), (14, 0)]);
+        var covered = Method("MyApp.Svc", "Frob", "(System.String)", complexity: 1,
+            lines: [.. Enumerable.Range(30, 20).Select(l => (l, 1))]);
+
+        var report = CrapAnalysis.Analyze([risky, covered]);
+
+        Assert.Equal(2, report.Methods.Count);
+        Assert.Contains(report.Methods, m => m is { Complexity: 20, Score: 420.0 });
+        Assert.Equal(GateOutcome.Fail, report.Evaluate(30).Outcome);
+    }
+
+    [Fact]
+    public void FoldedStateMachine_AmbiguousAmongSameArityOverloads_StandsAsItsOwnRow()
+    {
+        // Two same-arity Run overloads: the folded <Run>d__2 group has no unambiguous origin,
+        // so it must not merge into either — it stands as its own row (and can fail the gate).
+        var a = Method("MyApp.Calc", "Run", "(System.Int32)", complexity: 1, lines: [(10, 1)]);
+        var b = Method("MyApp.Calc", "Run", "(System.String)", complexity: 1, lines: [(20, 1)]);
+        var sm = Method("MyApp.Calc/<Run>d__2", "MoveNext", "()", complexity: 5,
+            lines: [(30, 0), (31, 0)]);
+
+        var report = CrapAnalysis.Analyze([a, b, sm]);
+
+        Assert.Equal(3, report.Methods.Count);
+        Assert.Contains(report.Methods, m => m is { Complexity: 5, Coverage: 0.0, Score: 30.0 });
+        Assert.Equal(GateOutcome.Fail, report.Evaluate(6).Outcome);
+    }
+
     // ── Complexity resolution ─────────────────────────────────────────────────
 
     [Fact]

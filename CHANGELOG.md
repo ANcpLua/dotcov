@@ -655,3 +655,33 @@ boundary, normalization table, metrics-shape pins, CLI exit-code matrix, comma-d
 culture invariance), `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` green, 0 warnings with
 trim/AOT analyzers, and an osx-arm64 Native-AOT publish runs `crap` end-to-end on the
 corpus fixtures.
+
+## Task 17 — 2026-08-21 — CRAP fix round: nested mangled names, same-arity overloads
+
+Fixed (validator findings against Task 16, all reproduced on real coverlet output):
+
+- **Async-lambda state machines were silently dropped** (major). Roslyn nests mangled
+  names — an async lambda compiles to `Type/<>c/<<M>b__0_0>d` + `MoveNext` — and
+  `MethodIdentity`'s `IndexOf('>')` parses found the INNER close bracket, so the segment
+  parsed as neither state machine nor mangled member and the entry vanished from every
+  channel, turning the gate falsely green. All bracket parsing is now depth-tracked to the
+  matching outer close, the synthetic-container scan continues past `<>c`/`<>c__DisplayClass…`
+  to find state machines nested inside, and bracketed origins re-normalize recursively.
+  The same root cause fixed top-level-statements (`Program/<<Main>$>d__0` and sync
+  `<Main>$` → `Program.Main`; `CodeMetricsReader` normalizes the metrics-side `<Main>$`
+  display to `Main` so the two match) and async/iterator local functions
+  (`<<M>g__Local|0_0>d` → `M`).
+- **Same-arity overloads silently merged into one logical method** (major). Logical methods
+  were keyed by parameter COUNT, so `Frob(Int32)` and `Frob(String)` collapsed into one
+  row and an uncovered comp-20 overload's CRAP 420 was diluted below threshold by its
+  covered sibling's lines. Direct entries now key by the raw IL signature; folded groups
+  (which have no signature) key by name and, as before, are absorbed only by an
+  UNAMBIGUOUS origin — a same-arity overload set is now correctly ambiguous, so the
+  folded state machine stands as its own row instead of merging.
+
+640/640 green (10 new regression tests: nested-mangled fold table incl. capturing display
+classes and infrastructure drops, top-level statements on both sides of the metrics match,
+same-arity dilution, ambiguous-origin standalone rows), `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`
+green, Debug+Release builds 0 warnings, validator repros re-run: real-coverlet async-lambda
+probe now FAILs at CRAP 42.0 (was falsely PASS), dilute fixture FAILs at 420.0, ambiguous
+`<Run>d__2` stands alone at 30.0, real top-level coverage rows read `Program.Main`.
