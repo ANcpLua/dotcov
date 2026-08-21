@@ -34,6 +34,9 @@ dotcov report gcovr-output/ --pattern "**/coverage.xml"
 # CI gate — exits 1 if below threshold, writes markdown to $GITHUB_STEP_SUMMARY
 dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
 
+# CRAP gate — per-method change risk: comp²·(1−cov)³+comp, exit 1 above --max-crap
+dotcov crap TestResults/ --max-crap 6 --github-summary
+
 # Compare two reports
 dotcov diff before.cobertura.xml after.cobertura.xml --format md
 
@@ -99,6 +102,7 @@ var report = await CoberturaParser.ParseAsync(stream, ct: cancellationToken);
 - **Hardened XML** — `DtdProcessing.Prohibit`, `XmlResolver = null`, character cap. No XXE / billion-laughs / external-entity surface.
 - **Three output formats** — `table` (terminal), `json` (pipelines, snapshots, `--upload`), `markdown` (PR comments, `$GITHUB_STEP_SUMMARY`).
 - **CI gating** — `check` and `ReportCoverage` both exit non-zero when line/branch coverage is below threshold, with the offending files listed in the failure output.
+- **CRAP gate** — `crap` scores every method with `comp²·(1−cov)³+comp` (worst-first table, JSON, or markdown) and exits non-zero when any method is strictly above `--max-crap`. Complexity comes from coverlet's per-method attribute or a `dotnet msbuild /t:Metrics` file; whatever can't be scored or matched is listed, never silently dropped.
 - **Coverage diffs** — added / removed / modified files, per-file delta, aggregate line-rate delta. Drop into PR comments to surface regressions.
 - **Snapshots** — versioned JSON with commit SHA, branch, project, timestamp, SHA-256 file hash, and the full report. `--upload <url>` POSTs to any HTTP endpoint.
 - **Exclusion rules** — `ExclusionRules.WellKnown` filters `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, async state machines (`d__`), and `GlobalUsings`. Or pass your own substring patterns to `report.Exclude(...)`.
@@ -114,6 +118,9 @@ dotcov - Cobertura coverage toolkit
 Commands:
   report   <path> [--format table|json|md] [--threshold N]      Parse and display coverage
   check    <path> --min-line N [--min-branch N]                 CI gate (exit 1 if below)
+  crap     <path> [--metrics <file>] [--max-crap N] [--top N]   CRAP gate: comp^2*(1-cov)^3+comp per
+           [--format table|json|md]                             method (exit 1 if any method is
+                                                                strictly above --max-crap; default 6)
   diff     <before> <after> [--format table|json|md]            Compare two reports
   snapshot <path> [--commit SHA] [--branch B] [--project P]     Pipeline-ready JSON payload
                                                                 (identity defaults to 'unknown')
@@ -137,11 +144,77 @@ override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
 
 | Code | Meaning |
 |---|---|
-| `0` | Success; for `check`, the gate passed. |
+| `0` | Success; for `check` and `crap`, the gate passed. |
 | `1` | The gate failed or was inconclusive (`NODATA` — nothing measured, `DISABLED` — all thresholds 0), or the command could not run: parse/IO/size-cap error, invalid flag value, upload failure. |
 | `2` | Unknown command. |
 
 Exit 1 deliberately fails closed across all of those conditions. The first stderr token (`FAIL:` / `NODATA:` / `DISABLED:` / `error:`) is the machine-readable discriminator between a genuine coverage failure, an inconclusive gate, and a could-not-measure error.
+
+## The CRAP gate (`dotcov crap`)
+
+CRAP — Change Risk Anti-Patterns (Alberto Savoia & Bob Evans, popularized by Uncle Bob):
+
+```
+CRAP(m) = comp(m)² · (1 − cov(m))³ + comp(m)
+```
+
+where `comp` is the method's cyclomatic complexity and `cov` approximates its basis-path
+coverage by the method's **line**-coverage ratio (0..1). Fully covered code scores its
+complexity (`comp 5, cov 1 → 5`); fully uncovered code scores `comp² + comp`
+(`comp 5, cov 0 → 30`; `comp 1, cov 0 → 2`). The score explodes quadratically with
+complexity and cubically with missing coverage — exactly the two levers a refactoring can
+pull: split the method, or test it.
+
+```bash
+dotcov crap TestResults/                                   # coverlet-embedded complexity
+dotcov crap coverage.xml --metrics MyApp.Metrics.xml       # external complexity
+dotcov crap TestResults/ --max-crap 6 --top 10 --format md --github-summary
+```
+
+The gate exits `1` when any method scores **strictly above** `--max-crap` (default 6).
+A method exactly at the threshold passes — the same at-threshold-passes,
+epsilon-tolerant comparison policy as `check`. Zero scorable methods is `NODATA`,
+exit 1: a gate that cannot see must not exit 0.
+
+**The loop.** The threshold exists for agents as much as humans: run `dotcov crap`, take the
+worst-first table's top row, either split the method (comp ↓ quadratic payoff) or cover its
+missed branches (cov ↑ cubic payoff), rerun, repeat until exit 0. The exit code — not
+judgment — decides when the loop stops.
+
+### Where complexity comes from (and what each source measures)
+
+| Source | How | What it measures |
+|---|---|---|
+| Coverage report (preferred, zero extra files) | coverlet writes `complexity` per `<method>` | Cyclomatic complexity **per IL method**: a lambda, local function, or async state machine is a *separate* IL method. `dotcov` folds those back into their source method (lines merged; complexity reconciled with `Math.Max`, not summed — so a method with heavy lambdas can under-report vs. Roslyn). |
+| `--metrics <file>` | `dotnet msbuild /t:Metrics` with the [`Microsoft.CodeAnalysis.Metrics`](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics) package | Roslyn's cyclomatic complexity **per source method**, nested lambdas and local functions included. Used only for methods the coverage report carries no usable complexity for — the embedded value wins because it measured the exact assembly that was covered. |
+
+Not every emitter measures complexity: gcovr/grcov/cover2cover write a placeholder `0`
+(cyclomatic complexity is ≥ 1 by construction, so values below 1 are treated as "not
+measured", never as a measurement), and the original Cobertura omits the attribute — for
+those, pass `--metrics`.
+
+`cov` is line coverage, not basis-path coverage: a line-covered method with unexercised
+branch combinations scores better than it strictly deserves. That is the standard CRAP
+approximation; it is stated here so nobody mistakes the number for path coverage.
+
+### Matching and honesty
+
+Metrics members are matched to coverage methods by (type name + method name), with a
+normalization table for compiler name mangling: `Ns.Type/<M>d__3` + `MoveNext` → `Ns.Type.M`
+(async/iterator state machines), `<>c__DisplayClass…` + `<M>b__…` → `M` (lambdas),
+`<M>g__Local|…` → `M` (local functions), `` Type`1 `` → `Type` (generic arity),
+`get_X`/`set_X` ↔ property accessors (falling back to the property's aggregate complexity
+when the metrics file predates `<Accessors>` output), constructors ↔ `.ctor`, operators ↔
+`op_*` names.
+
+What cannot be scored or matched is **listed, never silently dropped**:
+
+- methods with coverage but no usable complexity appear under *Unscored* (they never fail
+  the gate — and never vanish);
+- metrics methods/accessors that matched no coverage method appear under *Unmatched metrics
+  members* (a normalization gap, compiled-out code, or an uninstrumented member).
+
+Both lists ride along in every format (table trailer, markdown sections, JSON arrays).
 
 ## NUKE Parameters
 
@@ -170,6 +243,15 @@ public static class CoberturaParser
     CoverageReport ParseDirectory(string directory, string pattern, long maxChars);   // cap override
     CoverageReport ParsePath(string path);   // dispatches on file vs. directory
     CoverageReport ParsePath(string path, long maxChars);                             // cap override
+
+    // Opt-in method-level detail (CRAP gate input) — raw per-<method> entries, kept distinct;
+    // the class-level Parse family and its dedupe-into-file-sets semantics are untouched.
+    IReadOnlyList<MethodCoverage> ParseMethods(Stream stream, long maxChars = 50_000_000);
+    IReadOnlyList<MethodCoverage> ParseMethodsFile(string path, long maxChars = 50_000_000);
+    IReadOnlyList<MethodCoverage> ParseMethodsDirectory(string directory, string pattern = "**/coverage.cobertura.xml");
+    IReadOnlyList<MethodCoverage> ParseMethodsDirectory(string directory, string pattern, long maxChars);
+    IReadOnlyList<MethodCoverage> ParseMethodsPath(string path);
+    IReadOnlyList<MethodCoverage> ParseMethodsPath(string path, long maxChars);
 }
 
 public sealed class CoverageReport
@@ -274,6 +356,53 @@ public abstract record LineDelta
 public sealed record CoverageSnapshot(
     string CommitSha, string Branch, string Project,
     DateTimeOffset Timestamp, string? FileHash, CoverageReport Report);
+
+// ── CRAP gate ──
+
+public readonly record struct MethodCoverage(
+    string ClassName, string MethodName, string Signature, string File,
+    int StartLine, int EndLine, int LinesHit, int LinesTotal, int? Complexity)
+{
+    double? LineRate;                                    // null when the method carries no lines
+    IReadOnlyDictionary<int, int> LineHits { get; init; }
+}
+
+public static class CrapAnalysis
+{
+    double Score(int complexity, double coverage);       // comp²·(1−cov)³+comp
+    CrapReport Analyze(IReadOnlyList<MethodCoverage> methods,
+                       IReadOnlyList<CodeMetricsMember>? metricsMembers = null);
+    IReadOnlyList<MethodCoverage> ExcludeFiles(          // same substring semantics as Exclude
+        IReadOnlyList<MethodCoverage> methods, IEnumerable<string> patterns, IEnumerable<string> keep);
+}
+
+public sealed class CrapReport
+{
+    IReadOnlyList<CrapMethod> Methods;                   // scored; formatters order worst-first
+    IReadOnlyList<CrapUnscoredMethod> Unscored;          // no complexity source — listed, never gated
+    IReadOnlyList<string> UnmatchedMetricsMembers;       // metrics members matching no coverage method
+    CrapGateResult Evaluate(double maxCrap);             // at-threshold passes; NoData is not a pass
+}
+
+public readonly record struct CrapMethod(
+    string Method, string File, int StartLine, int Complexity,
+    double Coverage, double Score, CrapComplexitySource ComplexitySource);
+public readonly record struct CrapUnscoredMethod(string Method, string File, string Reason);
+public readonly record struct CrapGateResult(
+    GateOutcome Outcome, double MaxCrap, int ScoredMethods,
+    int AboveThreshold, double? WorstScore, string Reason);
+public enum CrapComplexitySource { CoverageReport, MetricsFile }
+
+// Microsoft.CodeAnalysis.Metrics XML (dotnet msbuild /t:Metrics) — complexity source
+public static class CodeMetricsReader
+{
+    IReadOnlyList<CodeMetricsMember> Parse(Stream stream, long maxChars = 50_000_000);
+    IReadOnlyList<CodeMetricsMember> ParseFile(string path, long maxChars = 50_000_000);
+}
+public readonly record struct CodeMetricsMember(
+    string TypeName, string MemberName, CodeMetricsMemberKind Kind,
+    int? Arity, int CyclomaticComplexity, string DisplayName);
+public enum CodeMetricsMemberKind { Method, Accessor, Property, Field, Event }
 ```
 
 ## License

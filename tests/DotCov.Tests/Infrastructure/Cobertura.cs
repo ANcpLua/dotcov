@@ -22,10 +22,18 @@ public sealed class Cobertura
 
     public static Cobertura NewDoc() => new();
 
-    public Cobertura AddClass(string filename, Action<ClassBuilder> configure)
+    public Cobertura AddClass(string filename, Action<ClassBuilder> configure) =>
+        AddClass(filename, filename.Replace('/', '.'), configure);
+
+    /// <summary>
+    /// <see cref="AddClass(string, Action{ClassBuilder})"/> with an explicit class name — needed
+    /// for compiler-synthesized class names (<c>Ns.Type/&lt;M&gt;d__3</c>, <c>Ns.Type/&lt;&gt;c</c>)
+    /// that a filename-derived name cannot spell.
+    /// </summary>
+    public Cobertura AddClass(string filename, string className, Action<ClassBuilder> configure)
     {
         var cls = new XElement("class",
-            new XAttribute("name", filename.Replace('/', '.')),
+            new XAttribute("name", className),
             new XAttribute("filename", filename));
         var builder = new ClassBuilder(cls);
         configure(builder);
@@ -60,9 +68,43 @@ public sealed class Cobertura
 
     public CoverageReport Parse() => CoberturaParser.Parse(ToStream());
 
+    public IReadOnlyList<MethodCoverage> ParseMethods() => CoberturaParser.ParseMethods(ToStream());
+
     public sealed class ClassBuilder(XElement cls)
     {
         private XElement? _lines;
+        private XElement? _methods;
+
+        /// <summary>
+        /// Add a <c>&lt;methods&gt;&lt;method&gt;</c> entry (coverlet shape). The methods element
+        /// is kept BEFORE the class-level <c>&lt;lines&gt;</c> summary, matching Cobertura
+        /// document order. <paramref name="complexity"/> is the raw attribute text so tests can
+        /// spell unusable values (<c>"0.0"</c>, <c>"NaN"</c>) exactly; null omits the attribute.
+        /// </summary>
+        public ClassBuilder Method(string name, string signature, string? complexity, Action<MethodBuilder> configure)
+        {
+            var lines = new XElement("lines");
+            var method = new XElement("method",
+                new XAttribute("name", name),
+                new XAttribute("signature", signature));
+            if (complexity is not null)
+                method.Add(new XAttribute("complexity", complexity));
+            method.Add(lines);
+            configure(new MethodBuilder(lines));
+            Methods().Add(method);
+            return this;
+        }
+
+        private XElement Methods()
+        {
+            if (_methods is null)
+            {
+                _methods = new XElement("methods");
+                if (_lines is not null) _lines.AddBeforeSelf(_methods);
+                else cls.Add(_methods);
+            }
+            return _methods;
+        }
 
         public ClassBuilder Line(int number, int hits)
         {
@@ -117,6 +159,18 @@ public sealed class Cobertura
             var lines = new XElement("lines");
             cls.Add(lines);
             return lines;
+        }
+    }
+
+    public sealed class MethodBuilder(XElement lines)
+    {
+        public MethodBuilder Line(int number, int hits)
+        {
+            lines.Add(new XElement("line",
+                new XAttribute("number", number),
+                new XAttribute("hits", hits),
+                new XAttribute("branch", "false")));
+            return this;
         }
     }
 }

@@ -28,6 +28,7 @@ public static class DotCovCli
             {
                 "report" => await Report(options, stdout, stderr, color),
                 "check" => await Check(options, stdout, stderr),
+                "crap" => Crap(options, stdout, stderr, color),
                 "diff" => Diff(options, stdout, stderr, color),
                 "snapshot" => await Snapshot(options, stdout, stderr),
                 "version" => Version(stdout),
@@ -141,6 +142,73 @@ public static class DotCovCli
         return 1;
     }
 
+    static int Crap(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
+    {
+        if (!opts.TryGetValue("file", out var path))
+        {
+            stderr.WriteLine("Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
+            return 1;
+        }
+
+        if (!TryGetFormat(opts, stderr, out var format)) return 1;
+
+        // Default 6 — Uncle Bob's agent threshold: low enough that an agent looping against the
+        // gate keeps every method trivially testable, high enough that a fully covered comp-6
+        // method still passes.
+        if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "6"), stderr, out var maxCrap))
+            return 1;
+
+        int? top = null;
+        if (opts.TryGetValue("top", out var rawTop))
+        {
+            // NumberStyles.None: digits only, so negatives/signs are rejected here.
+            if (!int.TryParse(rawTop, NumberStyles.None, CultureInfo.InvariantCulture, out var t) || t is 0)
+            {
+                stderr.WriteLine($"Invalid --top value: '{rawTop}' (expected a positive integer).");
+                return 1;
+            }
+            top = t;
+        }
+
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+
+        var methods = ApplyMethodExclusions(ParseMethodsInput(path, pattern, maxChars), opts);
+
+        IReadOnlyList<CodeMetricsMember>? metrics = null;
+        if (opts.TryGetValue("metrics", out var metricsPath))
+        {
+            if (!File.Exists(metricsPath))
+                throw new CliError($"No metrics file at '{metricsPath}'.");
+            metrics = CodeMetricsReader.ParseFile(metricsPath, maxChars);
+        }
+
+        var report = CrapAnalysis.Analyze(methods, metrics);
+        var gate = report.Evaluate(maxCrap);
+
+        stdout.Write(format switch
+        {
+            "json" => CrapFormatter.FormatJson(report, gate, top),
+            "markdown" or "md" => CrapFormatter.FormatMarkdown(report, gate, top),
+            _ => CrapFormatter.Format(report, gate, top, color)
+        });
+
+        // Written on pass AND fail, from the same gate as the exit code — the same
+        // no-false-green contract as check's summary.
+        if (opts.ContainsKey("github-summary"))
+            WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
+
+        if (gate.IsPass)
+        {
+            stdout.WriteLine(gate.ToString());
+            return 0;
+        }
+
+        // Same fail-closed policy as check: NoData (no scorable methods) exits 1 — a gate that
+        // cannot see must not exit 0. stderr first token (FAIL:/NODATA:) discriminates.
+        stderr.WriteLine(gate.ToString());
+        return 1;
+    }
+
     static int Diff(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
         if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
@@ -225,6 +293,10 @@ public static class DotCovCli
             Commands:
               report   <path> [--format table|json|md] [--threshold N]    Parse and display coverage
               check    <path> --min-line N [--min-branch N]               CI gate (exit 1 if below)
+              crap     <path> [--metrics <file>] [--max-crap N] [--top N] CRAP gate: comp^2*(1-cov)^3+comp
+                       [--format table|json|md]                           per method (exit 1 if any method
+                                                                          is strictly above --max-crap;
+                                                                          at-threshold passes; default 6)
               diff     <before> <after> [--format table|json|md]          Compare two reports
               snapshot <path> [--commit SHA] [--branch B] [--project P]   Create pipeline-ready JSON
                                                                           (identity defaults to 'unknown')
@@ -252,10 +324,16 @@ public static class DotCovCli
                  first token (FAIL:/NODATA:/DISABLED:/error:) distinguishes these.
               2  unknown command
 
+            crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML
+            (used automatically); for other emitters pass --metrics <file> produced by
+            `dotnet msbuild /t:Metrics` (Microsoft.CodeAnalysis.Metrics package).
+
             Examples:
               dotcov report TestResults/
               dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
               dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
+              dotcov crap TestResults/ --max-crap 6 --github-summary
+              dotcov crap coverage.cobertura.xml --metrics MyApp.Metrics.xml --top 10
               dotcov report gcovr-output/ --pattern "**/coverage.xml"   # non-Coverlet report names
               dotcov report TestResults/ --exclude-generated --keep Program.cs   # measure host bootstrap
               dotcov snapshot TestResults/ --commit abc123 --branch main --project MyApp --upload https://qyl/api/v1/coverage
@@ -297,6 +375,40 @@ public static class DotCovCli
         }
 
         throw new CliError($"No file or directory at '{path}'.");
+    }
+
+    /// <summary>Method-level twin of <see cref="ParseInput"/>, same dispatch and error contract.</summary>
+    static IReadOnlyList<MethodCoverage> ParseMethodsInput(string path, string pattern, long maxChars)
+    {
+        if (File.Exists(path))
+            return CoberturaParser.ParseMethodsFile(path, maxChars);
+
+        if (Directory.Exists(path))
+        {
+            try
+            {
+                return CoberturaParser.ParseMethodsDirectory(path, pattern, maxChars);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new CliError(ex.Message, ex);
+            }
+        }
+
+        throw new CliError($"No file or directory at '{path}'.");
+    }
+
+    /// <summary>Method-level twin of <see cref="ApplyExclusions"/> — same flags, same rule set.</summary>
+    static IReadOnlyList<MethodCoverage> ApplyMethodExclusions(
+        IReadOnlyList<MethodCoverage> methods, Dictionary<string, string> opts)
+    {
+        if (!opts.ContainsKey("exclude-generated")) return methods;
+
+        var keep = opts.TryGetValue("keep", out var raw)
+            ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [];
+
+        return CrapAnalysis.ExcludeFiles(methods, ExclusionRules.WellKnown, keep);
     }
 
     /// <summary>Resolve --pattern / --max-chars for the commands that parse coverage input.</summary>

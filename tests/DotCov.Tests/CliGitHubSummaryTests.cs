@@ -109,6 +109,38 @@ public sealed class CliGitHubSummaryTests : IDisposable
     }
 
     [Fact]
+    public async Task Crap_FailingGate_SummaryShowsFailBadgeAndVerdict()
+    {
+        // Same no-false-green contract as check: the badge and the backticked verdict derive
+        // from the same CrapGateResult as the exit code, written on fail too.
+        using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
+        var path = WriteFixture("crap.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/R.cs", "MyApp.R", c => c.Method("Risky", "()", "3", m => m.Line(1, hits: 0))));
+
+        var (code, _, _) = await Run("crap", path, "--github-summary");
+
+        Assert.Equal(1, code);
+        var summary = File.ReadAllText(SummaryPath);
+        Assert.Contains("## CRAP Report ❌", summary);
+        Assert.Contains("`FAIL: worst CRAP 12.0 (max 6)", summary);
+    }
+
+    [Fact]
+    public async Task Crap_PassingGate_StillWritesSummary()
+    {
+        using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
+        var path = WriteFixture("crap-pass.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/S.cs", "MyApp.S", c => c.Method("Safe", "()", "1", m => m.Line(1, hits: 1))));
+
+        var (code, _, _) = await Run("crap", path, "--github-summary");
+
+        Assert.Equal(0, code);
+        var summary = File.ReadAllText(SummaryPath);
+        Assert.Contains("## CRAP Report ✅", summary);
+        Assert.Contains("`PASS:", summary);
+    }
+
+    [Fact]
     public async Task Report_WritesSummary()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));

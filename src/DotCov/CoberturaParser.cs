@@ -72,6 +72,24 @@ public static partial class CoberturaParser
     /// </summary>
     public static CoverageReport ParseDirectory(string directory, string pattern, long maxChars)
     {
+        var files = FindReports(directory, pattern);
+
+        if (files.Length is 0)
+            return CoverageReport.Empty;
+
+        return files
+            .OrderBy(static f => f, StringComparer.Ordinal)
+            .Select(f => ParseFile(f, maxChars))
+            .Aggregate(CoverageReport.Merge);
+    }
+
+    /// <summary>
+    /// The single pattern gate + file enumeration behind <see cref="ParseDirectory(string, string, long)"/>
+    /// and <see cref="ParseMethodsDirectory(string, string, long)"/> — one copy so the two
+    /// directory walks can never disagree about what a pattern means.
+    /// </summary>
+    private static string[] FindReports(string directory, string pattern)
+    {
         var name = Path.GetFileName(pattern);
         // name.Length == 0 catches "" and "**/": both produce an empty filename that
         // Directory.GetFiles matches against nothing, silently returning an empty report —
@@ -81,19 +99,11 @@ public static partial class CoberturaParser
                 $"Unsupported pattern '{pattern}': only 'filename' and '**/filename' are supported.",
                 nameof(pattern));
 
-        var files = Directory.GetFiles(directory, name,
+        return Directory.GetFiles(directory, name,
             // Recurse exactly when the gate above admitted the "**/" prefix — never re-derived
             // from the whole pattern: Contains("**") disagreed with the gate for a '**' inside
             // the NAME portion ('**coverage.xml' is filename-shaped, top level only, yet recursed).
             new EnumerationOptions { RecurseSubdirectories = pattern.StartsWith("**/", StringComparison.Ordinal) });
-
-        if (files.Length is 0)
-            return CoverageReport.Empty;
-
-        return files
-            .OrderBy(static f => f, StringComparer.Ordinal)
-            .Select(f => ParseFile(f, maxChars))
-            .Aggregate(CoverageReport.Merge);
     }
 
     public static CoverageReport ParsePath(string path) => ParsePath(path, DefaultMaxChars);

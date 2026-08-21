@@ -623,3 +623,35 @@ Changed:
   presence decides Pass/Fail vs NoData, so it is now explicit at every call site.
 
 256/256 green; self-measured 99.4% line / 97.1% branch, `GateResult.cs` at 100/100.
+
+## Task 16 — 2026-08-21 — CRAP gate: `dotcov crap`, method-level parse, Metrics reader
+
+Added (all additive — no existing public behavior or merge semantics changed):
+- `CoberturaParser.ParseMethods/-File/-Directory/-Path`: opt-in per-`<method>` parse
+  returning raw `MethodCoverage` records (class/method/signature, file key resolved through
+  the same `<source>`-root arithmetic as `FileCoverage.Path`, line range, per-line hits with
+  the same union-with-max merge, and coverlet's per-method `complexity` when usable —
+  cyclomatic complexity is ≥ 1 by construction, so gcovr/grcov's placeholder `0`/`0.0` and
+  ReportGenerator's `NaN` surface as null, never as a measurement).
+- `CodeMetricsReader`: streaming reader for the Microsoft.CodeAnalysis.Metrics XML
+  (`dotnet msbuild /t:Metrics`); shape verified against the writer in dotnet/roslyn
+  (`MetricsOutputWriter.cs`) and real generated reports. Normalizes MinimallyQualified
+  display strings to coverage spellings (`.ctor`, `get_X`, `op_Equality`, `Item`, generic
+  stripping) with type identity taken from the element nesting, never parsed out of the
+  display string.
+- `CrapAnalysis` + `CrapReport`: CRAP(m) = comp²·(1−cov)³+comp per method, with the
+  compiler-mangling fold table (`<M>d__N`+`MoveNext`, `<>c…`+`<M>b__…`, `<M>g__…`,
+  arity ticks) in one place (`MethodIdentity`). Embedded coverlet complexity wins;
+  `--metrics` fills gaps; overloads disambiguate by arity. Unscored methods and unmatched
+  metrics members are carried on the report — listed in every format, never dropped.
+- `dotcov crap <path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]
+  [--github-summary]`: worst-first table; exit 0 all at-or-under, 1 any strictly above
+  (at-threshold passes via the same `GateResult.RateEpsilon` policy) or NODATA; summary
+  written on pass AND fail from the same gate as the exit code. `--exclude-generated`
+  shares the one exclusion predicate (`ExclusionRules.Excluded`) with report/check.
+
+Verified: 630/630 green (84 new tests: hand-computed scores incl. the comp-2-cov-0 = 6
+boundary, normalization table, metrics-shape pins, CLI exit-code matrix, comma-decimal
+culture invariance), `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` green, 0 warnings with
+trim/AOT analyzers, and an osx-arm64 Native-AOT publish runs `crap` end-to-end on the
+corpus fixtures.

@@ -640,12 +640,7 @@ public sealed class CoverageReport
         var keepRules = keep.ToList();
 
         var filtered = Files
-            .Where(f =>
-            {
-                var path = '/' + f.Path;   // virtual root: leading-separator rules anchor at top level
-                return keepRules.Any(k => path.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
-                       !rules.Any(p => path.Contains(p, StringComparison.OrdinalIgnoreCase));
-            })
+            .Where(f => !ExclusionRules.Excluded(f.Path, rules, keepRules))
             .ToList();
 
         return new CoverageReport(filtered) { Warnings = Warnings, SourceRoots = SourceRoots };
@@ -780,4 +775,18 @@ public static class ExclusionRules
         "/TestFixtures/",
         "\\TestFixtures\\",
     ];
+
+    /// <summary>
+    /// The one exclusion predicate, shared by <see cref="CoverageReport.Exclude(IEnumerable{string}, IEnumerable{string})"/>
+    /// and <see cref="CrapAnalysis.ExcludeFiles"/> so a path can never be excluded by one
+    /// command and kept by another. Case-insensitive substring match against the path with a
+    /// virtual leading <c>/</c> (so leading-separator rules anchor at top level); a keep match
+    /// always wins.
+    /// </summary>
+    internal static bool Excluded(string path, List<string> rules, List<string> keepRules)
+    {
+        var probe = '/' + path;   // virtual root: leading-separator rules anchor at top level
+        return !keepRules.Any(k => probe.Contains(k, StringComparison.OrdinalIgnoreCase)) &&
+               rules.Any(p => probe.Contains(p, StringComparison.OrdinalIgnoreCase));
+    }
 }
