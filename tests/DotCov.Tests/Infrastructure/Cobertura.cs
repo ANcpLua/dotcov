@@ -172,5 +172,15 @@ public sealed class Cobertura
                 new XAttribute("branch", "false")));
             return this;
         }
+
+        /// <summary>Raw attribute text, so tests can spell unparseable values exactly.</summary>
+        public MethodBuilder MalformedLine(string number, string hits)
+        {
+            lines.Add(new XElement("line",
+                new XAttribute("number", number),
+                new XAttribute("hits", hits),
+                new XAttribute("branch", "false")));
+            return this;
+        }
     }
 }

@@ -685,3 +685,59 @@ same-arity dilution, ambiguous-origin standalone rows), `DOTNET_SYSTEM_GLOBALIZA
 green, Debug+Release builds 0 warnings, validator repros re-run: real-coverlet async-lambda
 probe now FAILs at CRAP 42.0 (was falsely PASS), dilute fixture FAILs at 420.0, ambiguous
 `<Run>d__2` stands alone at 30.0, real top-level coverage rows read `Program.Main`.
+
+## Task 18 — 2026-08-21 — Dogfood round: the CRAP gate applied to its own implementation
+
+Ran the gate on this repo (`dotnet test --collect:"XPlat Code Coverage"` → `dotcov crap`)
+and refactored until no method introduced by the CRAP feature ranks in the repo's top-10
+worst and every one of them is fully covered. No gate semantics, thresholds, or output
+contracts changed; one real parser bug fell out of writing the table tests.
+
+Fixed:
+
+- **Comparison/shift operators never reached the `op_*` table** (real bug, found while
+  pinning the operator mapping). `operator <`, `>`, `<=`, `>=`, `<<`, `>>`, `>>>` carry
+  unbalanced angle brackets, which derailed the depth-tracked parameter-list split — the
+  token parsed as `<(Calculator a, Calculator b)` and fell to the raw-spelling arm, so
+  those members could never match their coverage rows. Operator displays are now located
+  by their `.operator ` marker (no operator token contains a parenthesis); the full token
+  table is pinned by tests through real MinimallyQualifiedFormat display strings.
+
+Refactored (design, not gymnastics — before → after CRAP on this repo's own report):
+
+- `CodeMetricsReader.OperatorMethodName` 3369.3 (comp 78, cov 18.5%) → 14.0: the token →
+  `op_*` mapping is mechanical, so it is now a `FrozenDictionary` table with only the
+  arity disambiguation of unary/binary `+`/`-` left as code; accessor suffix → prefix
+  (`get`/`set`/`init`/`add`/`remove`) got the same table treatment.
+- `CodeMetricsReader.ParseCore` 76.0 (comp 76) → 6.0: split into `OnElementStart`/
+  `OnElementEnd` scope handlers with `OpenMember`/`CloseMember`/`RecordComplexity`, and
+  the member-element name test shared via `IsMemberElement` (it appears on both sides).
+- `CrapAnalysis.Analyze` 60.0 (comp 60) → 1.0: split along its already-numbered seams —
+  `FoldRawEntries`, `FoldSyntheticGroups`, `ScoreMethods`, `CollectUnmatched`; line-stat
+  and complexity-merge arithmetic moved onto `LogicalMethod`.
+- `CodeMetricsReader.ParseDisplay` 52.2 (comp 46, cov 85.7%) → 6.0: element-kind dispatch
+  stays; `ParseMethodDisplay`, `TryAccessorName`, `TryOperatorName`, `PropertyName` each
+  own one rule.
+- `CrapFormatter.FormatMarkdown` 60.9 (comp 24, cov 60%) → 1.0: header/table/honesty-
+  trailer sections extracted, mirroring the terminal formatter's existing shape.
+- `CoberturaParser.ConsumeClassMethods` 38.0 (comp 38) → per-method/per-line loops split
+  into `ConsumeMethod` + `ConsumeMethodLine` (18.0 worst).
+- New `BalancedText` (internal): the one depth-tracked "at top level" scanner
+  (`IndexOfTopLevel`/`LastIndexOfTopLevel`/`CountTopLevelItems`, one `DepthDelta` rule) —
+  replaces four near-identical loops in `MethodIdentity.SignatureArity` and
+  `CodeMetricsReader` (`SplitParameterList`/`CountParameters`/`FindTopLevelSpace`/
+  `LastDotSegment`).
+- `DotCovCli.Crap` 28.0 → 14.0: `--top` parsing, `--metrics` loading, and the format
+  dispatch extracted (`TryGetTop`/`LoadMetrics`/`RenderCrap`), matching the other
+  commands' helper shape.
+
+Noted, not split: `ConsumeMethod` (comp 18) and `FindTopLevel` (comp 18) are each one
+coherent loop at 100% coverage — further cuts would read worse than the originals.
+
+679/679 green (39 new test cases: the full operator-token table incl. the checked-operator
+raw-spelling arm, field/event members, init/add/remove accessors, explicit conversions,
+markdown NODATA/truncation/honesty sections, method-level malformed-line policy,
+path-prefixed rethrows for the ParseMethods family, CLI directory dispatch + pattern-gate
+error, unparenthesized-signature arity, unbalanced-mangled-name tolerance). All 86
+feature methods now score ≤ 18.0 at 100% line coverage — the repo's top-10 worst is
+pre-existing code only. `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` green, 0 warnings.

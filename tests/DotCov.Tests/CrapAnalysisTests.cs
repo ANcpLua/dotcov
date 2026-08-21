@@ -327,6 +327,33 @@ public sealed class CrapAnalysisTests
     }
 
     [Fact]
+    public void UnparenthesizedSignature_ArityUnknown_StillMatchesByName()
+    {
+        // Some emitters omit or truncate the signature attribute: arity is then "unknown",
+        // never zero, and the name match still resolves against the metrics table.
+        var mc = Method("MyApp.A", "M", "", complexity: null, lines: [(1, 1)]);
+        var metrics = new[] { Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 2, complexity: 4) };
+
+        var m = Assert.Single(CrapAnalysis.Analyze([mc], metrics).Methods);
+
+        Assert.Equal(4, m.Complexity);
+        Assert.Equal(CrapComplexitySource.MetricsFile, m.ComplexitySource);
+    }
+
+    [Fact]
+    public void UnbalancedMangledName_NeverMatchesAsSynthetic_StaysItsOwnRow()
+    {
+        // A method name that LOOKS mangled but never closes its bracket (`<Broken`) must not be
+        // folded anywhere — the bracket parse requires the matching close, so the entry stands
+        // under its literal name instead of corrupting some other method's coverage.
+        var mc = Method("MyApp.A", "<Broken", "()", complexity: 1, lines: [(1, 1)]);
+
+        var m = Assert.Single(CrapAnalysis.Analyze([mc]).Methods);
+
+        Assert.Equal("MyApp.A.<Broken", m.Method);
+    }
+
+    [Fact]
     public void Overloads_DisambiguatedByArity()
     {
         var oneArg = Method("MyApp.A", "M", "(System.Int32)", complexity: null, lines: [(1, 1)]);

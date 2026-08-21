@@ -102,6 +102,47 @@ public sealed class CrapFormatterTests
     }
 
     [Fact]
+    public void Markdown_NoData_WarnBadgeAndBlockquoteVerdict()
+    {
+        // No scorable methods: ⚠️ badge, a blockquote naming the reason, and no table at all.
+        var report = CrapAnalysis.Analyze([Method("MyApp.A", "NoComp", null, [(1, 1)])]);
+
+        var md = CrapFormatter.FormatMarkdown(report, report.Evaluate(6));
+
+        Assert.Contains("## CRAP Report ⚠️", md);
+        Assert.Contains("> **No verdict:**", md);
+        Assert.Contains("--metrics", md);
+        Assert.DoesNotContain("| Method |", md);
+        Assert.Contains("`NODATA:", md);
+    }
+
+    [Fact]
+    public void Markdown_TopTruncatesDisplay_NotesGateEvaluatesAll()
+    {
+        var md = CrapFormatter.FormatMarkdown(Report, Report.Evaluate(6), top: 1);
+
+        Assert.Contains("| `MyApp.A.Worst` |", md);
+        Assert.DoesNotContain("MyApp.A.Low", md);
+        Assert.Contains("2 more methods below (top 1 shown; the gate evaluates all)", md);
+    }
+
+    [Fact]
+    public void Markdown_ListsUnscoredAndUnmatched_NeverSilentlyDrops()
+    {
+        // Same honesty channels as the table formatter, in PR-summary form.
+        var report = CrapAnalysis.Analyze(
+            [Method("MyApp.A", "NoComp", null, [(1, 1)])],
+            [new CodeMetricsMember("MyApp.B", "Ghost", CodeMetricsMemberKind.Method, 0, 3, "void B.Ghost()")]);
+
+        var md = CrapFormatter.FormatMarkdown(report, report.Evaluate(6));
+
+        Assert.Contains("### Unscored methods (no complexity source)", md);
+        Assert.Contains("- `MyApp.A.NoComp` — no matching member in the metrics file", md);
+        Assert.Contains("### Unmatched metrics members", md);
+        Assert.Contains("- `void B.Ghost()`", md);
+    }
+
+    [Fact]
     public void Json_ShapeAndInvariance()
     {
         var json = InCommaDecimalCulture(() => CrapFormatter.FormatJson(Report, Report.Evaluate(6)));

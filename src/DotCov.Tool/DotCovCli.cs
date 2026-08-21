@@ -158,39 +158,14 @@ public static class DotCovCli
         if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "6"), stderr, out var maxCrap))
             return 1;
 
-        int? top = null;
-        if (opts.TryGetValue("top", out var rawTop))
-        {
-            // NumberStyles.None: digits only, so negatives/signs are rejected here.
-            if (!int.TryParse(rawTop, NumberStyles.None, CultureInfo.InvariantCulture, out var t) || t is 0)
-            {
-                stderr.WriteLine($"Invalid --top value: '{rawTop}' (expected a positive integer).");
-                return 1;
-            }
-            top = t;
-        }
-
+        if (!TryGetTop(opts, stderr, out var top)) return 1;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
         var methods = ApplyMethodExclusions(ParseMethodsInput(path, pattern, maxChars), opts);
-
-        IReadOnlyList<CodeMetricsMember>? metrics = null;
-        if (opts.TryGetValue("metrics", out var metricsPath))
-        {
-            if (!File.Exists(metricsPath))
-                throw new CliError($"No metrics file at '{metricsPath}'.");
-            metrics = CodeMetricsReader.ParseFile(metricsPath, maxChars);
-        }
-
-        var report = CrapAnalysis.Analyze(methods, metrics);
+        var report = CrapAnalysis.Analyze(methods, LoadMetrics(opts, maxChars));
         var gate = report.Evaluate(maxCrap);
 
-        stdout.Write(format switch
-        {
-            "json" => CrapFormatter.FormatJson(report, gate, top),
-            "markdown" or "md" => CrapFormatter.FormatMarkdown(report, gate, top),
-            _ => CrapFormatter.Format(report, gate, top, color)
-        });
+        stdout.Write(RenderCrap(format, report, gate, top, color));
 
         // Written on pass AND fail, from the same gate as the exit code — the same
         // no-false-green contract as check's summary.
@@ -207,6 +182,42 @@ public static class DotCovCli
         // cannot see must not exit 0. stderr first token (FAIL:/NODATA:) discriminates.
         stderr.WriteLine(gate.ToString());
         return 1;
+    }
+
+    /// <summary>The one crap-format dispatch, shared by stdout and any future sink.</summary>
+    static string RenderCrap(string format, CrapReport report, CrapGateResult gate, int? top, bool color) =>
+        format switch
+        {
+            "json" => CrapFormatter.FormatJson(report, gate, top),
+            "markdown" or "md" => CrapFormatter.FormatMarkdown(report, gate, top),
+            _ => CrapFormatter.Format(report, gate, top, color)
+        };
+
+    /// <summary>--top: a positive display-truncation count, or null when absent.</summary>
+    static bool TryGetTop(Dictionary<string, string> opts, TextWriter stderr, out int? top)
+    {
+        top = null;
+        if (!opts.TryGetValue("top", out var raw)) return true;
+
+        // NumberStyles.None: digits only, so negatives/signs are rejected here.
+        if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var t) || t is 0)
+        {
+            stderr.WriteLine($"Invalid --top value: '{raw}' (expected a positive integer).");
+            return false;
+        }
+
+        top = t;
+        return true;
+    }
+
+    /// <summary>--metrics: the parsed complexity table, or null when the flag is absent.</summary>
+    static IReadOnlyList<CodeMetricsMember>? LoadMetrics(Dictionary<string, string> opts, long maxChars)
+    {
+        if (!opts.TryGetValue("metrics", out var metricsPath)) return null;
+
+        if (!File.Exists(metricsPath))
+            throw new CliError($"No metrics file at '{metricsPath}'.");
+        return CodeMetricsReader.ParseFile(metricsPath, maxChars);
     }
 
     static int Diff(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)

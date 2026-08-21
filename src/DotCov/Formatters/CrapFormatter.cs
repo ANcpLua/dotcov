@@ -50,6 +50,19 @@ public static class CrapFormatter
     public static string FormatMarkdown(CrapReport report, CrapGateResult gate, int? top = null)
     {
         var sb = new StringBuilder();
+        AppendMarkdownHeader(sb, gate);
+        AppendMarkdownTable(sb, report, gate, top);
+        AppendMarkdownHonestyTrailers(sb, report);
+
+        // Backticked one-line verdict CI logs grep for — rendered here, from the same gate as
+        // badge and rows, never spliced on by callers. Same shape as the check summary.
+        sb.AppendLine();
+        sb.AppendLine($"`{gate}`");
+        return sb.ToString();
+    }
+
+    private static void AppendMarkdownHeader(StringBuilder sb, CrapGateResult gate)
+    {
         var badge = gate.Outcome switch
         {
             GateOutcome.Pass => " ✅",
@@ -66,23 +79,28 @@ public static class CrapFormatter
             sb.AppendLine($"> **No verdict:** {gate.Reason}.");
             sb.AppendLine();   // close the blockquote — same CommonMark lazy-continuation fix as MarkdownFormatter
         }
+    }
 
+    private static void AppendMarkdownTable(StringBuilder sb, CrapReport report, CrapGateResult gate, int? top)
+    {
         var rows = WorstFirst(report, top);
-        if (rows.Count > 0)
+        if (rows.Count is 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("| Method | Comp | Cov % | CRAP |");
+        sb.AppendLine("|--------|-----:|------:|-----:|");
+        foreach (var m in rows)
+            sb.AppendLine(Invariant(
+                $"| `{m.Method}` | {m.Complexity} | {m.Coverage * 100:F1}% | {m.Score:F1}{(CrapAnalysis.Exceeds(m.Score, gate.MaxCrap) ? " ❌" : "")} |"));
+        if (top is { } t && report.Methods.Count > t)
         {
             sb.AppendLine();
-            sb.AppendLine("| Method | Comp | Cov % | CRAP |");
-            sb.AppendLine("|--------|-----:|------:|-----:|");
-            foreach (var m in rows)
-                sb.AppendLine(Invariant(
-                    $"| `{m.Method}` | {m.Complexity} | {m.Coverage * 100:F1}% | {m.Score:F1}{(CrapAnalysis.Exceeds(m.Score, gate.MaxCrap) ? " ❌" : "")} |"));
-            if (top is { } t && report.Methods.Count > t)
-            {
-                sb.AppendLine();
-                sb.AppendLine(Invariant($"_… {report.Methods.Count - t} more methods below (top {t} shown; the gate evaluates all)._"));
-            }
+            sb.AppendLine(Invariant($"_… {report.Methods.Count - t} more methods below (top {t} shown; the gate evaluates all)._"));
         }
+    }
 
+    private static void AppendMarkdownHonestyTrailers(StringBuilder sb, CrapReport report)
+    {
         if (report.Unscored.Count > 0)
         {
             sb.AppendLine();
@@ -100,12 +118,6 @@ public static class CrapFormatter
             foreach (var name in report.UnmatchedMetricsMembers)
                 sb.AppendLine($"- `{name}`");
         }
-
-        // Backticked one-line verdict CI logs grep for — rendered here, from the same gate as
-        // badge and rows, never spliced on by callers. Same shape as the check summary.
-        sb.AppendLine();
-        sb.AppendLine($"`{gate}`");
-        return sb.ToString();
     }
 
     /// <summary>

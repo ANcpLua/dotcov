@@ -212,11 +212,140 @@ public sealed class CodeMetricsReaderTests
     }
 
     [Fact]
+    public void Field_NormalizesToFieldName()
+    {
+        var members = Parse("""
+            <Field Name="int Calculator.seed">
+              <Metrics>
+                <Metric Name="CyclomaticComplexity" Value="1" />
+              </Metrics>
+            </Field>
+            """);
+
+        var m = Assert.Single(members);
+        Assert.Equal("seed", m.MemberName);
+        Assert.Equal(CodeMetricsMemberKind.Field, m.Kind);
+        Assert.Null(m.Arity);
+    }
+
+    [Fact]
+    public void Event_NormalizesToEventName()
+    {
+        var members = Parse("""
+            <Event Name="EventHandler Calculator.Changed">
+              <Metrics>
+                <Metric Name="CyclomaticComplexity" Value="1" />
+              </Metrics>
+            </Event>
+            """);
+
+        var m = Assert.Single(members);
+        Assert.Equal("Changed", m.MemberName);
+        Assert.Equal(CodeMetricsMemberKind.Event, m.Kind);
+    }
+
+    [Fact]
+    public void InitAccessor_NormalizesToSetPrefix()
+    {
+        // init-only setters compile to set_ accessors — the identity coverage reports carry.
+        var members = Parse("""
+            <Property Name="int Calculator.Value">
+              <Metrics>
+                <Metric Name="CyclomaticComplexity" Value="2" />
+              </Metrics>
+              <Accessors>
+                <Method Name="void Calculator.Value.init">
+                  <Metrics>
+                    <Metric Name="CyclomaticComplexity" Value="1" />
+                  </Metrics>
+                </Method>
+              </Accessors>
+            </Property>
+            """);
+
+        var init = members.Single(m => m.Kind == CodeMetricsMemberKind.Accessor);
+        Assert.Equal("set_Value", init.MemberName);
+    }
+
+    [Fact]
+    public void EventAccessors_NormalizeToAddAndRemovePrefixes()
+    {
+        var members = Parse("""
+            <Event Name="EventHandler Calculator.Changed">
+              <Metrics>
+                <Metric Name="CyclomaticComplexity" Value="2" />
+              </Metrics>
+              <Accessors>
+                <Method Name="void Calculator.Changed.add">
+                  <Metrics>
+                    <Metric Name="CyclomaticComplexity" Value="1" />
+                  </Metrics>
+                </Method>
+                <Method Name="void Calculator.Changed.remove">
+                  <Metrics>
+                    <Metric Name="CyclomaticComplexity" Value="1" />
+                  </Metrics>
+                </Method>
+              </Accessors>
+            </Event>
+            """);
+
+        Assert.Contains(members, m => m is { MemberName: "add_Changed", Kind: CodeMetricsMemberKind.Accessor });
+        Assert.Contains(members, m => m is { MemberName: "remove_Changed", Kind: CodeMetricsMemberKind.Accessor });
+    }
+
+    [Fact]
     public void EqualityOperator_NormalizesToOpEquality()
     {
         var members = Parse(Method("bool Calculator.operator ==(Calculator a, Calculator b)", 1));
 
         Assert.Equal("op_Equality", Assert.Single(members).MemberName);
+    }
+
+    /// <summary>
+    /// The full operator-token table, exercised through real MinimallyQualifiedFormat display
+    /// strings (XML-escaped where the token contains angle brackets). Comparison and shift
+    /// tokens are the regression half: their unbalanced <c>&lt;</c>/<c>&gt;</c> once derailed
+    /// the depth-tracked parameter split, so they never reached the table.
+    /// </summary>
+    [Theory]
+    [InlineData("Calculator Calculator.operator +(Calculator a)", "op_UnaryPlus")]
+    [InlineData("Calculator Calculator.operator +(Calculator a, Calculator b)", "op_Addition")]
+    [InlineData("Calculator Calculator.operator *(Calculator a, Calculator b)", "op_Multiply")]
+    [InlineData("Calculator Calculator.operator /(Calculator a, Calculator b)", "op_Division")]
+    [InlineData("Calculator Calculator.operator %(Calculator a, Calculator b)", "op_Modulus")]
+    [InlineData("bool Calculator.operator !(Calculator a)", "op_LogicalNot")]
+    [InlineData("Calculator Calculator.operator ~(Calculator a)", "op_OnesComplement")]
+    [InlineData("Calculator Calculator.operator ++(Calculator a)", "op_Increment")]
+    [InlineData("Calculator Calculator.operator --(Calculator a)", "op_Decrement")]
+    [InlineData("bool Calculator.operator true(Calculator a)", "op_True")]
+    [InlineData("bool Calculator.operator false(Calculator a)", "op_False")]
+    [InlineData("Calculator Calculator.operator &amp;(Calculator a, Calculator b)", "op_BitwiseAnd")]
+    [InlineData("Calculator Calculator.operator |(Calculator a, Calculator b)", "op_BitwiseOr")]
+    [InlineData("Calculator Calculator.operator ^(Calculator a, Calculator b)", "op_ExclusiveOr")]
+    [InlineData("Calculator Calculator.operator &lt;&lt;(Calculator a, int shift)", "op_LeftShift")]
+    [InlineData("Calculator Calculator.operator &gt;&gt;(Calculator a, int shift)", "op_RightShift")]
+    [InlineData("Calculator Calculator.operator &gt;&gt;&gt;(Calculator a, int shift)", "op_UnsignedRightShift")]
+    [InlineData("bool Calculator.operator !=(Calculator a, Calculator b)", "op_Inequality")]
+    [InlineData("bool Calculator.operator &lt;(Calculator a, Calculator b)", "op_LessThan")]
+    [InlineData("bool Calculator.operator &gt;(Calculator a, Calculator b)", "op_GreaterThan")]
+    [InlineData("bool Calculator.operator &lt;=(Calculator a, Calculator b)", "op_LessThanOrEqual")]
+    [InlineData("bool Calculator.operator &gt;=(Calculator a, Calculator b)", "op_GreaterThanOrEqual")]
+    public void OperatorTokens_NormalizeToClsOpNames(string display, string expected)
+    {
+        var members = Parse(Method(display, 1));
+
+        Assert.Equal(expected, Assert.Single(members).MemberName);
+    }
+
+    [Fact]
+    public void CheckedOperator_UnknownToken_KeepsRawSpelling()
+    {
+        // `operator checked -` is not in the CLS table: the raw spelling survives so the member
+        // lands in the unmatched list with its display name rather than silently colliding.
+        var members = Parse(Method("Calculator Calculator.operator checked -(Calculator a, Calculator b)", 1));
+
+        Assert.Equal("operator checked -", Assert.Single(members).MemberName);
     }
 
     [Fact]
@@ -236,6 +365,14 @@ public sealed class CodeMetricsReaderTests
         var members = Parse(Method("Calculator.implicit operator int(Calculator c)", 1));
 
         Assert.Equal("op_Implicit", Assert.Single(members).MemberName);
+    }
+
+    [Fact]
+    public void ExplicitConversion_NormalizesToOpExplicit()
+    {
+        var members = Parse(Method("Calculator.explicit operator int(Calculator c)", 1));
+
+        Assert.Equal("op_Explicit", Assert.Single(members).MemberName);
     }
 
     [Fact]

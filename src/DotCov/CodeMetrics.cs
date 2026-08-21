@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Xml;
 
@@ -104,69 +105,99 @@ public static class CodeMetricsReader
         public int? Complexity;
     }
 
+    /// <summary>The document position ParseCore threads through its element handlers.</summary>
+    private sealed class ParserState
+    {
+        public readonly List<CodeMetricsMember> Members = [];
+        public string Namespace = "";
+        public readonly List<string> TypeChain = [];        // generic-stripped dotted segments, e.g. "Outer.Inner"
+        public readonly Stack<PendingMember> MemberStack = new();   // Property → its Accessor methods nest
+    }
+
     private static IReadOnlyList<CodeMetricsMember> ParseCore(XmlReader reader)
     {
-        var members = new List<CodeMetricsMember>();
-        var ns = "";
-        var typeChain = new List<string>();     // generic-stripped dotted segments, e.g. "Outer.Inner"
-        var memberStack = new Stack<PendingMember>();  // Property → its Accessor methods nest
+        var state = new ParserState();
 
         while (reader.Read())
         {
-            if (reader.NodeType is XmlNodeType.Element)
-            {
-                var isEmpty = reader.IsEmptyElement;
-                switch (reader.LocalName)
-                {
-                    case "Namespace":
-                        ns = reader.GetAttribute("Name") ?? "";
-                        break;
-
-                    case "NamedType":
-                        // Empty elements raise no EndElement, so only a real subtree pushes.
-                        if (!isEmpty) typeChain.Add(StripGenericsPerSegment(reader.GetAttribute("Name") ?? ""));
-                        break;
-
-                    case "Method" or "Field" or "Property" or "Event" when typeChain.Count > 0:
-                        // An empty member element carries no Metrics — nothing to record.
-                        if (!isEmpty)
-                            memberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName));
-                        break;
-
-                    case "Metric" when memberStack.Count > 0 &&
-                                       reader.GetAttribute("Name") is "CyclomaticComplexity" &&
-                                       int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer,
-                                           CultureInfo.InvariantCulture, out var value):
-                        // Assign to the innermost OPEN member: a Property's own Metrics arrive
-                        // before its <Accessors>, so accessor metrics can never leak upward.
-                        memberStack.Peek().Complexity = value;
-                        break;
-                }
-            }
-            else if (reader.NodeType is XmlNodeType.EndElement)
-            {
-                switch (reader.LocalName)
-                {
-                    case "Namespace":
-                        ns = "";
-                        break;
-
-                    case "NamedType":
-                        if (typeChain.Count > 0) typeChain.RemoveAt(typeChain.Count - 1);
-                        break;
-
-                    case "Method" or "Field" or "Property" or "Event" when memberStack.Count > 0:
-                        var pending = memberStack.Pop();
-                        // A member without a CyclomaticComplexity metric has nothing to
-                        // contribute to a complexity table — skipped, not zeroed.
-                        if (pending.Complexity is { } complexity)
-                            members.Add(Materialize(pending, ns, typeChain, complexity));
-                        break;
-                }
-            }
+            if (reader.NodeType is XmlNodeType.Element) OnElementStart(reader, state);
+            else if (reader.NodeType is XmlNodeType.EndElement) OnElementEnd(reader, state);
         }
 
-        return members;
+        return state.Members;
+    }
+
+    private static void OnElementStart(XmlReader reader, ParserState state)
+    {
+        switch (reader.LocalName)
+        {
+            case "Namespace":
+                state.Namespace = reader.GetAttribute("Name") ?? "";
+                break;
+
+            case "NamedType":
+                // Empty elements raise no EndElement, so only a real subtree pushes.
+                if (!reader.IsEmptyElement)
+                    state.TypeChain.Add(StripGenericsPerSegment(reader.GetAttribute("Name") ?? ""));
+                break;
+
+            case "Metric":
+                RecordComplexity(reader, state);
+                break;
+
+            default:
+                if (IsMemberElement(reader.LocalName)) OpenMember(reader, state);
+                break;
+        }
+    }
+
+    private static void OnElementEnd(XmlReader reader, ParserState state)
+    {
+        switch (reader.LocalName)
+        {
+            case "Namespace":
+                state.Namespace = "";
+                break;
+
+            case "NamedType":
+                if (state.TypeChain.Count > 0) state.TypeChain.RemoveAt(state.TypeChain.Count - 1);
+                break;
+
+            default:
+                if (IsMemberElement(reader.LocalName)) CloseMember(state);
+                break;
+        }
+    }
+
+    private static bool IsMemberElement(string localName) =>
+        localName is "Method" or "Field" or "Property" or "Event";
+
+    private static void OpenMember(XmlReader reader, ParserState state)
+    {
+        // A member outside a NamedType is not ours; an empty member element carries no
+        // Metrics — nothing to record.
+        if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
+            state.MemberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName));
+    }
+
+    private static void CloseMember(ParserState state)
+    {
+        if (state.MemberStack.Count is 0) return;
+        var pending = state.MemberStack.Pop();
+        // A member without a CyclomaticComplexity metric has nothing to contribute to a
+        // complexity table — skipped, not zeroed.
+        if (pending.Complexity is { } complexity)
+            state.Members.Add(Materialize(pending, state.Namespace, state.TypeChain, complexity));
+    }
+
+    private static void RecordComplexity(XmlReader reader, ParserState state)
+    {
+        // Assign to the innermost OPEN member: a Property's own Metrics arrive before its
+        // <Accessors>, so accessor metrics can never leak upward.
+        if (state.MemberStack.Count > 0 &&
+            reader.GetAttribute("Name") is "CyclomaticComplexity" &&
+            int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            state.MemberStack.Peek().Complexity = value;
     }
 
     private static CodeMetricsMember Materialize(
@@ -217,46 +248,31 @@ public static class CodeMetricsReader
     {
         var (head, arity) = SplitParameterList(display);
 
-        if (element is "Field")
-            return (LastDotSegment(head), null, CodeMetricsMemberKind.Field);
-
-        if (element is "Event")
-            return (LastDotSegment(head), null, CodeMetricsMemberKind.Event);
-
-        if (element is "Property")
+        return element switch
         {
-            var name = LastDotSegment(head);
-            // Indexers display as `Type.this[int index]`; coverage spells them Item.
-            if (name.StartsWith("this[", StringComparison.Ordinal)) name = "Item";
-            return (name, arity, CodeMetricsMemberKind.Property);
-        }
+            "Field" => (LastDotSegment(head), null, CodeMetricsMemberKind.Field),
+            "Event" => (LastDotSegment(head), null, CodeMetricsMemberKind.Event),
+            "Property" => (PropertyName(head), arity, CodeMetricsMemberKind.Property),
+            _ => ParseMethodDisplay(head, arity, enclosingSimpleName),
+        };
+    }
 
-        // Method element. Accessor displays are paren-less and end in `.get` / `.set` / …
+    private static string PropertyName(string head)
+    {
+        var name = LastDotSegment(head);
+        // Indexers display as `Type.this[int index]`; coverage spells them Item.
+        return name.StartsWith("this[", StringComparison.Ordinal) ? "Item" : name;
+    }
+
+    private static (string MemberName, int? Arity, CodeMetricsMemberKind Kind) ParseMethodDisplay(
+        string head, int? arity, string enclosingSimpleName)
+    {
         var segment = LastDotSegment(head);
-        if (arity is null && segment is "get" or "set" or "init" or "add" or "remove")
-        {
-            var owner = LastDotSegment(head[..(head.Length - segment.Length - 1)]);
-            if (owner.StartsWith("this[", StringComparison.Ordinal)) owner = "Item";
-            var prefix = segment switch
-            {
-                "get" => "get_",
-                "set" or "init" => "set_",   // init-only setters compile to set_ accessors
-                "add" => "add_",
-                _ => "remove_",
-            };
-            return (prefix + owner, null, CodeMetricsMemberKind.Accessor);
-        }
+        if (TryAccessorName(head, segment, arity, out var accessor))
+            return (accessor, null, CodeMetricsMemberKind.Accessor);
 
-        // Conversion / user-defined operators: `Type.implicit operator int(...)`,
-        // `bool Type.operator ==(Type a, Type b)`.
-        if (FindTopLevel(head, ".implicit operator") >= 0)
-            return ("op_Implicit", arity, CodeMetricsMemberKind.Method);
-        if (FindTopLevel(head, ".explicit operator") >= 0)
-            return ("op_Explicit", arity, CodeMetricsMemberKind.Method);
-        var opIdx = FindTopLevel(head, ".operator ");
-        if (opIdx >= 0)
-            return (OperatorMethodName(head[(opIdx + ".operator ".Length)..].Trim(), arity), arity,
-                CodeMetricsMemberKind.Method);
+        if (TryOperatorName(head, arity, out var op))
+            return (op, arity, CodeMetricsMemberKind.Method);
 
         // Top-level statements: Roslyn names the synthesized entry point `<Main>$` — normalized
         // to `Main`, the same identity MethodIdentity gives the coverage side, so the two match.
@@ -268,63 +284,78 @@ public static class CodeMetricsReader
 
         // Constructor: no return type (the head IS the dotted name — no top-level space) and
         // the member name equals its type's simple name: `Calculator.Calculator(int seed)`.
-        if (arity is not null && FindTopLevelSpace(head) < 0 && segment == enclosingSimpleName)
+        if (arity is not null && BalancedText.LastIndexOfTopLevel(head, ' ') < 0 && segment == enclosingSimpleName)
             return (".ctor", arity, CodeMetricsMemberKind.Method);
 
         return (segment, arity, CodeMetricsMemberKind.Method);
     }
 
     /// <summary>
+    /// Accessor displays are paren-less and end in <c>.get</c> / <c>.set</c> / <c>.init</c> /
+    /// <c>.add</c> / <c>.remove</c> — normalized to the coverage spelling (<c>get_Value</c>).
+    /// </summary>
+    private static bool TryAccessorName(string head, string segment, int? arity, out string name)
+    {
+        name = "";
+        if (arity is not null || !AccessorPrefixes.TryGetValue(segment, out var prefix))
+            return false;
+
+        var owner = LastDotSegment(head[..(head.Length - segment.Length - 1)]);
+        if (owner.StartsWith("this[", StringComparison.Ordinal)) owner = "Item";
+        name = prefix + owner;
+        return true;
+    }
+
+    /// <summary>Accessor display suffix → coverage-name prefix (mechanical mapping, so a table).</summary>
+    private static readonly FrozenDictionary<string, string> AccessorPrefixes =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["get"] = "get_",
+            ["set"] = "set_",
+            ["init"] = "set_",   // init-only setters compile to set_ accessors
+            ["add"] = "add_",
+            ["remove"] = "remove_",
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Conversion / user-defined operators: <c>Type.implicit operator int(...)</c>,
+    /// <c>bool Type.operator ==(Type a, Type b)</c> → CLS <c>op_*</c> names.
+    /// </summary>
+    private static bool TryOperatorName(string head, int? arity, out string name)
+    {
+        name = "";
+        if (FindTopLevel(head, ".implicit operator") >= 0) { name = "op_Implicit"; return true; }
+        if (FindTopLevel(head, ".explicit operator") >= 0) { name = "op_Explicit"; return true; }
+
+        var opIdx = FindTopLevel(head, ".operator ");
+        if (opIdx < 0) return false;
+        name = OperatorMethodName(head[(opIdx + ".operator ".Length)..].Trim(), arity);
+        return true;
+    }
+
+    /// <summary>
     /// Split off the parameter list: head before the first top-level <c>(</c>, arity from
-    /// counting top-level commas inside it. Depth-tracked over <c>&lt;&gt;</c>, <c>[]</c>, and
-    /// <c>()</c> so <c>Dictionary&lt;string, int&gt;</c> and <c>int[,]</c> never inflate arity.
+    /// counting top-level commas inside it. Depth-tracked (see <see cref="BalancedText"/>) so
+    /// <c>Dictionary&lt;string, int&gt;</c> and <c>int[,]</c> never inflate arity.
     /// No parameter list → arity null.
+    /// <para>
+    /// Operator displays are located by their <c>.operator </c> marker instead: tokens like
+    /// <c>operator &lt;</c> or <c>operator &gt;&gt;</c> carry unbalanced angle brackets that
+    /// would derail depth tracking, and no operator token contains a parenthesis, so the
+    /// parameter list is simply the first <c>(</c> after the marker.
+    /// </para>
     /// </summary>
     private static (string Head, int? Arity) SplitParameterList(string display)
     {
-        var depth = 0;
-        for (var i = 0; i < display.Length; i++)
-        {
-            var c = display[i];
-            if (c is '<' or '[') depth++;
-            else if (c is '>' or ']') depth--;
-            else if (c is '(' && depth is 0)
-            {
-                var close = display.LastIndexOf(')');
-                var parameters = close > i ? display[(i + 1)..close] : display[(i + 1)..];
-                return (display[..i], CountParameters(parameters));
-            }
-        }
-        return (display, null);
-    }
+        var opIdx = FindTopLevel(display, ".operator ");
+        var open = opIdx >= 0
+            ? display.IndexOf('(', opIdx)
+            : BalancedText.IndexOfTopLevel(display, '(');
+        if (open < 0) return (display, null);
 
-    private static int CountParameters(string parameters)
-    {
-        if (parameters.AsSpan().Trim().Length is 0) return 0;
-        var depth = 0;
-        var count = 1;
-        foreach (var c in parameters)
-        {
-            if (c is '<' or '[' or '(') depth++;
-            else if (c is '>' or ']' or ')') depth--;
-            else if (c is ',' && depth is 0) count++;
-        }
-        return count;
-    }
-
-    /// <summary>Last top-level space (outside <c>&lt;&gt;</c>/<c>[]</c>), or -1: separates return type from the dotted name.</summary>
-    private static int FindTopLevelSpace(string head)
-    {
-        var depth = 0;
-        var last = -1;
-        for (var i = 0; i < head.Length; i++)
-        {
-            var c = head[i];
-            if (c is '<' or '[') depth++;
-            else if (c is '>' or ']') depth--;
-            else if (c is ' ' && depth is 0) last = i;
-        }
-        return last;
+        var close = display.LastIndexOf(')');
+        var parameters = close > open ? display[(open + 1)..close] : display[(open + 1)..];
+        return (display[..open], BalancedText.CountTopLevelItems(parameters));
     }
 
     private static int FindTopLevel(string head, string marker)
@@ -343,49 +374,49 @@ public static class CodeMetricsReader
 
     private static string LastDotSegment(string head)
     {
-        var start = FindTopLevelSpace(head) + 1;   // skip the return type, if any
-        var depth = 0;
-        var lastDot = -1;
-        for (var i = start; i < head.Length; i++)
-        {
-            var c = head[i];
-            if (c is '<' or '[') depth++;
-            else if (c is '>' or ']') depth--;
-            else if (c is '.' && depth is 0) lastDot = i;
-        }
-        return lastDot < 0 ? head[start..] : head[(lastDot + 1)..];
+        var start = BalancedText.LastIndexOfTopLevel(head, ' ') + 1;   // skip the return type, if any
+        var lastDot = BalancedText.LastIndexOfTopLevel(head.AsSpan(start), '.');
+        return lastDot < 0 ? head[start..] : head[(start + lastDot + 1)..];
     }
 
     /// <summary>
-    /// C# operator token → CLS <c>op_*</c> method name, disambiguating unary/binary <c>+</c> and
-    /// <c>-</c> by arity. Unknown tokens keep a raw spelling so they land in the unmatched list
-    /// with their display name rather than silently colliding.
+    /// C# operator token → CLS <c>op_*</c> method name: a mechanical mapping, so a table, not a
+    /// switch. Unary/binary <c>+</c> and <c>-</c> share a token and are disambiguated by arity
+    /// first. Unknown tokens keep a raw spelling so they land in the unmatched list with their
+    /// display name rather than silently colliding.
     /// </summary>
-    private static string OperatorMethodName(string token, int? arity) => token switch
+    private static string OperatorMethodName(string token, int? arity)
     {
-        "+" => arity is 1 ? "op_UnaryPlus" : "op_Addition",
-        "-" => arity is 1 ? "op_UnaryNegation" : "op_Subtraction",
-        "*" => "op_Multiply",
-        "/" => "op_Division",
-        "%" => "op_Modulus",
-        "!" => "op_LogicalNot",
-        "~" => "op_OnesComplement",
-        "++" => "op_Increment",
-        "--" => "op_Decrement",
-        "true" => "op_True",
-        "false" => "op_False",
-        "&" => "op_BitwiseAnd",
-        "|" => "op_BitwiseOr",
-        "^" => "op_ExclusiveOr",
-        "<<" => "op_LeftShift",
-        ">>" => "op_RightShift",
-        ">>>" => "op_UnsignedRightShift",
-        "==" => "op_Equality",
-        "!=" => "op_Inequality",
-        "<" => "op_LessThan",
-        ">" => "op_GreaterThan",
-        "<=" => "op_LessThanOrEqual",
-        ">=" => "op_GreaterThanOrEqual",
-        _ => $"operator {token}",
-    };
+        if (arity is 1 && token is "+") return "op_UnaryPlus";
+        if (arity is 1 && token is "-") return "op_UnaryNegation";
+        return OperatorNames.TryGetValue(token, out var name) ? name : $"operator {token}";
+    }
+
+    private static readonly FrozenDictionary<string, string> OperatorNames =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["+"] = "op_Addition",
+            ["-"] = "op_Subtraction",
+            ["*"] = "op_Multiply",
+            ["/"] = "op_Division",
+            ["%"] = "op_Modulus",
+            ["!"] = "op_LogicalNot",
+            ["~"] = "op_OnesComplement",
+            ["++"] = "op_Increment",
+            ["--"] = "op_Decrement",
+            ["true"] = "op_True",
+            ["false"] = "op_False",
+            ["&"] = "op_BitwiseAnd",
+            ["|"] = "op_BitwiseOr",
+            ["^"] = "op_ExclusiveOr",
+            ["<<"] = "op_LeftShift",
+            [">>"] = "op_RightShift",
+            [">>>"] = "op_UnsignedRightShift",
+            ["=="] = "op_Equality",
+            ["!="] = "op_Inequality",
+            ["<"] = "op_LessThan",
+            [">"] = "op_GreaterThan",
+            ["<="] = "op_LessThanOrEqual",
+            [">="] = "op_GreaterThanOrEqual",
+        }.ToFrozenDictionary(StringComparer.Ordinal);
 }

@@ -158,44 +158,55 @@ public static partial class CoberturaParser
             // Only <method> subtrees contribute — the class-level trailing <lines> summary is
             // exactly what this API exists NOT to fold in, and skipping non-method elements
             // here is what keeps it out (its <line> children are never visited).
-            if (sub is not { NodeType: XmlNodeType.Element, LocalName: "method" })
-                continue;
-
-            var key = $"{filename}\n{className}\n{sub.GetAttribute("name")}\n{sub.GetAttribute("signature")}";
-            if (!methods.TryGetValue(key, out var acc))
-            {
-                acc = new MethodAccumulator(
-                    className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? "", filename);
-                methods[key] = acc;
-                order.Add(acc);
-            }
-
-            if (ParseUsableComplexity(sub.GetAttribute("complexity")) is { } complexity)
-                acc.Complexity = acc.Complexity is { } existing ? Math.Max(existing, complexity) : complexity;
-
-            using var lines = sub.ReadSubtree();
-            lines.MoveToContent();
-            while (lines.Read())
-            {
-                if (lines is not { NodeType: XmlNodeType.Element, LocalName: "line" })
-                    continue;
-
-                if (!int.TryParse(lines.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lineNum))
-                    continue;
-
-                // Same parse-as-long-and-saturate policy as ConsumeClass; unparseable hits
-                // degrade to 0 (this API has no warnings channel — the class-level parse of
-                // the same document surfaces the MalformedHits warning).
-                var hits = 0;
-                if (lines.GetAttribute("hits") is { } hitsAttr &&
-                    long.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h))
-                    hits = (int)Math.Clamp(h, int.MinValue, int.MaxValue);
-
-                acc.LineHits[lineNum] = acc.LineHits.TryGetValue(lineNum, out var prev)
-                    ? Math.Max(prev, hits)
-                    : hits;
-            }
+            if (sub is { NodeType: XmlNodeType.Element, LocalName: "method" })
+                ConsumeMethod(sub, methods, order, filename, className);
         }
+    }
+
+    private static void ConsumeMethod(
+        XmlReader method,
+        Dictionary<string, MethodAccumulator> methods,
+        List<MethodAccumulator> order,
+        string filename,
+        string className)
+    {
+        var key = $"{filename}\n{className}\n{method.GetAttribute("name")}\n{method.GetAttribute("signature")}";
+        if (!methods.TryGetValue(key, out var acc))
+        {
+            acc = new MethodAccumulator(
+                className, method.GetAttribute("name") ?? "", method.GetAttribute("signature") ?? "", filename);
+            methods[key] = acc;
+            order.Add(acc);
+        }
+
+        if (ParseUsableComplexity(method.GetAttribute("complexity")) is { } complexity)
+            acc.Complexity = acc.Complexity is { } existing ? Math.Max(existing, complexity) : complexity;
+
+        using var lines = method.ReadSubtree();
+        lines.MoveToContent();
+        while (lines.Read())
+        {
+            if (lines is { NodeType: XmlNodeType.Element, LocalName: "line" })
+                ConsumeMethodLine(lines, acc);
+        }
+    }
+
+    private static void ConsumeMethodLine(XmlReader line, MethodAccumulator acc)
+    {
+        if (!int.TryParse(line.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lineNum))
+            return;
+
+        // Same parse-as-long-and-saturate policy as ConsumeClass; unparseable hits degrade to 0
+        // (this API has no warnings channel — the class-level parse of the same document
+        // surfaces the MalformedHits warning).
+        var hits = 0;
+        if (line.GetAttribute("hits") is { } hitsAttr &&
+            long.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h))
+            hits = (int)Math.Clamp(h, int.MinValue, int.MaxValue);
+
+        acc.LineHits[lineNum] = acc.LineHits.TryGetValue(lineNum, out var prev)
+            ? Math.Max(prev, hits)
+            : hits;
     }
 
     /// <summary>

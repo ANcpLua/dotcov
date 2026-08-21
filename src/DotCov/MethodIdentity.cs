@@ -41,36 +41,7 @@ internal static class MethodIdentity
         methodKey = "";
         folded = false;
 
-        var typeSegments = new List<string>();
-        string? stateMachineOrigin = null;
-        var inSyntheticContainer = false;
-
-        foreach (var segment in className.Split('/'))
-        {
-            if (TryStateMachineOrigin(segment, out var origin))
-            {
-                // The state-machine segment terminates the chain: anything nested deeper
-                // (a lambda inside an async method compiles into the state machine) is still
-                // that method's machinery.
-                stateMachineOrigin = origin;
-                break;
-            }
-
-            if (segment.StartsWith("<>", StringComparison.Ordinal))
-            {
-                // <>c, <>c__DisplayClass0_0, <>o__ (dynamic call sites), <>f__AnonymousType…:
-                // synthetic containers that contribute no type segment of their own. NOT
-                // terminal: an async lambda's state machine nests INSIDE its display class
-                // (Type/<>c/<<M>b__0_0>d), so deeper segments must still be scanned.
-                inSyntheticContainer = true;
-                continue;
-            }
-
-            // Anything else nested inside a synthetic container is machinery, not a type name.
-            if (inSyntheticContainer) continue;
-
-            typeSegments.Add(StripGenericArity(segment));
-        }
+        var (typeSegments, stateMachineOrigin, inSyntheticContainer) = ScanClassChain(className);
 
         if (typeSegments.Count is 0) return false;
         typeKey = string.Join(".", typeSegments);
@@ -109,27 +80,53 @@ internal static class MethodIdentity
     }
 
     /// <summary>
+    /// Walk the nested-class chain of an IL class name, collecting real type segments
+    /// (generic arity stripped) until a state-machine segment terminates the chain — anything
+    /// nested deeper (a lambda inside an async method compiles into the state machine) is still
+    /// that method's machinery. Synthetic containers (<c>&lt;&gt;c</c>,
+    /// <c>&lt;&gt;c__DisplayClass0_0</c>, <c>&lt;&gt;o__</c> dynamic call sites,
+    /// <c>&lt;&gt;f__AnonymousType…</c>) contribute no type segment of their own but are NOT
+    /// terminal: an async lambda's state machine nests INSIDE its display class
+    /// (<c>Type/&lt;&gt;c/&lt;&lt;M&gt;b__0_0&gt;d</c>), so deeper segments must still be scanned.
+    /// </summary>
+    private static (List<string> TypeSegments, string? StateMachineOrigin, bool InSyntheticContainer)
+        ScanClassChain(string className)
+    {
+        var typeSegments = new List<string>();
+        var inSyntheticContainer = false;
+
+        foreach (var segment in className.Split('/'))
+        {
+            if (TryStateMachineOrigin(segment, out var origin))
+                return (typeSegments, origin, inSyntheticContainer);
+
+            if (segment.StartsWith("<>", StringComparison.Ordinal))
+            {
+                inSyntheticContainer = true;
+                continue;
+            }
+
+            // Anything else nested inside a synthetic container is machinery, not a type name.
+            if (inSyntheticContainer) continue;
+
+            typeSegments.Add(StripGenericArity(segment));
+        }
+
+        return (typeSegments, null, inSyntheticContainer);
+    }
+
+    /// <summary>
     /// Parameter count from a coverlet IL signature like <c>(System.Int32,System.String)</c>,
-    /// counting commas outside <c>&lt;&gt;</c>/<c>[]</c> nesting. Null when the signature is
-    /// absent or not parenthesized — "unknown", never zero.
+    /// counting commas outside <c>&lt;&gt;</c>/<c>[]</c>/<c>()</c> nesting (see
+    /// <see cref="BalancedText.CountTopLevelItems"/>). Null when the signature is absent or not
+    /// parenthesized — "unknown", never zero.
     /// </summary>
     internal static int? SignatureArity(string signature)
     {
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')')
             return null;
 
-        var inner = signature.AsSpan(1, signature.Length - 2).Trim();
-        if (inner.Length is 0) return 0;
-
-        var depth = 0;
-        var count = 1;
-        foreach (var c in inner)
-        {
-            if (c is '<' or '[' or '(') depth++;
-            else if (c is '>' or ']' or ')') depth--;
-            else if (c is ',' && depth is 0) count++;
-        }
-        return count;
+        return BalancedText.CountTopLevelItems(signature.AsSpan(1, signature.Length - 2));
     }
 
     /// <summary>

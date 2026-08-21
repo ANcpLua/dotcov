@@ -105,6 +105,34 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Fact]
+    public async Task Crap_DirectoryInput_AggregatesLikeReport()
+    {
+        // The same directory dispatch as report/check: point crap at a TestResults-style
+        // directory and the default **/coverage.cobertura.xml pattern finds nested reports.
+        WriteFile("run-1/coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
+            .ToBytes());
+
+        var (code, stdout, _) = await Run("crap", _dir.FullName);
+
+        Assert.Equal(0, code);
+        Assert.Contains("MyApp.A.M", stdout);
+    }
+
+    [Fact]
+    public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits1()
+    {
+        // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.
+        AtDefaultThreshold();
+
+        var (code, _, stderr) = await Run("crap", _dir.FullName, "--pattern", "sub/dir/coverage.xml");
+
+        Assert.Equal(1, code);
+        Assert.StartsWith("error:", stderr);
+        Assert.Contains("Unsupported pattern", stderr);
+    }
+
+    [Fact]
     public async Task Crap_MissingPath_Error_Exits1()
     {
         var (code, _, stderr) = await Run("crap", Path.Combine(_dir.FullName, "nope.xml"));

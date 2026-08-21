@@ -170,7 +170,26 @@ public static class CrapAnalysis
         IReadOnlyList<MethodCoverage> methods,
         IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
-        // ── 1. Fold raw coverage entries into logical source methods ─────────
+        var order = FoldRawEntries(methods);            // 1. raw coverage → logical source methods
+        FoldSyntheticGroups(order);                     // 2. state machines/lambdas → their origin
+
+        var consumed = new HashSet<int>();
+        var (scored, unscored) = ScoreMethods(order, metricsMembers, consumed);   // 3. resolve comp, score
+        var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
+
+        return new CrapReport(scored, unscored, unmatched);
+    }
+
+    /// <summary>
+    /// Step 1: fold raw coverage entries into logical source methods. Direct entries key by the
+    /// raw IL SIGNATURE, not arity: same-arity overloads (<c>Frob(Int32)</c> vs
+    /// <c>Frob(String)</c>) are distinct source methods, and collapsing them would dilute an
+    /// uncovered overload's CRAP with a covered sibling's lines. Folded entries (state machines,
+    /// lambdas) lost their origin's signature, so all synthetic material for one origin name
+    /// shares a single folded group.
+    /// </summary>
+    private static List<LogicalMethod> FoldRawEntries(IReadOnlyList<MethodCoverage> methods)
+    {
         var byKey = new Dictionary<string, LogicalMethod>(StringComparer.Ordinal);
         var order = new List<LogicalMethod>();
 
@@ -184,11 +203,6 @@ public static class CrapAnalysis
 
             int? arity = folded ? null : MethodIdentity.SignatureArity(mc.Signature);
 
-            // Direct entries key by the raw IL SIGNATURE, not arity: same-arity overloads
-            // (Frob(Int32) vs Frob(String)) are distinct source methods, and collapsing them
-            // would dilute an uncovered overload's CRAP with a covered sibling's lines.
-            // Folded entries (state machines, lambdas) lost their origin's signature, so all
-            // synthetic material for one origin name shares a single folded group.
             var key = folded
                 ? Invariant($"{typeKey}|{methodKey}|<folded>")
                 : Invariant($"{typeKey}|{methodKey}|{mc.Signature}");
@@ -201,15 +215,21 @@ public static class CrapAnalysis
             }
 
             logical.MergeLines(mc.LineHits);
-            if (mc.Complexity is { } c)
-                logical.EmbeddedComplexity = logical.EmbeddedComplexity is { } e ? Math.Max(e, c) : c;
+            logical.MergeEmbeddedComplexity(mc.Complexity);
         }
 
-        // ── 2. Fold synthetic groups into their origin method ────────────────
-        // A lambda's lines belong inside its origin method's body: merging them makes cov(m)
-        // span the same code Roslyn's complexity counts. Only an UNAMBIGUOUS origin (exactly one
-        // same-named overload) absorbs; otherwise — including same-arity overload sets, which
-        // step 1 keeps distinct — the folded group stands as its own row rather than guessing.
+        return order;
+    }
+
+    /// <summary>
+    /// Step 2: fold synthetic groups into their origin method. A lambda's lines belong inside
+    /// its origin method's body: merging them makes cov(m) span the same code Roslyn's
+    /// complexity counts. Only an UNAMBIGUOUS origin (exactly one same-named overload) absorbs;
+    /// otherwise — including same-arity overload sets, which step 1 keeps distinct — the folded
+    /// group stands as its own row rather than guessing.
+    /// </summary>
+    private static void FoldSyntheticGroups(List<LogicalMethod> order)
+    {
         var byName = new Dictionary<string, List<LogicalMethod>>(StringComparer.Ordinal);
         foreach (var logical in order)
         {
@@ -228,14 +248,18 @@ public static class CrapAnalysis
 
             var origin = candidates[0];
             origin.MergeLines(logical.Lines);
-            if (logical.EmbeddedComplexity is { } c)
-                origin.EmbeddedComplexity = origin.EmbeddedComplexity is { } e ? Math.Max(e, c) : c;
+            origin.MergeEmbeddedComplexity(logical.EmbeddedComplexity);
             logical.FoldedAway = true;
         }
+    }
 
-        // ── 3. Resolve complexity and score ──────────────────────────────────
+    /// <summary>Step 3: resolve each logical method's complexity and compute its CRAP score.</summary>
+    private static (List<CrapMethod> Scored, List<CrapUnscoredMethod> Unscored) ScoreMethods(
+        List<LogicalMethod> order,
+        IReadOnlyList<CodeMetricsMember>? metricsMembers,
+        HashSet<int> consumed)
+    {
         var (metricsIndex, accessorFallback) = IndexMetrics(metricsMembers);
-        var consumed = new HashSet<int>();
         var scored = new List<CrapMethod>();
         var unscored = new List<CrapUnscoredMethod>();
 
@@ -261,29 +285,27 @@ public static class CrapAnalysis
                 continue;
             }
 
-            var hit = 0;
-            var start = 0;
-            foreach (var (line, hits) in logical.Lines)
-            {
-                if (hits > 0) hit++;
-                if (start is 0 || line < start) start = line;
-            }
-
-            var coverage = (double)hit / logical.Lines.Count;
+            var (coverage, start) = logical.LineStats();
             scored.Add(new CrapMethod(display, logical.File, start, comp, coverage, Score(comp, coverage), source));
         }
 
-        // ── 4. Unmatched metrics members (methods and accessors only) ────────
-        // Property/field/event aggregates are complexity roll-ups with no executable coverage
-        // counterpart of their own, so their absence is not a matching failure.
+        return (scored, unscored);
+    }
+
+    /// <summary>
+    /// Step 4: metrics members (methods and accessors only) that matched no coverage method.
+    /// Property/field/event aggregates are complexity roll-ups with no executable coverage
+    /// counterpart of their own, so their absence is not a matching failure.
+    /// </summary>
+    private static List<string> CollectUnmatched(IReadOnlyList<CodeMetricsMember>? metricsMembers, HashSet<int> consumed)
+    {
         var unmatched = new List<string>();
         if (metricsMembers is not null)
             for (var i = 0; i < metricsMembers.Count; i++)
                 if (metricsMembers[i].Kind is CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor &&
                     !consumed.Contains(i))
                     unmatched.Add(metricsMembers[i].DisplayName);
-
-        return new CrapReport(scored, unscored, unmatched);
+        return unmatched;
     }
 
     /// <summary>
@@ -317,6 +339,30 @@ public static class CrapAnalysis
         {
             foreach (var (line, hits) in lines)
                 Lines[line] = Lines.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
+        }
+
+        /// <summary>
+        /// Merge by <see cref="Math.Max"/>, never by sum: a lambda or state machine folded into
+        /// its origin measures overlapping IL, and the largest per-IL-method value is the honest
+        /// whole-method bound.
+        /// </summary>
+        public void MergeEmbeddedComplexity(int? complexity)
+        {
+            if (complexity is { } c)
+                EmbeddedComplexity = EmbeddedComplexity is { } e ? Math.Max(e, c) : c;
+        }
+
+        /// <summary>Coverage ratio (covered ÷ coverable lines) and first known line (0 when none).</summary>
+        public (double Coverage, int StartLine) LineStats()
+        {
+            var hit = 0;
+            var start = 0;
+            foreach (var (line, hits) in Lines)
+            {
+                if (hits > 0) hit++;
+                if (start is 0 || line < start) start = line;
+            }
+            return ((double)hit / Lines.Count, start);
         }
     }
 

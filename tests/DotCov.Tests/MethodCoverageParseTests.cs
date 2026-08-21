@@ -154,6 +154,25 @@ public sealed class MethodCoverageParseTests
     }
 
     [Fact]
+    public void MalformedMethodLine_NumberSkipped_HitsDegradeToZero()
+    {
+        // Same policy as the class-level parse: an unparseable line number cannot be recorded
+        // at all; an unparseable hits value degrades to 0 rather than dropping the line.
+        var methods = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("M", "()", "1", m => m
+                    .Line(1, hits: 3)
+                    .MalformedLine("abc", "1")
+                    .MalformedLine("7", "many")))
+            .ParseMethods();
+
+        var m = Assert.Single(methods);
+        Assert.Equal(2, m.LinesTotal);   // line "abc" is unrepresentable; line 7 survives
+        Assert.Equal(3, m.LineHits[1]);
+        Assert.Equal(0, m.LineHits[7]);  // "many" degrades to 0, the line itself is kept
+    }
+
+    [Fact]
     public void MethodWithoutLines_HasZeroRangeAndNullRate()
     {
         var methods = Cobertura.NewDoc()
@@ -214,5 +233,72 @@ public sealed class MethodCoverageParseTests
     {
         Assert.Throws<FileNotFoundException>(() =>
             CoberturaParser.ParseMethodsPath("/nonexistent/nowhere.xml"));
+    }
+
+    [Fact]
+    public void ParseMethodsPath_DispatchesToFileAndDirectory()
+    {
+        // Same file-or-directory dispatch as ParsePath: both arms must land on the same parse.
+        var dir = Directory.CreateTempSubdirectory("dotcov-methods-path-");
+        try
+        {
+            var file = Path.Combine(dir.FullName, "coverage.cobertura.xml");
+            File.WriteAllBytes(file, Cobertura.NewDoc()
+                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1)))
+                .ToBytes());
+
+            var viaFile = CoberturaParser.ParseMethodsPath(file);
+            var viaDirectory = CoberturaParser.ParseMethodsPath(dir.FullName);
+
+            Assert.Equal("M", Assert.Single(viaFile).MethodName);
+            Assert.Equal("M", Assert.Single(viaDirectory).MethodName);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParseMethodsFile_MalformedXml_RethrowsWithPathPrefixed()
+    {
+        // Same path-prefixing rethrow contract as ParseFile, so directory aggregates name the
+        // malformed report.
+        var dir = Directory.CreateTempSubdirectory("dotcov-methods-bad-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "bad.cobertura.xml");
+            File.WriteAllText(path, "<coverage><unclosed>");
+
+            var ex = Assert.Throws<System.Xml.XmlException>(() => CoberturaParser.ParseMethodsFile(path));
+            Assert.StartsWith(path, ex.Message);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParseMethodsDirectory_MalformedFileInDirectory_RethrowsWithPathPrefixed()
+    {
+        var dir = Directory.CreateTempSubdirectory("dotcov-methods-dir-bad-");
+        try
+        {
+            var good = Path.Combine(dir.FullName, "a.cobertura.xml");
+            File.WriteAllBytes(good, Cobertura.NewDoc()
+                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)))
+                .ToBytes());
+            var bad = Path.Combine(dir.FullName, "b.cobertura.xml");
+            File.WriteAllText(bad, "<coverage><packages>");
+
+            var ex = Assert.Throws<System.Xml.XmlException>(() =>
+                CoberturaParser.ParseMethodsDirectory(dir.FullName, "*.cobertura.xml"));
+            Assert.StartsWith(bad, ex.Message);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
     }
 }
