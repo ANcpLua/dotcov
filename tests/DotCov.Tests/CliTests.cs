@@ -28,7 +28,10 @@ public sealed class CliTests : IDisposable
         var path = Path.Combine(_dir.FullName, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, bytes);
-        return path;
+        // GetFullPath flips the relative argument's forward slashes to the native separator,
+        // so Windows assertions compare against the same spelling the CLI's directory
+        // enumeration produces (Path.Combine alone keeps the mixed separators).
+        return Path.GetFullPath(path);
     }
 
     private string WriteFile(string relative, string text) =>
