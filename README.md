@@ -6,6 +6,7 @@
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FANcpLua%2Fdotcov%2Fbadges%2Fcoverage-badge.json)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
 [![License](https://img.shields.io/github/license/ANcpLua/dotcov?label=License&color=white)](LICENSE)
 
+# !!opus went berserk i have to fix this when i get time!! prob start of sept
 # DotCov
 
 Streaming Cobertura XML coverage toolkit — zero-dependency parser, `dotnet` global tool, and NUKE build extension. Streams without loading the DOM; per-file input is capped at 50,000,000 XML characters by default (~50 MB), raisable via the CLI's `--max-chars` flag or the library's `maxChars` overloads.
