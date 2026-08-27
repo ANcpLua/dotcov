@@ -10,7 +10,7 @@
     <IsAotCompatible>true</IsAotCompatible>
     <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.
 
-Parses Cobertura XML without loading the DOM (streaming XmlReader, 50MB+ safe).
+Parses Cobertura XML without loading the DOM (streaming XmlReader, bounded memory, configurable 50,000,000-character-per-file cap).
 Produces structured coverage reports with per-file detail (uncovered lines, partial branches).
 
 For the CLI tool: dotnet tool install -g DotCov.Tool

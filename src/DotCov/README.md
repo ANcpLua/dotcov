@@ -1,6 +1,7 @@
 # DotCov
 
-Streaming Cobertura XML parser. Zero dependencies, 50 MB+ safe, Native-AOT clean.
+Streaming Cobertura XML parser. Zero dependencies, Native-AOT clean, bounded memory —
+no `XDocument.Load`, and a configurable 50,000,000-character-per-file cap.
 
 ```bash
 dotnet add package DotCov

@@ -7,7 +7,7 @@ namespace DotCov.Nuke;
 
 /// <summary>
 /// NUKE build component for Cobertura coverage reporting.
-/// Streaming parser — no DOM, no XDocument.Load, handles 50MB+ files.
+/// Streaming parser — no DOM, no XDocument.Load, bounded memory.
 ///
 /// Usage:
 ///   class Build : NukeBuild, ICoverageReport { }
