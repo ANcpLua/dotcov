@@ -1,5 +1,5 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/ANcpLua/dotcov/nuget-publish.yml?branch=main&style=flat-square&label=Build)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FANcpLua%2Fdotcov%2Fbadges%2Fcoverage-badge.json&style=flat-square)](https://github.com/ANcpLua/dotcov/tree/badges)
+[![Coverage](https://raw.githubusercontent.com/ANcpLua/dotcov/badges/coverage-badge.svg)](https://github.com/ANcpLua/dotcov/tree/badges)
 [![dotcov](https://img.shields.io/nuget/v/DotCov.Tool?style=flat-square&label=dotcov&color=0891B2)](https://www.nuget.org/packages/DotCov.Tool/)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![MIT](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)

@@ -73,8 +73,11 @@ jobs:
         run: dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }} --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults
         env:
           CI: true
-      # Dogfood: dotcov measures dotcov. The badge is shields.io's endpoint schema, published to
-      # the `badges` branch and served via raw.githubusercontent — no external coverage service.
+      # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written
+      # from one RATE so they cannot disagree: coverage-badge.svg is what the READMEs display,
+      # coverage-badge.json is the shields.io endpoint schema kept for machine consumers.
+      # Published to the `badges` branch and served from raw.githubusercontent — the coverage
+      # number is measured, formatted and drawn here, with no third-party service in the path.
       - name: Generate coverage badge (dotcov measuring dotcov)
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -84,8 +87,25 @@ jobs:
           if [ -z "$RATE" ]; then echo "no line data — refusing to publish a badge"; exit 1; fi
           COLOR=$(awk -v r="$RATE" 'BEGIN { print (r >= 90) ? "brightgreen" : (r >= 75) ? "yellow" : "red" }')
           MSG=$(awk -v r="$RATE" 'BEGIN { printf "%.1f%%", r }')
+          if   [ "$COLOR" = brightgreen ]; then HEX='#4b0'
+          elif [ "$COLOR" = yellow ];      then HEX='#dfb317'
+          else                                  HEX='#e05d44'; fi
+          # Verdana 11px advance widths, x10: "Coverage" measures 530, and the message is only
+          # ever digits, '.' and '%'. textLength pins the drawn width, so a slightly-off estimate
+          # shifts glyph spacing but can never clip. Geometry matches shields' flat-square style
+          # so this badge sits flush with the others in the README.
+          LTEXT=530
+          MTEXT=$(awk -v s="$MSG" 'BEGIN {
+            for (i = 1; i <= length(s); i++) { c = substr(s, i, 1)
+              w += (c == ".") ? 34 : (c == "%") ? 110 : 70 }
+            printf "%d", w }')
+          LW=$(( (LTEXT + 100) / 10 )); MW=$(( (MTEXT + 100) / 10 ))
+          TOTAL=$((LW + MW)); LX=$(( (LTEXT + 100) / 2 )); MX=$(( LW * 10 + (MTEXT + 100) / 2 ))
+          cat > coverage-badge.svg <<SVG
+          <svg xmlns="http://www.w3.org/2000/svg" width="$TOTAL" height="20" role="img" aria-label="Coverage: $MSG"><title>Coverage: $MSG</title><g shape-rendering="crispEdges"><rect width="$LW" height="20" fill="#555"/><rect x="$LW" width="$MW" height="20" fill="$HEX"/></g><g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110"><text x="$LX" y="140" textLength="$LTEXT" transform="scale(.1)">Coverage</text><text x="$MX" y="140" textLength="$MTEXT" transform="scale(.1)">$MSG</text></g></svg>
+          SVG
           printf '{"schemaVersion":1,"label":"Coverage","message":"%s","color":"%s"}\n' "$MSG" "$COLOR" > coverage-badge.json
-          echo "badge: $MSG ($COLOR)"
+          echo "badge: $MSG ($COLOR) ${TOTAL}x20"
       - name: Publish badge to badges branch
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -93,9 +113,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin badges
           git worktree add -B badges badge-wt origin/badges
-          cp coverage-badge.json badge-wt/
+          cp coverage-badge.svg coverage-badge.json badge-wt/
           cd badge-wt
-          git add coverage-badge.json
+          git add coverage-badge.svg coverage-badge.json
           git diff --cached --quiet || { git commit -m "badge: $(jq -r .message ../coverage-badge.json) coverage"; git push origin badges; }
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
