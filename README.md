@@ -41,14 +41,14 @@ offending files and exits `1`.
 you set every threshold to zero (`DISABLED:`). A gate that can't see must not report success.
 Discriminate on the first stderr token, never on the prose:
 
-| | | exit |
+| Token | Meaning | Exit |
 |---|---|---|
 | `PASS:` | met the bar | 0 |
 | `FAIL:` | below the bar | 1 |
 | `NODATA:` | nothing measured | 1 |
 | `DISABLED:` | no threshold armed | 1 |
 | `error:` | bad path / parse / size cap / bad flag / upload | 1 |
-| | unknown command | 2 |
+| — | unknown command | 2 |
 
 ## Put a coverage table in the PR
 
@@ -205,7 +205,7 @@ every public type is documented there.
 
 ## Flags
 
-| Flag | |
+| Flag | Effect |
 |---|---|
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, state machines, `Program.cs` |
 | `--keep <subs>` | Comma-separated substrings exempt from the above (`--keep Program.cs`) |
