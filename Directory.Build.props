@@ -24,7 +24,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/ANcpLua/dotcov</RepositoryUrl>
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
-    <PackageTags>coverage;cobertura;testing;nuke;ci;dotnet-tool</PackageTags>
+    <!-- Common core; each packable project appends its own specifics via $(PackageTags). -->
+    <PackageTags>coverage;cobertura;code-coverage;testing</PackageTags>
   </PropertyGroup>
 
   <!-- Package README: without PackageReadmeFile nuget.org renders only <Description> and shows a

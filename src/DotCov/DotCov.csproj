@@ -8,13 +8,8 @@
          any IL2026/IL3050 (reflection/dynamic-code) regression becomes a build error — the
          library's Native-AOT cleanliness is enforced by the compiler, not by convention. -->
     <IsAotCompatible>true</IsAotCompatible>
-    <Description>Streaming Cobertura XML parser and coverage report toolkit. Zero dependencies.
-
-Parses Cobertura XML without loading the DOM (streaming XmlReader, bounded memory, configurable 50,000,000-character-per-file cap).
-Produces structured coverage reports with per-file detail (uncovered lines, partial branches).
-
-For the CLI tool: dotnet tool install -g DotCov.Tool
-For NUKE builds: nuke :add-package DotCov.Nuke</Description>
+    <Description>Streaming Cobertura XML parser for .NET. Parse, merge, threshold, and diff coverage reports from your own code. Zero dependencies, Native-AOT clean, no full-DOM load.</Description>
+    <PackageTags>$(PackageTags);xml;parser;aot;library</PackageTags>
   </PropertyGroup>
 
 </Project>

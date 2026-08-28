@@ -2,16 +2,8 @@
 
   <PropertyGroup>
     <RootNamespace>DotCov.Nuke</RootNamespace>
-    <Description>NUKE build extension for Cobertura coverage reporting and CI gating.
-
-Installation:
-  nuke :add-package DotCov.Nuke
-
-Usage in Build.cs:
-  class Build : NukeBuild, ICoverageReport { }
-
-Run:
-  nuke ReportCoverage --coverage-min-line 80 --coverage-exclude-generated true</Description>
+    <Description>NUKE build component that merges Cobertura reports, writes a job summary, and fails the build below your line and branch coverage thresholds. Add ICoverageReport and go.</Description>
+    <PackageTags>$(PackageTags);ci;nuke;build</PackageTags>
     <!-- Nuke 10.1.0 (latest) pulls vulnerable transitives (NuGet.Packaging 6.12.1, System.Security.Cryptography.Xml 9.0.0). Audit only direct refs until upstream Nuke bumps them. -->
     <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
