@@ -9,13 +9,14 @@ internal readonly record struct MethodKey(string File, string ClassName, string 
 public static partial class CoberturaParser
 {
     /// <summary>
-    /// Parse per-method coverage detail from a Cobertura document. Entries are RAW per-method
-    /// records — one per distinct (file, class, method name, signature) — including
-    /// compiler-synthesized classes (state machines, lambda display classes); interpretation
-    /// belongs to <see cref="CrapAnalysis"/>. Reports without <c>&lt;methods&gt;</c> detail
-    /// (the original Cobertura summary shape, MTP's emitter) produce an empty list, never a throw.
+    /// Parse per-method coverage detail from a Cobertura document the caller owns (the stream
+    /// is not disposed). Entries are RAW per-method records — one per distinct (file, class,
+    /// method name, signature) — including compiler-synthesized classes (state machines,
+    /// lambda display classes); interpretation belongs to <see cref="CrapAnalysis"/>. Reports
+    /// without <c>&lt;methods&gt;</c> detail (the original Cobertura summary shape, MTP's
+    /// emitter) produce an empty method list, never a throw.
     /// </summary>
-    public static IReadOnlyList<MethodCoverage> ParseMethods(Stream stream, long maxChars = DefaultMaxChars)
+    public static MethodCoverageReport ParseMethods(Stream stream, long maxChars = DefaultMaxChars)
     {
         using var reader = CreateReader(stream, maxChars, async: false);
         var methods = new MethodCollector();
@@ -23,76 +24,63 @@ public static partial class CoberturaParser
         return methods.Materialize();
     }
 
-    public static IReadOnlyList<MethodCoverage> ParseMethodsFile(string path, long maxChars = DefaultMaxChars)
+    /// <summary>
+    /// Parse one input; the stream is opened and disposed here. Malformed XML surfaces as
+    /// <see cref="ReportParseException"/> naming the input.
+    /// </summary>
+    public static MethodCoverageReport ParseMethods(ReportInput input, long maxChars = DefaultMaxChars)
     {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            return ParseMethods(stream, maxChars);
-        }
-        catch (XmlException ex)
-        {
-            throw new XmlException(
-                $"{path}: {LocationSentencePattern().Replace(ex.Message, "")}",
-                ex, ex.LineNumber, ex.LinePosition);
-        }
+        ArgumentNullException.ThrowIfNull(input);
+        return ParseMethods([input], maxChars);
     }
 
     /// <summary>
-    /// Parse and merge per-method detail from every matching report under
-    /// <paramref name="directory"/>. The same method entry across files merges per line with
-    /// <c>Math.Max</c>, mirroring the file-level union-with-max semantics.
+    /// Parse every input into one method set. The same method entry across inputs merges per
+    /// line with <c>Math.Max</c>, mirroring the file-level union-with-max semantics; warnings
+    /// and source roots of every document are carried into the result.
     /// </summary>
-    public static IReadOnlyList<MethodCoverage> ParseMethodsDirectory(string directory, string pattern = DefaultPattern) =>
-        ParseMethodsDirectory(directory, pattern, DefaultMaxChars);
-
-    public static IReadOnlyList<MethodCoverage> ParseMethodsDirectory(string directory, string pattern, long maxChars)
+    public static MethodCoverageReport ParseMethods(IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars)
     {
-        var files = FindReports(directory, pattern);
-        if (files.Length is 0) return [];
-
+        ArgumentNullException.ThrowIfNull(inputs);
         var methods = new MethodCollector();
-        foreach (var file in files)
+        foreach (var input in inputs)
         {
+            using var stream = input.OpenStream();
             try
             {
-                using var stream = File.OpenRead(file);
                 using var reader = CreateReader(stream, maxChars, async: false);
                 CollectMethods(reader, methods);
             }
             catch (XmlException ex)
             {
-                throw new XmlException(
-                    $"{file}: {LocationSentencePattern().Replace(ex.Message, "")}",
-                    ex, ex.LineNumber, ex.LinePosition);
+                throw new ReportParseException(input.SourceName, ex);
             }
         }
 
         return methods.Materialize();
     }
 
-    public static IReadOnlyList<MethodCoverage> ParseMethodsPath(string path) => ParseMethodsPath(path, DefaultMaxChars);
+    public static MethodCoverageReport ParseMethodsFile(string path, long maxChars = DefaultMaxChars) =>
+        ParseMethods(ReportInput.FromFile(path), maxChars);
 
-    public static IReadOnlyList<MethodCoverage> ParseMethodsPath(string path, long maxChars)
-    {
-        if (File.Exists(path))
-            return ParseMethodsFile(path, maxChars);
-        if (Directory.Exists(path))
-            return ParseMethodsDirectory(path, DefaultPattern, maxChars);
+    public static MethodCoverageReport ParseMethodsDirectory(string directory, string pattern = DefaultPattern) =>
+        ParseMethodsDirectory(directory, pattern, DefaultMaxChars);
 
-        throw new FileNotFoundException($"No file or directory at '{path}'.");
-    }
+    public static MethodCoverageReport ParseMethodsDirectory(string directory, string pattern, long maxChars) =>
+        ParseMethods(ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern)), maxChars);
 
-    /// <summary>
-    /// Walk one document into <paramref name="methods"/>. Source roots are per-document; the
-    /// decoding warnings this walk raises have no channel on the list-returning API and are
-    /// re-observable through the file-level parse of the same document.
-    /// </summary>
+    public static MethodCoverageReport ParseMethodsPath(string path) => ParseMethodsPath(path, DefaultMaxChars);
+
+    public static MethodCoverageReport ParseMethodsPath(string path, long maxChars) =>
+        ParseMethods(ReportResolver.Resolve(path), maxChars);
+
+    /// <summary>Walk one document into <paramref name="methods"/>; roots are per document, warnings accumulate.</summary>
     private static void CollectMethods(XmlReader reader, MethodCollector methods)
     {
         var document = new DocumentContext();
         while (reader.Read())
             Visit(reader, document, files: null, methods);
+        methods.Complete(document);
     }
 
     // ── Method aggregation ────────────────────────────────────────────────────
@@ -106,6 +94,8 @@ public static partial class CoberturaParser
     {
         private readonly Dictionary<MethodKey, Entry> _methods = new();
         private readonly List<Entry> _order = [];
+        private readonly List<CoverageWarning> _warnings = [];
+        private readonly List<string> _sourceRoots = [];
 
         public Entry For(MethodKey key, int? complexity)
         {
@@ -119,12 +109,22 @@ public static partial class CoberturaParser
             return entry;
         }
 
-        public IReadOnlyList<MethodCoverage> Materialize()
+        /// <summary>Fold one finished document's diagnostics and roots into the result (same root rules as the file report).</summary>
+        public void Complete(DocumentContext document)
+        {
+            _warnings.AddRange(document.Warnings);
+            if (document.SourceRoots is [""]) return;
+            foreach (var root in document.SourceRoots)
+                if (!_sourceRoots.Any(r => string.Equals(PathIdentity.NormalizeRoot(r), PathIdentity.NormalizeRoot(root), StringComparison.Ordinal)))
+                    _sourceRoots.Add(root);
+        }
+
+        public MethodCoverageReport Materialize()
         {
             var result = new List<MethodCoverage>(_order.Count);
             foreach (var entry in _order)
                 result.Add(entry.Materialize());
-            return result;
+            return new MethodCoverageReport(result, _warnings, _sourceRoots);
         }
 
         public sealed class Entry(MethodKey key)

@@ -68,7 +68,7 @@ public sealed class Cobertura
 
     public CoverageReport Parse() => CoberturaParser.Parse(ToStream());
 
-    public IReadOnlyList<MethodCoverage> ParseMethods() => CoberturaParser.ParseMethods(ToStream());
+    public IReadOnlyList<MethodCoverage> ParseMethods() => CoberturaParser.ParseMethods(ToStream()).Methods;
 
     public sealed class ClassBuilder(XElement cls)
     {

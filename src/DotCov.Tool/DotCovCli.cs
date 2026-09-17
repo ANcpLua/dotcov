@@ -36,10 +36,17 @@ public static class DotCovCli
                 _ => UnknownCommand(command, stdout, stderr)
             };
         }
+        catch (ReportParseException ex)
+        {
+            // Malformed XML, DTD refusal, char-cap overflow: the parser reports which input
+            // and where; the message is rendered here, once, at the output boundary.
+            stderr.WriteLine($"error: {ex.SourceName}: {ex.Message}");
+            return 1;
+        }
         catch (Exception ex) when (ex is CliError or XmlException or IOException or UnauthorizedAccessException)
         {
-            // Expected failure modes — malformed XML, missing/unreadable paths, DTD refusal,
-            // char-cap overflow — get a one-line actionable message, never a stack trace.
+            // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
+            // one-line actionable message, never a stack trace.
             stderr.WriteLine($"error: {ex.Message}");
             return 1;
         }
@@ -161,7 +168,9 @@ public static class DotCovCli
         if (!TryGetTop(opts, stderr, out var top)) return 1;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var methods = ApplyMethodExclusions(ParseMethodsInput(path, pattern, maxChars), opts);
+        var parsed = ParseMethodsInput(path, pattern, maxChars);
+        WriteWarnings(parsed.Warnings, stderr);
+        var methods = ApplyMethodExclusions(parsed.Methods, opts);
         var report = CrapAnalysis.Analyze(methods, LoadMetrics(opts, maxChars));
         var gate = report.Evaluate(maxCrap);
 
@@ -389,7 +398,7 @@ public static class DotCovCli
     }
 
     /// <summary>Method-level twin of <see cref="ParseInput"/>, same dispatch and error contract.</summary>
-    static IReadOnlyList<MethodCoverage> ParseMethodsInput(string path, string pattern, long maxChars)
+    static MethodCoverageReport ParseMethodsInput(string path, string pattern, long maxChars)
     {
         if (File.Exists(path))
             return CoberturaParser.ParseMethodsFile(path, maxChars);
@@ -478,6 +487,15 @@ public static class DotCovCli
     // the internal GateResult.RateEpsilon = 1e-9, which this epsilon mirrors); this is the
     // single copy on the DotCov.Tool side of the assembly boundary.
     static double FloorFailingPercent(double rate) => Math.Floor(rate * 1000 + 1e-9) / 10;
+
+    /// <summary>Every parser diagnostic, one line each, so a degraded input is never silent.</summary>
+    static void WriteWarnings(IReadOnlyList<CoverageWarning> warnings, TextWriter stderr)
+    {
+        foreach (var w in warnings)
+            stderr.WriteLine(w.Line > 0
+                ? $"warning: {w.File}:{w.Line}: {w.Detail}"
+                : w.File.Length > 0 ? $"warning: {w.File}: {w.Detail}" : $"warning: {w.Detail}");
+    }
 
     static void WriteGitHubSummary(string markdown, TextWriter stderr)
     {

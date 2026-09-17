@@ -63,13 +63,13 @@ Checkpoint erfüllt: Gemeinsame XML-Regeln sind einmal implementiert; die Aggreg
 
 ### Checkpoint 4: Ergebnisse und Fehler
 
-- [ ] `ParseMethods` einen `MethodCoverageReport` mit `Methods`, `Warnings` und `SourceRoots` liefern lassen.
-- [ ] Methodenwarnungen vollständig sammeln und bis zu den konsumierenden CLI-/Buildadapter-Ausgaben weiterreichen, einschließlich des CLI-CRAP-Befehls.
-- [ ] Quellenname, XML-Koordinaten und Originalausnahme strukturiert transportieren.
-- [ ] Fehlertexte an der Ausgabegrenze formatieren.
-- [ ] Regex-basierte Bearbeitung von Fehlermeldungen entfernen.
-- [ ] Über `ReportInput` geöffnete Streams im Parser zuverlässig schließen, auch bei Fehlern.
-- [ ] Direkt übergebene Streams beim Aufrufer belassen.
+- [x] `ParseMethods` einen `MethodCoverageReport` mit `Methods`, `Warnings` und `SourceRoots` liefern lassen.
+- [x] Methodenwarnungen vollständig sammeln und bis zu den konsumierenden CLI-/Buildadapter-Ausgaben weiterreichen, einschließlich des CLI-CRAP-Befehls.
+- [x] Quellenname, XML-Koordinaten und Originalausnahme strukturiert transportieren.
+- [x] Fehlertexte an der Ausgabegrenze formatieren.
+- [x] Regex-basierte Bearbeitung von Fehlermeldungen entfernen.
+- [x] Über `ReportInput` geöffnete Streams im Parser zuverlässig schließen, auch bei Fehlern.
+- [x] Direkt übergebene Streams beim Aufrufer belassen.
 
 Checkpoint erfüllt: Ergebnisse und Fehler enthalten ihre Diagnosen; Stream-Besitz ist eindeutig.
 

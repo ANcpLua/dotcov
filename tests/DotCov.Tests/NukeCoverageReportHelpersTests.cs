@@ -101,7 +101,7 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
     {
         Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
-        Assert.ThrowsExactly<System.Xml.XmlException>(() => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
+        Assert.ThrowsExactly<ReportParseException>(() => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
         await Assert.That(CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 1_000_000).Files).HasSingleItem();
     }
 

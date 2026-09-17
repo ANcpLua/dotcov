@@ -51,56 +51,55 @@ public static partial class CoberturaParser
         return files.Materialize(document);
     }
 
-    public static CoverageReport ParseFile(string path, long maxChars = DefaultMaxChars)
+    /// <summary>
+    /// Parse one input. The stream is opened through <see cref="ReportInput.OpenStream"/> and
+    /// disposed here, whatever happens. Malformed XML surfaces as
+    /// <see cref="ReportParseException"/> naming the input.
+    /// </summary>
+    public static CoverageReport Parse(ReportInput input, long maxChars = DefaultMaxChars)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        using var stream = input.OpenStream();
         try
         {
-            using var stream = File.OpenRead(path);
             return Parse(stream, maxChars);
         }
         catch (XmlException ex)
         {
-            throw new XmlException(
-                $"{path}: {LocationSentencePattern().Replace(ex.Message, "")}",
-                ex, ex.LineNumber, ex.LinePosition);
+            throw new ReportParseException(input.SourceName, ex);
         }
     }
 
     /// <summary>
-    /// Parse and merge every report under <paramref name="directory"/> matching
-    /// <paramref name="pattern"/> (see <see cref="ReportPattern"/> for the accepted shapes).
+    /// Parse and merge every input in the given order. An empty input set yields an empty
+    /// report; whether that is acceptable is the caller's decision (see <see cref="ReportResolver"/>).
     /// </summary>
+    public static CoverageReport Parse(IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        CoverageReport? merged = null;
+        foreach (var input in inputs)
+        {
+            var report = Parse(input, maxChars);
+            merged = merged is null ? report : CoverageReport.Merge(merged, report);
+        }
+
+        return merged ?? CoverageReport.Empty;
+    }
+
+    public static CoverageReport ParseFile(string path, long maxChars = DefaultMaxChars) =>
+        Parse(ReportInput.FromFile(path), maxChars);
+
     public static CoverageReport ParseDirectory(string directory, string pattern = DefaultPattern) =>
         ParseDirectory(directory, pattern, DefaultMaxChars);
 
-    public static CoverageReport ParseDirectory(string directory, string pattern, long maxChars)
-    {
-        var files = FindReports(directory, pattern);
-
-        if (files.Length is 0)
-            return CoverageReport.Empty;
-
-        return files
-            .Select(f => ParseFile(f, maxChars))
-            .Aggregate(CoverageReport.Merge);
-    }
-
-    private static string[] FindReports(string directory, string pattern) =>
-        ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern))
-            .Select(static input => input.SourceName)
-            .ToArray();
+    public static CoverageReport ParseDirectory(string directory, string pattern, long maxChars) =>
+        Parse(ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern)), maxChars);
 
     public static CoverageReport ParsePath(string path) => ParsePath(path, DefaultMaxChars);
 
-    public static CoverageReport ParsePath(string path, long maxChars)
-    {
-        if (File.Exists(path))
-            return ParseFile(path, maxChars);
-        if (Directory.Exists(path))
-            return ParseDirectory(path, DefaultPattern, maxChars);
-
-        throw new FileNotFoundException($"No file or directory at '{path}'.");
-    }
+    public static CoverageReport ParsePath(string path, long maxChars) =>
+        Parse(ReportResolver.Resolve(path), maxChars);
 
     // ── XML reader ────────────────────────────────────────────────────────────
 
@@ -463,7 +462,4 @@ public static partial class CoberturaParser
 
     [GeneratedRegex(@"\((\d+)/(\d+)\)")]
     private static partial Regex ConditionPattern();
-
-    [GeneratedRegex(@"\s*Line \d+, position \d+\.$")]
-    private static partial Regex LocationSentencePattern();
 }

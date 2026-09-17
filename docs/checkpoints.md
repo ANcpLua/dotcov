@@ -88,3 +88,22 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 679/679 unverändert.
 
 Checkpoint erfüllt.
+
+## Checkpoint 4: Ergebnisse und Fehler
+
+- `MethodCoverageReport` (`Methods`, `Warnings`, `SourceRoots`); `ParseMethods` liefert ihn für Stream,
+  `ReportInput` und `IEnumerable<ReportInput>`. Der `MethodCollector` sammelt Warnungen aller Dokumente
+  (`Complete(document)`) und dedupliziert Quellwurzeln nach `PathIdentity.NormalizeRoot` wie `CoverageReport.Merge`.
+- `ReportParseException` (`SourceName`, `LineNumber`, `LinePosition`, typisierte `InnerException`; `Message`
+  ist die unveränderte Reader-Meldung). Regex `LocationSentencePattern` und die 4-Argument-`XmlException`-Rethrows entfernt.
+- Formatierung an der Ausgabegrenze: CLI schreibt `error: {SourceName}: {Message}`; der CLI-CRAP-Befehl gibt
+  alle Parserwarnungen als `warning: {file}:{line}: {detail}` auf stderr aus (`WriteWarnings`).
+- Stream-Besitz: `Parse(ReportInput)`/`ParseMethods(ReportInput…)` öffnen per `OpenStream()` und schließen per
+  `using`, auch bei Fehlern; `Parse(Stream)`/`ParseAsync(Stream)`/`ParseMethods(Stream)` lassen den Stream beim
+  Aufrufer (`XmlReaderSettings.CloseInput` bleibt false).
+- Neue Einstiege `Parse(ReportInput)`, `Parse(IEnumerable<ReportInput>)`; die alten Pfad-Einstiege delegieren
+  bis Checkpoint 5 dorthin. Tests der Fehlerkontrakte (`CoreParserRobustnessTests`, `MethodCoverageParseTests`,
+  `NukeCoverageReportHelpersTests`) auf `ReportParseException` umgestellt; `MethodCoverageParseTests` lesen `.Methods`.
+- Build: 0 Fehler. Tests: 679/679.
+
+Checkpoint erfüllt.
