@@ -73,3 +73,18 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 679/679. Ad-hoc-Nachweis: `dotcov report <tmp>` findet `<tmp>/.hidden/sub/coverage.cobertura.xml`.
 
 Checkpoint erfüllt.
+
+## Checkpoint 3: Parser und Aggregation
+
+- Eine Traversierung (`Visit` → `ConsumeSource`/`ConsumeClass`) speist beide Aggregationen; `XmlReader.Create`
+  für Cobertura-Eingaben nur noch in `CreateReader`. Gemeinsame Dekodierung: `DecodeFileName` (Separator,
+  Quellwurzel, Laufwerksbuchstabe), `TryDecodeLine` (Zeilennummer, saturierte Hits, `MalformedHits`-Warnung),
+  `DecodeComplexity`.
+- `FileCollector`/`LineAccumulator` behalten die Dateiregeln (Union mit `Math.Max`, Branch-/Condition-Dedup,
+  2-Outcome-Konsistenz). Interner `MethodCollector` mit `Entry` übernimmt ausschließlich Methodenidentität,
+  Zusammenführung (`Math.Max` je Zeile und Komplexität) und Ergebnisbildung; er sieht nur dekodierte Daten.
+- String-Schlüssel `"{file}\n{class}\n{name}\n{sig}"` durch `internal readonly record struct MethodKey` ersetzt.
+- Streaming (`ReadSubtree`, kein DOM), dokumentbezogene Quellwurzeln (`DocumentContext`) und `MaxCharactersInDocument` erhalten.
+- Build: 0 Fehler. Tests: 679/679 unverändert.
+
+Checkpoint erfüllt.

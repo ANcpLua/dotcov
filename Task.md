@@ -51,13 +51,13 @@ Checkpoint erfüllt: Datei-, Verzeichnis- und Musterauflösung liegen an einer S
 
 ### Checkpoint 3: Parser und Aggregation
 
-- [ ] Dateinamen, Zeilennummern und Hits gemeinsam dekodieren.
-- [ ] Datei- und Methodenaggregation getrennt halten.
-- [ ] XML-Traversierung und `XmlReader.Create` im Parser konzentrieren.
-- [ ] Die Methodenaggregation in einem internen `MethodCollector` bündeln; diesen bei Bedarf aus der bestehenden Methodenverarbeitung herauslösen. Er verarbeitet ausschließlich bereits dekodierte Methoden- und Zeilendaten.
-- [ ] Dem Sammler nur Methodenidentität, Zusammenführung und Ergebnisbildung zuordnen; seine Existenz im Ausgangsstand ist keine Voraussetzung.
-- [ ] Zusammengesetzten String-Schlüssel durch ein Tupel oder einen internen `record struct` aus `(Datei, Klasse, Methodenname, Signatur)` ersetzen.
-- [ ] Streaming, dokumentbezogene Quellwurzeln und Zeichenlimit pro Dokument erhalten.
+- [x] Dateinamen, Zeilennummern und Hits gemeinsam dekodieren.
+- [x] Datei- und Methodenaggregation getrennt halten.
+- [x] XML-Traversierung und `XmlReader.Create` im Parser konzentrieren.
+- [x] Die Methodenaggregation in einem internen `MethodCollector` bündeln; diesen bei Bedarf aus der bestehenden Methodenverarbeitung herauslösen. Er verarbeitet ausschließlich bereits dekodierte Methoden- und Zeilendaten.
+- [x] Dem Sammler nur Methodenidentität, Zusammenführung und Ergebnisbildung zuordnen; seine Existenz im Ausgangsstand ist keine Voraussetzung.
+- [x] Zusammengesetzten String-Schlüssel durch ein Tupel oder einen internen `record struct` aus `(Datei, Klasse, Methodenname, Signatur)` ersetzen.
+- [x] Streaming, dokumentbezogene Quellwurzeln und Zeichenlimit pro Dokument erhalten.
 
 Checkpoint erfüllt: Gemeinsame XML-Regeln sind einmal implementiert; die Aggregationen behalten ihre jeweiligen Regeln.
 
