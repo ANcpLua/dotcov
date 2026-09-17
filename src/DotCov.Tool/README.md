@@ -95,7 +95,7 @@ everywhere: `62.0%` on every host, never `62,0%`.
 ## Also in this family
 
 [DotCov](https://www.nuget.org/packages/DotCov/) — the parser as a library, zero dependencies ·
-[DotCov.Nuke](https://www.nuget.org/packages/DotCov.Nuke/) — NUKE build component
+[DotCov.Fallout](https://www.nuget.org/packages/DotCov.Fallout/) — Fallout build component
 
 ## Feedback
 

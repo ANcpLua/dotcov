@@ -176,3 +176,40 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 725/725.
 
 Checkpoint erfüllt.
+
+## Checkpoint 7: NUKE durch Fallout ersetzen
+
+- `src/DotCov.Nuke` → `src/DotCov.Fallout` (git mv): Projekt, Assembly-/Paketname, `RootNamespace DotCov.Fallout`,
+  Beschreibung/Tags, README. `DotCov.slnx`, `Directory.Packages.props` (`FalloutVersion=10.4.0`: `Fallout.Common`,
+  `Fallout.Components`; `Nuke.*` entfernt), Testprojektverweise, Wurzel-README und Familien-Links aktualisiert.
+- API-Abgleich per Reflexion gegen die installierten Pakete: `Fallout.Common.IFalloutBuild`, `FalloutBuild`,
+  `ParameterAttribute`, `ParameterPrefixAttribute`, `Target`, `ITargetDefinition.TryDependsOn<T>`, `Assert`,
+  `Fallout.Common.IO.AbsolutePath`, `Fallout.Components.ICompile` (: IRestore, IHasSolution, IHasConfiguration).
+  Kein `fallout :setup`, kein Migrator (Komponentenbibliothek direkt migriert); handgeschriebene CI unverändert.
+- `ICoverageReport : IFalloutBuild`: Parameter bleiben Strings mit strikter Grammatik und werden einmal über das interne
+  `CoverageParameters.Parse` validiert (invariante Zahlen, Ziffern-only-Cap, striktes Bool, `md`-Alias, `ReportPattern`).
+  Ablauf: Verzeichnis prüfen → `ReportResolver.ResolveDirectory` → `inputs.Count > 0` → `CoberturaParser.Parse` →
+  optional `Exclude` → alle Warnungen per `Log.Warning` → `Evaluate` → Markdown einmal (`Lazy`) für Terminal und Step-Summary →
+  explizite Gate-Policy (`Pass` Erfolg; `Fail`/`NoData`/`Disabled` scheitern mit unterscheidbaren Meldungen).
+  `ReportParseException` wird an der Target-Grenze mit Quelle und Koordinaten gerendert. Der Policy-Kommentar ist entfernt.
+- `CoverageReportHelpers` (öffentlich) gelöscht: Eingabeauflösung liegt im `ReportResolver`, Parameterparsing im internen
+  `CoverageParameters`, Step-Summary im internen `GitHubStepSummary` (`InternalsVisibleTo DotCov.Tests`). Keine neue
+  öffentliche Sammelklasse, keine Weiterleitungsschicht.
+- Konsumierender Fallout-Build `tests/DotCov.Fallout.TestBuild` (`Build : FalloutBuild, ICoverageReport`; `CompileBuild`
+  zusätzlich `ICompile` mit eigenem `Compile`-Target). `FalloutBuildTests` starten ihn als Prozess (`dotnet exec` mit
+  deps/runtimeconfig des Testprojekts, `--root <tmp>`): Pass/Fail/NoData/Disabled, fehlendes Verzeichnis, Verzeichnis ohne
+  Treffer, versteckte Verzeichnisse + Fremdmuster, fehlerhafter Report, 6 ungültige Parameterwerte, Cap, `md`-Alias,
+  `ExcludeGenerated` true/false, vollständige Warnungen, Step-Summary bei Pass und Fail, nicht beschreibbares Summary-Ziel
+  (Warnung, Pass bleibt), ohne `ICompile` läuft `ReportCoverage` allein, mit `ICompile` läuft `Compile` davor
+  (`.fallout/parameters.json` + Header-only `.sln`, da `IHasSolution.Solution` `[Required]` ist).
+  Beobachtung: Fallouts Argumentgrammatik verschluckt einen Wert mit führendem `-` (`--coverage-max-chars-param -1`), der
+  Wert kommt nicht in der Komponente an; die Ziffern-only-Ablehnung von `-1` ist im Unit-Test `CoverageParametersTests` gepinnt.
+- Bisherige Helper-Tests verteilt: `CoverageParametersTests` (Grammatik, Defaults, Pattern, Attribution bei negativem Cap),
+  `GitHubStepSummaryTests`, Verhalten im Build in `FalloutBuildTests`.
+- Audit: beide `NuGetAuditMode=direct`-Ausnahmen samt Kommentaren entfernt (Ursache Nuke.Common 10.1.0 → NuGet.Packaging 6.12.1,
+  System.Security.Cryptography.Xml 9.0.0; Fallout.Common 10.4.0 zieht NuGet.Packaging 6.14.3 und
+  System.Security.Cryptography.Xml 10.0.10). `dotnet restore --force -p:NuGetAuditMode=all -p:NuGetAuditLevel=low`: keine
+  NU19xx-Befunde; `dotnet list package --vulnerable --include-transitive` und `--deprecated`: keine Befunde in allen 5 Projekten.
+- Build: 0 Fehler. Tests: 752/752 (davon 19 Prozessläufe des konsumierenden Builds).
+
+Checkpoint erfüllt.

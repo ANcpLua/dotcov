@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A minimal consuming Fallout build. DotCov.Tests launches it as a real process to
+       exercise ICoverageReport end to end: parameter binding, target dependencies, diagnostics
+       and exit codes. Not packable, not a test project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DotCov.Fallout.TestBuild</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS0649;CS0169</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DotCov.Fallout\DotCov.Fallout.csproj" />
+  </ItemGroup>
+
+</Project>

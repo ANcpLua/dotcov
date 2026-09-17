@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DotCov.Fallout</RootNamespace>
+    <Description>Fallout build component that merges Cobertura reports, writes a job summary, and fails the build below your line and branch coverage thresholds. Add ICoverageReport and go.</Description>
+    <PackageTags>$(PackageTags);ci;fallout;build</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotCov\DotCov.csproj" />
+    <PackageReference Include="Fallout.Common" />
+    <PackageReference Include="Fallout.Components" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DotCov.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -18,7 +18,7 @@ dotcov check TestResults/ --min-line 80
 |---|---|---|
 | [![DotCov.Tool](https://img.shields.io/nuget/v/DotCov.Tool?style=flat-square&label=DotCov.Tool&color=0891B2)](https://www.nuget.org/packages/DotCov.Tool/) | CI scripts and your terminal. Native AOT | `dotnet tool install -g DotCov.Tool` |
 | [![DotCov](https://img.shields.io/nuget/v/DotCov?style=flat-square&label=DotCov&color=0891B2)](https://www.nuget.org/packages/DotCov/) | Your own code. Zero package references, AOT-clean | `dotnet add package DotCov` |
-| [![DotCov.Nuke](https://img.shields.io/nuget/v/DotCov.Nuke?style=flat-square&label=DotCov.Nuke&color=0891B2)](https://www.nuget.org/packages/DotCov.Nuke/) | NUKE builds | `nuke :add-package DotCov.Nuke` |
+| [![DotCov.Fallout](https://img.shields.io/nuget/v/DotCov.Fallout?style=flat-square&label=DotCov.Fallout&color=0891B2)](https://www.nuget.org/packages/DotCov.Fallout/) | Fallout builds | `fallout :add-package DotCov.Fallout` |
 
 ---
 
@@ -151,23 +151,24 @@ to any endpoint you control. Drop `--upload` and it prints to stdout for `jq`. T
 badge works this way: CI runs `dotcov report --format json`, writes shields.io endpoint JSON to
 a `badges` branch, and the badge above reads it. No third-party coverage service anywhere.
 
-## Gate a NUKE build
+## Gate a Fallout build
 
 ```csharp
-using DotCov.Nuke;
+using DotCov.Fallout;
 
-class Build : NukeBuild, ICoverageReport { }
+class Build : FalloutBuild, ICoverageReport { }
 ```
 
 ```bash
-nuke ReportCoverage --coverage-min-line 80 --coverage-exclude-generated true
+fallout ReportCoverage --coverage-min-line 80 --coverage-exclude-generated-param true
 ```
 
 Globs `RootDirectory / "TestResults"`, merges, renders, writes the step summary, fails below
 threshold. Attaches to `ICompile` through `TryDependsOn`, so inheriting it is optional.
 Parameters: `--coverage-min-line` (80), `--coverage-min-branch` (0), `--coverage-format`
-(`table`), `--coverage-exclude-generated-param` (false). Override `CoverageSearchDirectory` to
-point elsewhere.
+(`table`), `--coverage-exclude-generated-param` (false), `--coverage-pattern`
+(`**/coverage.cobertura.xml`), `--coverage-max-chars-param` (50000000). Every value is validated
+once, up front. Override `CoverageSearchDirectory` to point elsewhere.
 
 ## Build it into your own tool
 

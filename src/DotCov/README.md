@@ -86,7 +86,7 @@ Every public type carries XML docs — read them in IntelliSense or in
 ## Also in this family
 
 [DotCov.Tool](https://www.nuget.org/packages/DotCov.Tool/) — the `dotcov` CLI ·
-[DotCov.Nuke](https://www.nuget.org/packages/DotCov.Nuke/) — NUKE build component
+[DotCov.Fallout](https://www.nuget.org/packages/DotCov.Fallout/) — Fallout build component
 
 ## Feedback
 

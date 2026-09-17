@@ -2,14 +2,14 @@
 
   <PropertyGroup>
     <TUnitVersion>1.67.0</TUnitVersion>
-    <NukeCommonVersion>10.1.0</NukeCommonVersion>
+    <FalloutVersion>10.4.0</FalloutVersion>
     <ANcpLuaAnalyzersVersion>2.1.2</ANcpLuaAnalyzersVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageVersion Include="TUnit" Version="$(TUnitVersion)" />
-    <PackageVersion Include="Nuke.Common" Version="$(NukeCommonVersion)" />
-    <PackageVersion Include="Nuke.Components" Version="$(NukeCommonVersion)" />
+    <PackageVersion Include="Fallout.Common" Version="$(FalloutVersion)" />
+    <PackageVersion Include="Fallout.Components" Version="$(FalloutVersion)" />
     <PackageVersion Include="ANcpLua.Analyzers" Version="$(ANcpLuaAnalyzersVersion)" />
   </ItemGroup>
 
