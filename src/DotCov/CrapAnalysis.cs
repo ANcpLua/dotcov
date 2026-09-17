@@ -397,6 +397,13 @@ public static class CrapAnalysis
         return (index, accessorFallback);
     }
 
+    /// <summary>
+    /// Two separate decisions. First the metrics table is consulted and every consulted member
+    /// is marked matched — a member with a coverage counterpart is matched whether or not its
+    /// value ends up being used. Then the value is chosen: embedded complexity wins because it
+    /// measured the exact assembly that was covered; the metrics value fills in only when the
+    /// report carries none.
+    /// </summary>
     private static (int? Complexity, CrapComplexitySource Source) ResolveComplexity(
         LogicalMethod logical,
         IReadOnlyList<CodeMetricsMember>? members,
@@ -404,12 +411,29 @@ public static class CrapAnalysis
         Dictionary<string, int> accessorFallback,
         HashSet<int> consumed)
     {
-        // Embedded complexity wins: it measured the exact assembly that was covered.
+        var fromMetrics = MatchMetrics(logical, members, metricsIndex, accessorFallback, consumed);
+
         if (logical.EmbeddedComplexity is { } embedded)
             return (embedded, CrapComplexitySource.CoverageReport);
 
+        return (fromMetrics, CrapComplexitySource.MetricsFile);
+    }
+
+    /// <summary>
+    /// The metrics-file complexity for <paramref name="logical"/>, marking every consulted
+    /// member as matched; null when the table has no counterpart.
+    /// </summary>
+    private static int? MatchMetrics(
+        LogicalMethod logical,
+        IReadOnlyList<CodeMetricsMember>? members,
+        Dictionary<string, List<int>> metricsIndex,
+        Dictionary<string, int> accessorFallback,
+        HashSet<int> consumed)
+    {
+        if (members is null) return null;
+
         var key = $"{logical.TypeKey}|{logical.MethodKey}";
-        if (members is not null && metricsIndex.TryGetValue(key, out var candidates))
+        if (metricsIndex.TryGetValue(key, out var candidates))
         {
             // Overload disambiguation by arity when both sides know it. When arity is unknown
             // (folded state machines/lambdas) or nothing matches it, take the MAX complexity
@@ -428,15 +452,15 @@ public static class CrapAnalysis
                 consumed.Add(i);
                 best = Math.Max(best, members[i].CyclomaticComplexity);
             }
-            return (best, CrapComplexitySource.MetricsFile);
+            return best;
         }
 
-        if (members is not null && accessorFallback.TryGetValue(key, out var propertyIndex))
+        if (accessorFallback.TryGetValue(key, out var propertyIndex))
         {
             consumed.Add(propertyIndex);
-            return (members[propertyIndex].CyclomaticComplexity, CrapComplexitySource.MetricsFile);
+            return members[propertyIndex].CyclomaticComplexity;
         }
 
-        return (null, CrapComplexitySource.MetricsFile);
+        return null;
     }
 }

@@ -126,3 +126,24 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 669/669 (679 − 10 entfernte).
 
 Checkpoint erfüllt.
+
+## Checkpoint 5a: Fachliche Korrekturen
+
+- Reihenfolge test-first: vier neue Tests zuerst gegen den unveränderten Code ausgeführt — Lauf mit
+  4 Fehlschlägen (`EmbeddedComplexity_WinsOverMetrics_ButTheMatchingMemberStillCountsAsMatched`: 2 unmatched statt 1;
+  `Compare_RemovedZeroRateFile_IsARegression…`: `IsNegative(-0.0)`; `FormatDiff_RemovedZeroRateFile_NeverRendersADoubleSign`:
+  Tabelle enthielt `+-0.0%`; Klassifikationstabelle „removed 0%“: Negativ-Null). Danach Korrektur, Lauf 688/688.
+- `CrapAnalysis.ResolveComplexity` in `MatchMetrics` (Zuordnung, markiert konsultierte Member als matched) und die
+  Wertauswahl getrennt; eingebettete Komplexität hat weiterhin Vorrang. `UnmatchedMetricsMembers` enthält nur noch
+  Methoden-/Accessor-Member ohne Coverage-Gegenstück.
+- `FileDelta` neu: privater Konstruktor, Fabriken `Removed`/`Added`/`Compared`; `Delta`, `Change` (Unchanged/Modified über
+  `MovementEpsilon`), `IsRegression`, `IsImprovement` werden aus Änderungsart und Raten abgeleitet. Removed-Delta ist
+  `0.0 - Before` (positive Null bei 0 %). `CoverageDiffResult.Regressions`/`Improvements` filtern über dieselben Flags.
+- Variante A: entfernte gemessene Datei = Regression (auch 0 %); hinzugefügte 0%-Datei weder Regression noch Verbesserung;
+  `null`-Raten erzeugen keine Bewegung und kein Delta. Beidseitig: unter `MovementEpsilon` unverändert, ab der Grenze nach
+  Richtung (Tabellentest mit 17 Fällen inkl. exakt ±Epsilon über 0/10000 → 1/10000).
+- Bisheriger Test `Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements` auf Variante A geändert und
+  umbenannt in `Compare_RemovedZeroRateFile_IsARegression_AddedZeroRateFile_IsNotAnImprovement`.
+- Build: 0 Fehler. Tests: 688/688. Versteckte Verzeichnisse weiterhin über `ReportResolver` (Checkpoint 2).
+
+Checkpoint erfüllt.

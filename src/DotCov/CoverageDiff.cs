@@ -1,12 +1,67 @@
 namespace DotCov;
 
-public readonly record struct FileDelta(
-    string Path,
-    double? Before,
-    double? After,
-    double? Delta,
-    FileChangeKind Change)
+/// <summary>
+/// One file's movement between two reports. Delta and classification are both derived here
+/// from the change kind and the two rates, so a file can never be "unchanged" in one view
+/// and "a regression" in another. Instances come from the three factories; the shape of each
+/// kind is fixed by construction (a removed file has no After, an added file no Before).
+/// </summary>
+public readonly record struct FileDelta
 {
+    private FileDelta(string path, double? before, double? after, FileChangeKind change)
+    {
+        Path = path;
+        Before = before;
+        After = after;
+        Change = change;
+    }
+
+    public string Path { get; }
+
+    /// <summary>Line rate in the before report; null when absent or unmeasured.</summary>
+    public double? Before { get; }
+
+    /// <summary>Line rate in the after report; null when absent or unmeasured.</summary>
+    public double? After { get; }
+
+    public FileChangeKind Change { get; }
+
+    /// <summary>
+    /// Rate movement. Null without comparable measurements. A removed file's delta is
+    /// <c>0 - Before</c>, so a removed 0% file yields positive zero, never <c>-0.0</c>.
+    /// </summary>
+    public double? Delta => Change switch
+    {
+        FileChangeKind.Removed => Before is { } b ? 0.0 - b : null,
+        FileChangeKind.Added => After,
+        _ => (Before, After) is ({ } b, { } a) ? a - b : null
+    };
+
+    /// <summary>
+    /// A removed measured file is a regression whatever its rate: the report vouches for less
+    /// than before. A file on both sides regresses when its rate fell by at least
+    /// <see cref="CoverageDiff.MovementEpsilon"/>. Added files never regress; unmeasured
+    /// data (null) is not 0% and never counts as movement.
+    /// </summary>
+    public bool IsRegression => Change switch
+    {
+        FileChangeKind.Removed => Before is not null,
+        FileChangeKind.Modified => Delta < 0,
+        _ => false
+    };
+
+    /// <summary>
+    /// An added file with a positive measured rate is an improvement; an added 0% file is
+    /// not. A file on both sides improves when its rate rose by at least
+    /// <see cref="CoverageDiff.MovementEpsilon"/>.
+    /// </summary>
+    public bool IsImprovement => Change switch
+    {
+        FileChangeKind.Added => After > 0,
+        FileChangeKind.Modified => Delta > 0,
+        _ => false
+    };
+
     /// <summary>
     /// Codecov-style "indirect coverage changes": lines whose hit/miss state flipped
     /// between the two reports even though the line itself may not have appeared in the
@@ -18,6 +73,23 @@ public readonly record struct FileDelta(
     /// lookup miss) yields an empty list instead of violating the non-nullable annotation.
     /// </remarks>
     public IReadOnlyList<LineDelta> LineChanges { get => field ?? []; init; } = [];
+
+    public static FileDelta Removed(string path, double? before) =>
+        new(path, before, null, FileChangeKind.Removed);
+
+    public static FileDelta Added(string path, double? after) =>
+        new(path, null, after, FileChangeKind.Added);
+
+    /// <summary>
+    /// A file present on both sides: Modified when both rates exist and differ by at least
+    /// <see cref="CoverageDiff.MovementEpsilon"/>, otherwise Unchanged (a sub-epsilon wobble
+    /// is measurement noise; a missing rate on either side is not a comparison at all).
+    /// </summary>
+    public static FileDelta Compared(string path, double? before, double? after) =>
+        new(path, before, after,
+            (before, after) is ({ } b, { } a) && Math.Abs(a - b) >= CoverageDiff.MovementEpsilon
+                ? FileChangeKind.Modified
+                : FileChangeKind.Unchanged);
 }
 
 public enum FileChangeKind { Unchanged, Added, Removed, Modified }
@@ -127,19 +199,11 @@ public sealed class CoverageDiffResult(
     /// </summary>
     public double? Delta => AfterRate - BeforeRate;
 
-    /// <summary>
-    /// Files whose rate fell. Derived from the <see cref="FileChangeKind"/> that
-    /// <see cref="CoverageDiff.Compare"/> already computed, so a sub-epsilon wobble
-    /// (classified <see cref="FileChangeKind.Unchanged"/>) can never simultaneously be
-    /// "unchanged" here and "a regression" there. Removed files count — losing a measured
-    /// file is a regression of what the report vouches for.
-    /// </summary>
-    public IEnumerable<FileDelta> Regressions =>
-        Files.Where(static f => f.Change is not FileChangeKind.Unchanged && f.Delta < 0);
+    /// <summary>The files with <see cref="FileDelta.IsRegression"/> — the same rule, not a second one.</summary>
+    public IEnumerable<FileDelta> Regressions => Files.Where(static f => f.IsRegression);
 
-    /// <summary>Files whose rate rose — same single-classification contract as <see cref="Regressions"/>.</summary>
-    public IEnumerable<FileDelta> Improvements =>
-        Files.Where(static f => f.Change is not FileChangeKind.Unchanged && f.Delta > 0);
+    /// <summary>The files with <see cref="FileDelta.IsImprovement"/>.</summary>
+    public IEnumerable<FileDelta> Improvements => Files.Where(static f => f.IsImprovement);
     public IEnumerable<FileDelta> Added => Files.Where(static f => f.Change is FileChangeKind.Added);
     public IEnumerable<FileDelta> Removed => Files.Where(static f => f.Change is FileChangeKind.Removed);
 
@@ -157,8 +221,8 @@ public sealed class CoverageDiffResult(
 public static class CoverageDiff
 {
     /// <summary>
-    /// The movement threshold shared by <see cref="Compare"/>'s Unchanged/Modified
-    /// classification, <see cref="CoverageDiffResult.Regressions"/>/<see cref="CoverageDiffResult.Improvements"/>
+    /// The movement threshold shared by <see cref="FileDelta.Compared"/>'s Unchanged/Modified
+    /// classification, <see cref="FileDelta.IsRegression"/>/<see cref="FileDelta.IsImprovement"/>
     /// (via that classification), and <see cref="Formatters.AnsiPen.Delta"/>'s coloring:
     /// a rate delta closer to zero than this is measurement noise, not movement. One
     /// constant so the change kind, the regression list, and the rendered color can
@@ -206,13 +270,13 @@ public static class CoverageDiff
                 // codebase now lives under.
                 deltas.Add(Changed(afterPath, b, afterLookup[afterPath]));
             else
-                deltas.Add(new FileDelta(path, b.LineRate, null, -b.LineRate, FileChangeKind.Removed));
+                deltas.Add(FileDelta.Removed(path, b.LineRate));
         }
 
         foreach (var (path, a) in afterLookup)
         {
             if (beforeLookup.ContainsKey(path) || pairedAfterPaths.Contains(path)) continue;
-            deltas.Add(new FileDelta(path, null, a.LineRate, a.LineRate, FileChangeKind.Added));
+            deltas.Add(FileDelta.Added(path, a.LineRate));
         }
 
         // OrderBy, not List.Sort: stable, so equal-delta files keep their encounter order
@@ -223,15 +287,7 @@ public static class CoverageDiff
             after.LineRate);
 
         static FileDelta Changed(string path, FileCoverage b, FileCoverage a) =>
-            new(path, b.LineRate, a.LineRate, a.LineRate - b.LineRate,
-                // A null delta means neither side carried line data: unmeasured on both ends is
-                // unchanged, not modified.
-                (a.LineRate - b.LineRate) is not { } d || Math.Abs(d) < MovementEpsilon
-                    ? FileChangeKind.Unchanged
-                    : FileChangeKind.Modified)
-            {
-                LineChanges = ComputeLineChanges(b, a)
-            };
+            FileDelta.Compared(path, b.LineRate, a.LineRate) with { LineChanges = ComputeLineChanges(b, a) };
     }
 
     /// <summary>

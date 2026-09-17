@@ -89,13 +89,13 @@ Checkpoint erfüllt: Keine Aufrufstelle oder Dokumentationsreferenz benötigt di
 
 ### Checkpoint 5a: Fachliche Korrekturen ausdrücklich umsetzen
 
-- [ ] Für noch fehlerhaftes Verhalten zunächst reproduzierende TUnit-Tests ergänzen und fehlschlagen sehen; anschließend die Korrektur nachweisen. Bereits korrektes Verhalten mit denselben Verträgen absichern.
-- [ ] In `CrapAnalysis.Analyze` Metrics-Zuordnung und Auswahl des Komplexitätswerts trennen: Eingebettete Komplexität hat weiterhin Vorrang, ein passender Metrics-Member gilt trotzdem als zugeordnet.
-- [ ] `UnmatchedMetricsMembers` nur mit tatsächlich unzugeordneten Methoden-/Accessor-Membern befüllen. „unmatched“ darf nicht „wegen eingebetteter Komplexität nicht benötigt“ bedeuten.
-- [ ] In `CoverageDiff` beziehungsweise `FileDelta` Negativ-Null beim Entfernen einer 0%-Datei vermeiden: Das numerische Delta ist positive Null. Tabellen- und Markdown-Ausgabe dürfen kein `+-0.0%` erzeugen; den Fehler nicht nur im formatierten Text kaschieren.
-- [ ] Variante A ausdrücklich abbilden: Eine entfernte gemessene Datei ist unabhängig von ihrer bisherigen Rate eine Regression, auch bei 0 %. Eine hinzugefügte 0%-Datei ist weder Regression noch Verbesserung. Fehlende Messdaten (`null`) nicht mit gemessenen 0 % gleichsetzen.
-- [ ] `FileDelta` als gemeinsame Quelle für Delta und Klassifikation gestalten: aus Änderungsart und Vorher-/Nachher-Raten ableiten, widersprüchliche separat gesetzte Werte verhindern. `IsRegression`, `IsImprovement` sowie `CoverageDiffResult.Regressions` und `Improvements` müssen dieselben Regeln verwenden.
-- [ ] Für beidseitig vorhandene Dateien `MovementEpsilon` erhalten: unterhalb der Grenze unverändert und weder Regression noch Verbesserung; ab der Grenze nach Richtung der Änderung klassifizieren. Ohne vergleichbare Messdaten keine Bewegung behaupten.
+- [x] Für noch fehlerhaftes Verhalten zunächst reproduzierende TUnit-Tests ergänzen und fehlschlagen sehen; anschließend die Korrektur nachweisen. Bereits korrektes Verhalten mit denselben Verträgen absichern.
+- [x] In `CrapAnalysis.Analyze` Metrics-Zuordnung und Auswahl des Komplexitätswerts trennen: Eingebettete Komplexität hat weiterhin Vorrang, ein passender Metrics-Member gilt trotzdem als zugeordnet.
+- [x] `UnmatchedMetricsMembers` nur mit tatsächlich unzugeordneten Methoden-/Accessor-Membern befüllen. „unmatched“ darf nicht „wegen eingebetteter Komplexität nicht benötigt“ bedeuten.
+- [x] In `CoverageDiff` beziehungsweise `FileDelta` Negativ-Null beim Entfernen einer 0%-Datei vermeiden: Das numerische Delta ist positive Null. Tabellen- und Markdown-Ausgabe dürfen kein `+-0.0%` erzeugen; den Fehler nicht nur im formatierten Text kaschieren.
+- [x] Variante A ausdrücklich abbilden: Eine entfernte gemessene Datei ist unabhängig von ihrer bisherigen Rate eine Regression, auch bei 0 %. Eine hinzugefügte 0%-Datei ist weder Regression noch Verbesserung. Fehlende Messdaten (`null`) nicht mit gemessenen 0 % gleichsetzen.
+- [x] `FileDelta` als gemeinsame Quelle für Delta und Klassifikation gestalten: aus Änderungsart und Vorher-/Nachher-Raten ableiten, widersprüchliche separat gesetzte Werte verhindern. `IsRegression`, `IsImprovement` sowie `CoverageDiffResult.Regressions` und `Improvements` müssen dieselben Regeln verwenden.
+- [x] Für beidseitig vorhandene Dateien `MovementEpsilon` erhalten: unterhalb der Grenze unverändert und weder Regression noch Verbesserung; ab der Grenze nach Richtung der Änderung klassifizieren. Ohne vergleichbare Messdaten keine Bewegung behaupten.
 
 Checkpoint erfüllt: Metrics-Zuordnung und Diff-Klassifikation erfüllen die genannten Verträge; die gezielten Tests
 belegen die Korrekturen zusätzlich zum Parserumbau. Die Dateisuche berücksichtigt weiterhin versteckte Verzeichnisse gemäß Checkpoint 2.

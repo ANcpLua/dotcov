@@ -311,6 +311,28 @@ public sealed class CrapAnalysisTests
     }
 
     [Test]
+    public async Task EmbeddedComplexity_WinsOverMetrics_ButTheMatchingMemberStillCountsAsMatched()
+    {
+        // Two separate questions: which complexity scores the method (embedded, always) and
+        // whether the metrics member has a coverage counterpart (yes). "unmatched" must mean
+        // "no coverage method for this member", never "not needed because embedded won".
+        var mc = Method("MyApp.A", "M", "()", complexity: 3, lines: [(1, 1)]);
+        var metrics = new[]
+        {
+            Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 0, complexity: 7),
+            Member("MyApp.A", "Ghost", CodeMetricsMemberKind.Method, arity: 0, complexity: 3,
+                display: "void A.Ghost()"),
+        };
+
+        var report = CrapAnalysis.Analyze([mc], metrics);
+
+        var m = await Assert.That(report.Methods).HasSingleItem();
+        await Assert.That(m.Complexity).IsEqualTo(3);
+        await Assert.That(m.ComplexitySource).IsEqualTo(CrapComplexitySource.CoverageReport);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Ghost()"], CollectionOrdering.Matching);
+    }
+
+    [Test]
     public async Task MetricsFile_FillsInWhenCoverageHasNoComplexity()
     {
         var mc = Method("MyApp.A", "M", "(System.Int32)", complexity: null, lines: [(1, 0)]);

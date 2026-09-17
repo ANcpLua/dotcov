@@ -1,3 +1,5 @@
+using DotCov.Formatters;
+using DotCov.Tests.Infrastructure;
 using TUnit.Assertions.Enums;
 
 namespace DotCov.Tests;
@@ -186,20 +188,106 @@ public sealed class CoverageDiffTests
     }
 
     [Test]
-    public async Task Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements()
+    public async Task Compare_RemovedZeroRateFile_IsARegression_AddedZeroRateFile_IsNotAnImprovement()
     {
-        // Zero-delta boundary: an added 0%-file has Delta 0.0 and a removed 0%-file has
-        // Delta -0.0 — both sit exactly ON the strict inequalities gating Regressions
-        // (Delta < 0) and Improvements (Delta > 0). They belong in Added/Removed only.
+        // Variant A: losing a MEASURED file is a regression of what the report vouches for,
+        // whatever its rate — a removed 0% file included. Its numeric delta is positive zero
+        // (never -0.0, which would render as "+-0.0%"). A new 0% file adds nothing that could
+        // count as an improvement, and is not a regression either.
         var before = Make(new FileCoverage("gone.cs", 0, 2, 0, 0));
         var after = Make(new FileCoverage("fresh.cs", 0, 2, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        await Assert.That(result.Added.Single().Path).IsEqualTo("fresh.cs");
-        await Assert.That(result.Removed.Single().Path).IsEqualTo("gone.cs");
-        await Assert.That(result.Regressions).IsEmpty();
+        var removed = result.Removed.Single();
+        await Assert.That(removed.Path).IsEqualTo("gone.cs");
+        await Assert.That(removed.Delta).IsEqualTo(0.0);
+        await Assert.That(double.IsNegative(removed.Delta!.Value)).IsFalse();
+        await Assert.That(removed.IsRegression).IsTrue();
+        await Assert.That(removed.IsImprovement).IsFalse();
+        await Assert.That(result.Regressions.Single().Path).IsEqualTo("gone.cs");
+
+        var added = result.Added.Single();
+        await Assert.That(added.Path).IsEqualTo("fresh.cs");
+        await Assert.That(added.Delta).IsEqualTo(0.0);
+        await Assert.That(added.IsRegression).IsFalse();
+        await Assert.That(added.IsImprovement).IsFalse();
         await Assert.That(result.Improvements).IsEmpty();
+    }
+
+    [Test]
+    public async Task FormatDiff_RemovedZeroRateFile_NeverRendersADoubleSign()
+    {
+        // Control: a removed file with a positive rate renders its own '-'; the removed 0%
+        // file renders "+0.0%" — the sign policy is "+ for >= 0", so the delta itself must be
+        // positive zero rather than the text being patched afterwards.
+        var before = Make(
+            new FileCoverage("gone.cs", 0, 2, 0, 0),
+            new FileCoverage("ctrl.cs", 8, 10, 0, 0));
+        var after = Make();
+
+        var result = CoverageDiff.Compare(before, after);
+        var table = AnsiStrip.From(TableFormatter.FormatDiff(result));
+        var md = MarkdownFormatter.FormatDiff(result);
+
+        await Assert.That(table).DoesNotContain("+-");
+        await Assert.That(md).DoesNotContain("+-");
+        await Assert.That(table).Matches(@"gone\.cs\s+0\.0%\s+-\s+\+0\.0%\s+Removed");
+        await Assert.That(table).Matches(@"ctrl\.cs\s+80\.0%\s+-\s+-80\.0%\s+Removed");
+        await Assert.That(md).Contains("| `gone.cs` | 0.0% | - | +0.0% | Removed |");
+        await Assert.That(md).Contains("| `ctrl.cs` | 80.0% | - | -80.0% | Removed |");
+    }
+
+    public static IEnumerable<(string Scenario, FileCoverage? Before, FileCoverage? After, double? Delta, FileChangeKind Change, bool Regression, bool Improvement)> ClassificationCases()
+    {
+        // Removed: a measured file is a regression whatever its rate; unmeasured is not.
+        yield return ("removed 0%", new("f.cs", 0, 2, 0, 0), null, 0.0, FileChangeKind.Removed, true, false);
+        yield return ("removed 80%", new("f.cs", 8, 10, 0, 0), null, -0.8, FileChangeKind.Removed, true, false);
+        yield return ("removed unmeasured", new("f.cs", 0, 0, 0, 0), null, null, FileChangeKind.Removed, false, false);
+        // Added: only a measured, non-zero rate is an improvement.
+        yield return ("added 0%", null, new("f.cs", 0, 2, 0, 0), 0.0, FileChangeKind.Added, false, false);
+        yield return ("added 70%", null, new("f.cs", 7, 10, 0, 0), 0.7, FileChangeKind.Added, false, true);
+        yield return ("added unmeasured", null, new("f.cs", 0, 0, 0, 0), null, FileChangeKind.Added, false, false);
+        // Both sides: movement only with comparable measurements and at least MovementEpsilon.
+        yield return ("both 0%", new("f.cs", 0, 2, 0, 0), new("f.cs", 0, 2, 0, 0), 0.0, FileChangeKind.Unchanged, false, false);
+        yield return ("both 50%", new("f.cs", 5, 10, 0, 0), new("f.cs", 5, 10, 0, 0), 0.0, FileChangeKind.Unchanged, false, false);
+        yield return ("up 50→80", new("f.cs", 5, 10, 0, 0), new("f.cs", 8, 10, 0, 0), 0.3, FileChangeKind.Modified, false, true);
+        yield return ("down 80→50", new("f.cs", 8, 10, 0, 0), new("f.cs", 5, 10, 0, 0), -0.3, FileChangeKind.Modified, true, false);
+        yield return ("both unmeasured", new("f.cs", 0, 0, 0, 0), new("f.cs", 0, 0, 0, 0), null, FileChangeKind.Unchanged, false, false);
+        yield return ("measured→unmeasured", new("f.cs", 5, 10, 0, 0), new("f.cs", 0, 0, 0, 0), null, FileChangeKind.Unchanged, false, false);
+        yield return ("unmeasured→measured", new("f.cs", 0, 0, 0, 0), new("f.cs", 5, 10, 0, 0), null, FileChangeKind.Unchanged, false, false);
+        yield return ("below epsilon down", new("f.cs", 19999, 20000, 0, 0), new("f.cs", 19998, 20000, 0, 0), -0.00005, FileChangeKind.Unchanged, false, false);
+        yield return ("below epsilon up", new("f.cs", 19998, 20000, 0, 0), new("f.cs", 19999, 20000, 0, 0), 0.00005, FileChangeKind.Unchanged, false, false);
+        yield return ("exactly epsilon up", new("f.cs", 0, 10000, 0, 0), new("f.cs", 1, 10000, 0, 0), CoverageDiff.MovementEpsilon, FileChangeKind.Modified, false, true);
+        yield return ("exactly epsilon down", new("f.cs", 1, 10000, 0, 0), new("f.cs", 0, 10000, 0, 0), -CoverageDiff.MovementEpsilon, FileChangeKind.Modified, true, false);
+    }
+
+    [Test]
+    [MethodDataSource(nameof(ClassificationCases))]
+    public async Task FileDelta_ClassificationTable_SingleFlagsAndResultFiltersAgree(
+        string scenario, FileCoverage? before, FileCoverage? after, double? delta, FileChangeKind change, bool regression, bool improvement)
+    {
+        var result = CoverageDiff.Compare(
+            before is { } b ? Make(b) : Make(),
+            after is { } a ? Make(a) : Make());
+
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(change).Because(scenario);
+        if (delta is { } expected)
+        {
+            await Assert.That(d.Delta).IsNotNull().Because(scenario);
+            await Assert.That(d.Delta!.Value).IsEqualTo(expected).Within(1e-12).Because(scenario);
+            await Assert.That(double.IsNegative(d.Delta.Value) && d.Delta.Value == 0).IsFalse().Because($"{scenario}: no negative zero");
+        }
+        else
+        {
+            await Assert.That(d.Delta).IsNull().Because(scenario);
+        }
+
+        await Assert.That(d.IsRegression).IsEqualTo(regression).Because(scenario);
+        await Assert.That(d.IsImprovement).IsEqualTo(improvement).Because(scenario);
+        await Assert.That(result.Regressions.Any()).IsEqualTo(regression).Because($"{scenario}: Regressions filter");
+        await Assert.That(result.Improvements.Any()).IsEqualTo(improvement).Because($"{scenario}: Improvements filter");
     }
 
     [Test]
