@@ -13,7 +13,7 @@ namespace DotCov;
 public static partial class CoberturaParser
 {
     private const long DefaultMaxChars = 50_000_000;
-    private const string DefaultPattern = "**/coverage.cobertura.xml";
+    private const string DefaultPattern = ReportPattern.DefaultText;
 
     public static CoverageReport Parse(Stream stream, long maxChars = DefaultMaxChars)
     {
@@ -83,28 +83,10 @@ public static partial class CoberturaParser
             .Aggregate(CoverageReport.Merge);
     }
 
-    /// <summary>
-    /// The single pattern gate + file enumeration behind <see cref="ParseDirectory(string, string, long)"/>
-    /// and <see cref="ParseMethodsDirectory(string, string, long)"/> — one copy so the two
-    /// directory walks can never disagree about what a pattern means.
-    /// </summary>
-    private static string[] FindReports(string directory, string pattern)
-    {
-        var name = Path.GetFileName(pattern);
-        // name.Length == 0 catches "" and "**/": both produce an empty filename that
-        // Directory.GetFiles matches against nothing, silently returning an empty report —
-        // the exact invisible misconfiguration this gate exists to reject.
-        if (name.Length is 0 || pattern[..^name.Length] is not ("" or "**/") || name.Contains('\\'))
-            throw new ArgumentException(
-                $"Unsupported pattern '{pattern}': only 'filename' and '**/filename' are supported.",
-                nameof(pattern));
-
-        return Directory.GetFiles(directory, name,
-            // Recurse exactly when the gate above admitted the "**/" prefix — never re-derived
-            // from the whole pattern: Contains("**") disagreed with the gate for a '**' inside
-            // the NAME portion ('**coverage.xml' is filename-shaped, top level only, yet recursed).
-            new EnumerationOptions { RecurseSubdirectories = pattern.StartsWith("**/", StringComparison.Ordinal) });
-    }
+    private static string[] FindReports(string directory, string pattern) =>
+        ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern))
+            .Select(static input => input.SourceName)
+            .ToArray();
 
     public static CoverageReport ParsePath(string path) => ParsePath(path, DefaultMaxChars);
 

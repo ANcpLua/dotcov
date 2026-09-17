@@ -58,3 +58,18 @@ Checkpoint erfüllt.
 - Nicht umgestellt (gehört zu Checkpoint 8): Coverage-Aufruf in CI/README/`coverlet.runsettings`.
 
 Checkpoint erfüllt.
+
+## Checkpoint 2: Eingabeauflösung
+
+- Neu in `src/DotCov`: `ReportInput` (Quellenname + Stream-Fabrik, `FromFile`/`FromBytes`, kein `Read<T>`,
+  keine Fehlerformatierung), `ReportPattern` (unveränderlich, `FileName` + `Recursive`, `Parse`/`TryParse`,
+  Zerlegung ausschließlich am literalen `**/`-Präfix, kein `Path.GetFileName`), `ReportResolver`
+  (`Resolve(path[, pattern])`, `ResolveDirectory`; Datei → Einzeleingabe, Verzeichnis → ordinal sortierte
+  Treffer, fehlender Pfad → `FileNotFoundException`/`DirectoryNotFoundException`, leeres Verzeichnis → leere Liste).
+- Versteckte Verzeichnisse: `EnumerationOptions.AttributesToSkip = None` (Standard überspringt Hidden|System),
+  `IgnoreInaccessible = false` (Zugriffsfehler werden gemeldet statt still übersprungen).
+- `CoberturaParser.FindReports` delegiert jetzt an den Resolver; die alten `Parse*Directory/Path`-Einstiege
+  bleiben bis Checkpoint 5 als Aufrufer bestehen. Reports ohne Messdaten werden weiterhin erst im Gate als `NoData` bewertet.
+- Build: 0 Fehler. Tests: 679/679. Ad-hoc-Nachweis: `dotcov report <tmp>` findet `<tmp>/.hidden/sub/coverage.cobertura.xml`.
+
+Checkpoint erfüllt.

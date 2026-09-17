@@ -36,16 +36,16 @@ Checkpoint erfüllt: Die bestehende Suite läuft über TUnit; Testentdeckung, As
 
 ### Checkpoint 2: Eingabeauflösung
 
-- [ ] `ReportInput` auf Quellenname, Stream-Fabrik und `FromFile`/`FromBytes` begrenzen.
-- [ ] `Read<T>`, `Read(Action)` und XML-Fehlerformatierung aus `ReportInput` entfernen beziehungsweise dort nicht neu einführen.
-- [ ] `ReportPattern` auf ein unveränderliches, validiertes Muster mit Dateiname und Rekursionsangabe begrenzen.
-- [ ] Muster ohne betriebssystemabhängige Pfadzerlegung auswerten.
-- [ ] Datei-, Verzeichnis- und Musterauflösung in einem gemeinsamen `ReportResolver` bündeln; vorhandene `Find`-/`Locate`-Logik dorthin verlagern.
-- [ ] `ReportResolver` deterministisch geordnete `ReportInput`-Objekte liefern lassen; Datei- oder Methodenabdeckung erst anschließend im Parser auswählen.
-- [ ] Bei der Dateisuche auch versteckte Verzeichnisse berücksichtigen.
-- [ ] Fehlender Pfad oder Zugriffsfehler: Fehler melden.
-- [ ] Vorhandenes Verzeichnis ohne Treffer: leere Eingabemenge liefern.
-- [ ] Erfolgreich gelesene Reports ohne Messdaten: im Gate als `NoData` auswerten; der Resolver entscheidet nur über die Eingabemenge.
+- [x] `ReportInput` auf Quellenname, Stream-Fabrik und `FromFile`/`FromBytes` begrenzen.
+- [x] `Read<T>`, `Read(Action)` und XML-Fehlerformatierung aus `ReportInput` entfernen beziehungsweise dort nicht neu einführen.
+- [x] `ReportPattern` auf ein unveränderliches, validiertes Muster mit Dateiname und Rekursionsangabe begrenzen.
+- [x] Muster ohne betriebssystemabhängige Pfadzerlegung auswerten.
+- [x] Datei-, Verzeichnis- und Musterauflösung in einem gemeinsamen `ReportResolver` bündeln; vorhandene `Find`-/`Locate`-Logik dorthin verlagern.
+- [x] `ReportResolver` deterministisch geordnete `ReportInput`-Objekte liefern lassen; Datei- oder Methodenabdeckung erst anschließend im Parser auswählen.
+- [x] Bei der Dateisuche auch versteckte Verzeichnisse berücksichtigen.
+- [x] Fehlender Pfad oder Zugriffsfehler: Fehler melden.
+- [x] Vorhandenes Verzeichnis ohne Treffer: leere Eingabemenge liefern.
+- [x] Erfolgreich gelesene Reports ohne Messdaten: im Gate als `NoData` auswerten; der Resolver entscheidet nur über die Eingabemenge.
 
 Checkpoint erfüllt: Datei-, Verzeichnis- und Musterauflösung liegen an einer Stelle.
 
