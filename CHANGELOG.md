@@ -741,3 +741,44 @@ path-prefixed rethrows for the ParseMethods family, CLI directory dispatch + pat
 error, unparenthesized-signature arity, unbalanced-mangled-name tolerance). All 86
 feature methods now score ≤ 18.0 at 100% line coverage — the repo's top-10 worst is
 pre-existing code only. `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` green, 0 warnings.
+
+## Task 19 — 2026-09-18 — TUnit, ReportResolver, structured parse errors, DotCov.Fallout
+
+Changed:
+- Test project moved from xUnit/VSTest to TUnit 1.67.0 on Microsoft.Testing.Platform
+  (`global.json` test runner). Coverage now comes from `coverlet.MTP` (`dotnet test --coverlet
+  --coverlet-output-format cobertura --coverlet-file-prefix dotcov --coverlet-include "[DotCov*]*"
+  --coverlet-exclude-by-attribute … --coverlet-exclude-by-file "**/obj/**/*.cs"`); the file is
+  `TestResults/dotcov.coverage.cobertura.<timestamp>.xml` and the badge step selects it with
+  `--pattern`. `coverlet.runsettings` is gone.
+- Input resolution lives in `ReportResolver` (file, directory, `ReportPattern`; hidden directories
+  searched; missing paths throw; no matches → empty set) producing `ReportInput`s.
+  `CoberturaParser.Parse(ReportInput…)`/`ParseMethods(ReportInput…)` own their streams; the
+  `ParseFile`/`ParseDirectory`/`ParsePath` and `ParseMethods*` path overloads are removed.
+- `ParseMethods` returns `MethodCoverageReport` (`Methods`, `Warnings`, `SourceRoots`); the
+  method aggregation lives in an internal `MethodCollector` keyed by `MethodKey`. Malformed
+  input surfaces as `ReportParseException` (source name, line, position, inner `XmlException`);
+  the regex rethrow is gone and messages are rendered at the CLI/build boundary. `dotcov crap`
+  prints every parser warning to stderr.
+- `CrapAnalysis`: a metrics member that matches a method counts as matched even when the
+  embedded complexity wins; `UnmatchedMetricsMembers` lists only members without a coverage
+  counterpart.
+- `CoverageDiff`: `FileDelta` derives `Delta`, `Change`, `IsRegression`, `IsImprovement` from the
+  change kind and rates (factories `Removed`/`Added`/`Compared`). A removed measured file is a
+  regression whatever its rate (delta is positive zero, never `+-0.0%`); an added 0% file is
+  neither; unmeasured (`null`) never counts as movement; `MovementEpsilon` still gates both-sided
+  files.
+- `DotCov.Nuke` is replaced by `DotCov.Fallout` (Fallout.Common/Components 10.4.0,
+  `ICoverageReport : IFalloutBuild`). Parameters are validated once (`CoverageParameters`), the
+  gate policy is explicit (only `Pass` succeeds; `Fail`/`NoData`/`Disabled` fail distinctly),
+  warnings are logged in full, markdown is rendered once for terminal and step summary, and an
+  unwritable summary only warns. `CoverageReportHelpers` and the `NuGetAuditMode=direct`
+  exceptions are gone; the full transitive audit is clean.
+
+Verified:
+- 752/752 TUnit tests (679 baseline cases migrated, forwarding tests replaced by
+  `ReportPatternTests`, `ReportResolverTests`, `ParserContractTests`, `FalloutBuildTests` — the
+  latter run `tests/DotCov.Fallout.TestBuild` as a real Fallout process). Also green under
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`.
+- `dotcov report TestResults --pattern "**/dotcov.coverage.cobertura.*.xml" --format json` on the
+  coverlet.MTP output: 27 files, line 99.08%, branch 94.41% → badge `99.1%` brightgreen.

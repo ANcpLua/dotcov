@@ -25,16 +25,18 @@ dotcov check TestResults/ --min-line 80
 ## Fail the build under 80%
 
 ```yaml
-- run: dotnet test --collect:"XPlat Code Coverage" --results-directory TestResults
-- run: dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
+- run: dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
+- run: dotcov check TestResults/ --pattern "**/coverage.cobertura.*.xml" --min-line 80 --min-branch 60 --exclude-generated
 ```
 
 ```console
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file — dotcov globs `**/coverage.cobertura.xml` beneath it and merges
-every match, so a sharded test matrix needs no merge step. Below threshold it prints the
+Pass the directory, not a file — dotcov globs `**/coverage.cobertura.xml` beneath it (hidden
+directories included) and merges every match, so a sharded test matrix needs no merge step.
+coverlet.MTP timestamps its file name, hence the `--pattern` above; `coverlet.collector` output
+matches the default. Below threshold it prints the
 offending files and exits `1`.
 
 **Fails closed.** A run that measured *nothing* also exits `1` (`NODATA:`), as does a run where

@@ -69,8 +69,21 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
+      # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP: the same Coverlet
+      # instrumentation as before, configured explicitly here instead of via runsettings.
+      # Compiler-generated async/iterator scaffolding and obj/ source-generator output are
+      # excluded so phantom branches cannot cap coverage; the include filters keep Fallout's
+      # own (pdb-shipping) assemblies out of the measurement. The file lands in TestResults as
+      # dotcov.coverage.cobertura.<timestamp>.xml, which the badge step selects by pattern.
       - name: Test
-        run: dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }} --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory TestResults
+        run: >-
+          dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
+          --results-directory TestResults
+          --coverlet --coverlet-output-format cobertura --coverlet-file-prefix dotcov
+          --coverlet-include "[DotCov]*" --coverlet-include "[DotCov.Tool]*" --coverlet-include "[DotCov.Fallout]*"
+          --coverlet-exclude-by-attribute System.Runtime.CompilerServices.CompilerGeneratedAttribute
+          --coverlet-exclude-by-attribute System.CodeDom.Compiler.GeneratedCodeAttribute
+          --coverlet-exclude-by-file "**/obj/**/*.cs"
         env:
           CI: true
       # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written
@@ -81,7 +94,7 @@ jobs:
       - name: Generate coverage badge (dotcov measuring dotcov)
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          dotnet run --project src/DotCov.Tool -c Release -- report TestResults --format json > coverage.json
+          dotnet run --project src/DotCov.Tool -c Release -- report TestResults --pattern "**/dotcov.coverage.cobertura.*.xml" --format json > coverage.json
           RATE=$(jq -r '.summary.lineRate // empty' coverage.json)
           # Absent key means no line data was measured; a badge claiming otherwise would lie.
           if [ -z "$RATE" ]; then echo "no line data — refusing to publish a badge"; exit 1; fi
@@ -151,7 +164,7 @@ jobs:
           if-no-files-found: error
 
   # The RID-agnostic pieces: portable CoreCLR `any` fallback (Windows/Intel-Mac/musl/...),
-  # the DotCov.Tool pointer package, and the plain DotCov + DotCov.Nuke library packages.
+  # the DotCov.Tool pointer package, and the plain DotCov + DotCov.Fallout library packages.
   pack-rest:
     needs: version
     if: needs.version.outputs.is_release == 'true'
@@ -167,7 +180,7 @@ jobs:
           dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -r any -p:PublishAot=false -p:Version=$V -o artifacts
           dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -p:Version=$V -o artifacts
           dotnet pack src/DotCov/DotCov.csproj           -c Release -p:Version=$V -o artifacts
-          dotnet pack src/DotCov.Nuke/DotCov.Nuke.csproj -c Release -p:Version=$V -o artifacts
+          dotnet pack src/DotCov.Fallout/DotCov.Fallout.csproj -c Release -p:Version=$V -o artifacts
         env:
           CI: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

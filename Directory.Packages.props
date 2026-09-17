@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <TUnitVersion>1.67.0</TUnitVersion>
+    <CoverletMtpVersion>10.0.1</CoverletMtpVersion>
     <FalloutVersion>10.4.0</FalloutVersion>
     <ANcpLuaAnalyzersVersion>2.1.2</ANcpLuaAnalyzersVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageVersion Include="TUnit" Version="$(TUnitVersion)" />
+    <PackageVersion Include="coverlet.MTP" Version="$(CoverletMtpVersion)" />
     <PackageVersion Include="Fallout.Common" Version="$(FalloutVersion)" />
     <PackageVersion Include="Fallout.Components" Version="$(FalloutVersion)" />
     <PackageVersion Include="ANcpLua.Analyzers" Version="$(ANcpLuaAnalyzersVersion)" />

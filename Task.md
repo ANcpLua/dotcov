@@ -141,16 +141,16 @@ einmal vor, die Komponente enthält nur ihre Integrationsaufgaben, und ein konsu
 
 ### Checkpoint 8: CI, Coverage und Abschlussprüfung
 
-- [ ] Den bisherigen VSTest-/`coverlet.collector`-Pfad durch MTP-kompatible Coverage ersetzen; `coverlet.MTP` zur Fortführung der Coverlet-Messung verwenden.
-- [ ] Bestehende Coverage-Filter übertragen; Ausgabeformat, Dateiname und Ausgabeverzeichnis ausdrücklich konfigurieren.
-- [ ] `.github/workflows/nuget-publish.yml` und betroffene Test-/Coverage-Anweisungen auf den neuen Aufruf umstellen.
-- [ ] Paketierung und Artefaktverweise von `DotCov.Nuke` auf `DotCov.Fallout` umstellen; die bestehenden Trigger, Berechtigungen und Release-Bedingungen erhalten.
-- [ ] Nachweisen, dass dotcov den erzeugten Cobertura-Bericht findet, verarbeitet und daraus die Daten für das Coverage-Badge erzeugt.
-- [ ] Build und vollständige Tests ausführen.
-- [ ] Die gezielten Nachweise für versteckte Verzeichnisse, unmatched Metrics und Negativ-Null/Variante A separat im Abschluss nennen; ein grüner Gesamtlauf ohne diese Fälle genügt nicht.
-- [ ] Verfügbare Ergebnisse für die bestehende Linux-/Windows-CI-Matrix prüfen; nicht ausgeführte Plattformprüfungen benennen.
-- [ ] Verbleibende Fehler gegenüber der Ausgangslage ausweisen.
-- [ ] Abschließend nach ausführbaren NUKE-Abhängigkeiten, veralteten Aufrufstellen und widersprüchlichen Kommentaren suchen; historische Quellenangaben von aktiver Konfiguration unterscheiden.
+- [x] Den bisherigen VSTest-/`coverlet.collector`-Pfad durch MTP-kompatible Coverage ersetzen; `coverlet.MTP` zur Fortführung der Coverlet-Messung verwenden.
+- [x] Bestehende Coverage-Filter übertragen; Ausgabeformat, Dateiname und Ausgabeverzeichnis ausdrücklich konfigurieren.
+- [x] `.github/workflows/nuget-publish.yml` und betroffene Test-/Coverage-Anweisungen auf den neuen Aufruf umstellen.
+- [x] Paketierung und Artefaktverweise von `DotCov.Nuke` auf `DotCov.Fallout` umstellen; die bestehenden Trigger, Berechtigungen und Release-Bedingungen erhalten.
+- [x] Nachweisen, dass dotcov den erzeugten Cobertura-Bericht findet, verarbeitet und daraus die Daten für das Coverage-Badge erzeugt.
+- [x] Build und vollständige Tests ausführen.
+- [x] Die gezielten Nachweise für versteckte Verzeichnisse, unmatched Metrics und Negativ-Null/Variante A separat im Abschluss nennen; ein grüner Gesamtlauf ohne diese Fälle genügt nicht.
+- [x] Verfügbare Ergebnisse für die bestehende Linux-/Windows-CI-Matrix prüfen; nicht ausgeführte Plattformprüfungen benennen.
+- [x] Verbleibende Fehler gegenüber der Ausgangslage ausweisen.
+- [x] Abschließend nach ausführbaren NUKE-Abhängigkeiten, veralteten Aufrufstellen und widersprüchlichen Kommentaren suchen; historische Quellenangaben von aktiver Konfiguration unterscheiden.
 
 Checkpoint erfüllt: Build, TUnit-Suite und Coverage-Verarbeitung sind nachgewiesen; offene Prüfungen sind benannt.
 

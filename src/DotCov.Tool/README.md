@@ -14,17 +14,18 @@ dotnet tool install -g DotCov.Tool
 ```
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage" --results-directory TestResults
-dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
+dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
+dotcov check TestResults/ --pattern "**/coverage.cobertura.*.xml" --min-line 80 --min-branch 60 --exclude-generated
 ```
 
 ```
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file: `dotcov` globs `**/coverage.cobertura.xml` beneath it and merges
-every match, so a sharded test matrix needs no merge step. gcovr and coverage.py name their file
-`coverage.xml` — point at it with `--pattern "**/coverage.xml"`.
+Pass the directory, not a file: `dotcov` globs `**/coverage.cobertura.xml` beneath it (hidden
+directories included) and merges every match, so a sharded test matrix needs no merge step.
+coverlet.MTP timestamps its file name (`coverage.cobertura.<timestamp>.xml`), gcovr and coverage.py
+name theirs `coverage.xml` — point at them with `--pattern`.
 
 ## Commands
 

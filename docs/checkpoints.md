@@ -213,3 +213,32 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 752/752 (davon 19 Prozessläufe des konsumierenden Builds).
 
 Checkpoint erfüllt.
+
+## Checkpoint 8: CI, Coverage und Abschlussprüfung
+
+- Coverage: `coverlet.MTP 10.0.1` im Testprojekt; Aufruf in `.github/workflows/nuget-publish.yml` (Job `test`):
+  `dotnet test DotCov.slnx -c Release --results-directory TestResults --coverlet --coverlet-output-format cobertura
+  --coverlet-file-prefix dotcov --coverlet-include "[DotCov]*" "[DotCov.Tool]*" "[DotCov.Fallout]*"
+  --coverlet-exclude-by-attribute CompilerGeneratedAttribute/GeneratedCodeAttribute --coverlet-exclude-by-file "**/obj/**/*.cs"`.
+  Filter aus `coverlet.runsettings` übertragen; die Datei ist gelöscht. Ausgabe: `TestResults/dotcov.coverage.cobertura.<ts>.xml`
+  (coverlet.MTP hängt immer einen Zeitstempel an). Ohne Include-Filter wurden Fallouts eigene Assemblies mitgemessen
+  (1067 Dateien, 14.7 %); mit Filter 27 Dateien.
+- Badge-Schritt: `dotcov report TestResults --pattern "**/dotcov.coverage.cobertura.*.xml" --format json`. Nachweis lokal:
+  lineRate 99.08, branchRate 94.41, 0 Warnungen → Badge `99.1%` (brightgreen) über die unveränderte awk-Logik.
+  Trigger, Berechtigungen, Release-Bedingungen unverändert; `pack-rest` packt `src/DotCov.Fallout`.
+- READMEs (Wurzel, Tool): Testaufruf und `--pattern` für den zeitgestempelten Dateinamen. `CHANGELOG.md`: Eintrag Task 19.
+- Build: 0 Warnungen, 0 Fehler. Tests: 752/752 (Debug und Release, letzterer mit Coverage-Instrumentierung).
+- Gezielte Nachweise (Filterläufe, alle grün): versteckte Verzeichnisse — `ReportResolverTests.Resolve_RecursivePattern_FindsReportsInHiddenDirectories`
+  und `FalloutBuildTests.Pattern_FindsNonCoverletNamesAndHiddenDirectories`; unmatched Metrics —
+  `CrapAnalysisTests.EmbeddedComplexity_WinsOverMetrics_ButTheMatchingMemberStillCountsAsMatched` und
+  `MetricsMemberMatchingNothing_ListedAsUnmatched`; Negativ-Null/Variante A —
+  `CoverageDiffTests.Compare_RemovedZeroRateFile_IsARegression_AddedZeroRateFile_IsNotAnImprovement`,
+  `FormatDiff_RemovedZeroRateFile_NeverRendersADoubleSign`, `FileDelta_ClassificationTable_…` (17 Fälle).
+- Plattformen: alle Läufe auf macOS (arm64). Nicht ausgeführt: die Linux- und Windows-Jobs der CI-Matrix. Windows-relevante
+  Stellen: Hidden-Attribut wird im Resolver-Test explizit gesetzt; `FileShare.None`-Nachweis; Prozessstart über `dotnet` im PATH.
+- Verbleibende Fehler gegenüber der Ausgangslage: keine (Ausgang 679/679, Ende 752/752, Build 0/0).
+- Abschlusssuche: keine `Nuke.*`-Pakete, keine `ParseFile/ParseDirectory/ParsePath/LoadReport`-Aufrufstellen, keine
+  xUnit-/VSTest-Reste in aktiver Konfiguration. Historische Nennungen von `--collect:"XPlat Code Coverage"` und `DotCov.Nuke`
+  verbleiben ausschließlich in älteren `CHANGELOG.md`-Einträgen und in `Task.md` (Aufgabenbeschreibung).
+
+Checkpoint erfüllt.
