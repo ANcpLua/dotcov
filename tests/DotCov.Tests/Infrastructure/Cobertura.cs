@@ -19,8 +19,16 @@ namespace DotCov.Tests.Infrastructure;
 public sealed class Cobertura
 {
     private readonly List<XElement> _classes = [];
+    private readonly List<string> _sources = [];
 
     public static Cobertura NewDoc() => new();
+
+    /// <summary>Declare a <c>&lt;sources&gt;&lt;source&gt;</c> root, in document order.</summary>
+    public Cobertura WithSource(string root)
+    {
+        _sources.Add(root);
+        return this;
+    }
 
     public Cobertura AddClass(string filename, Action<ClassBuilder> configure) =>
         AddClass(filename, filename.Replace('/', '.'), configure);
@@ -54,6 +62,7 @@ public sealed class Cobertura
                 new XAttribute("branch-rate", "0"),
                 new XAttribute("version", "1.0"),
                 new XAttribute("timestamp", "1700000000"),
+                _sources.Count is 0 ? null : new XElement("sources", _sources.Select(r => new XElement("source", r))),
                 new XElement("packages",
                     new XElement("package",
                         new XAttribute("name", "Tests"),

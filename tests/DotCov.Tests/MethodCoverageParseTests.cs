@@ -1,3 +1,4 @@
+using TUnit.Assertions.Enums;
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
@@ -211,51 +212,70 @@ public sealed class MethodCoverageParseTests
         }
     }
 
+    // ── MethodCoverageReport: identity, roots, diagnostics ────────────────────
+
     [Test]
-    public void ParseMethodsDirectory_UnsupportedPattern_Throws()
+    public async Task ParseMethods_Identity_IsFileClassNameAndSignature()
     {
-        var dir = Directory.CreateTempSubdirectory("dotcov-methods-pattern-");
-        try
-        {
-            // Shares ParseDirectory's single pattern gate — same rejection, same message shape.
-            Assert.ThrowsExactly<ArgumentException>(() =>
-                CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(dir.FullName, ReportPattern.Parse("sub/dir/coverage.xml"))));
-        }
-        finally
-        {
-            dir.Delete(recursive: true);
-        }
+        // Same (file, class, name, signature) merges per line with Math.Max; a differing
+        // signature (overload) or class stays a distinct entry, in first-seen order.
+        var report = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("M", "(System.Int32)", "2", m => m.Line(1, hits: 1).Line(2, hits: 0))
+                .Method("M", "(System.String)", "3", m => m.Line(5, hits: 0)))
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("M", "(System.Int32)", "4", m => m.Line(1, hits: 0).Line(2, hits: 7)))
+            .AddClass("src/A.cs", "MyApp.B", c => c
+                .Method("M", "(System.Int32)", "1", m => m.Line(9, hits: 1)))
+            .ParseMethods();
+
+        await Assert.That(report.Select(m => $"{m.ClassName}.{m.MethodName}{m.Signature}"))
+            .IsEquivalentTo(["MyApp.A.M(System.Int32)", "MyApp.A.M(System.String)", "MyApp.B.M(System.Int32)"], CollectionOrdering.Matching);
+        var merged = report[0];
+        await Assert.That(merged.LineHits[1]).IsEqualTo(1);
+        await Assert.That(merged.LineHits[2]).IsEqualTo(7);
+        await Assert.That(merged.LinesHit).IsEqualTo(2);
+        await Assert.That(merged.Complexity).IsEqualTo(4);   // Math.Max across the two blocks
     }
 
     [Test]
-    public void ParseMethodsPath_MissingPath_ThrowsFileNotFound()
+    public async Task ParseMethods_SourceRoots_FollowTheFileReportRules()
     {
-        Assert.ThrowsExactly<FileNotFoundException>(() =>
-            CoberturaParser.ParseMethods(ReportResolver.Resolve("/nonexistent/nowhere.xml")));
+        // A lone no-op root exposes no roots; real roots are kept in declared order and
+        // deduplicated by normalized identity across inputs, exactly like CoverageReport.
+        var noOp = ReportInput.FromBytes("noop", Cobertura.NewDoc().WithSource(".")
+            .AddClass("a.cs", "A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes());
+        var rooted = ReportInput.FromBytes("rooted", Cobertura.NewDoc().WithSource("/repo").WithSource("/other")
+            .AddClass("a.cs", "A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes());
+        var respelled = ReportInput.FromBytes("respelled", Cobertura.NewDoc().WithSource("/repo/")
+            .AddClass("a.cs", "A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes());
+
+        await Assert.That(CoberturaParser.ParseMethods(noOp).SourceRoots).IsEmpty();
+
+        var report = CoberturaParser.ParseMethods([rooted, respelled]);
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["/repo", "/other"], CollectionOrdering.Matching);
+        await Assert.That(report.Methods.Select(m => m.File)).IsEquivalentTo(["/repo/a.cs"], CollectionOrdering.Matching);
     }
 
     [Test]
-    public async Task ParseMethodsPath_DispatchesToFileAndDirectory()
+    public async Task ParseMethods_Warnings_AreCompleteAcrossInputs()
     {
-        // Same file-or-directory dispatch as ParsePath: both arms must land on the same parse.
-        var dir = Directory.CreateTempSubdirectory("dotcov-methods-path-");
-        try
-        {
-            var file = Path.Combine(dir.FullName, "coverage.cobertura.xml");
-            File.WriteAllBytes(file, Cobertura.NewDoc()
-                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1)))
-                .ToBytes());
+        // Every decoding anomaly of every document, in encounter order: malformed hits inside
+        // a method, a multi-root declaration, and a second document's malformed hits.
+        var first = ReportInput.FromBytes("first", Cobertura.NewDoc().WithSource("/a").WithSource("/b")
+            .AddClass("x.cs", "X", c => c.Method("M", "()", "1", m => m.MalformedLine("3", "NaN"))).ToBytes());
+        var second = ReportInput.FromBytes("second", Cobertura.NewDoc()
+            .AddClass("y.cs", "Y", c => c.Method("N", "()", "1", m => m.MalformedLine("4", "?"))).ToBytes());
 
-            var viaFile = CoberturaParser.ParseMethods(ReportResolver.Resolve(file)).Methods;
-            var viaDirectory = CoberturaParser.ParseMethods(ReportResolver.Resolve(dir.FullName)).Methods;
+        var report = CoberturaParser.ParseMethods([first, second]);
 
-            await Assert.That(viaFile.Single().MethodName).IsEqualTo("M");
-            await Assert.That(viaDirectory.Single().MethodName).IsEqualTo("M");
-        }
-        finally
-        {
-            dir.Delete(recursive: true);
-        }
+        await Assert.That(report.Warnings.Select(w => (w.Kind, w.File, w.Line))).IsEquivalentTo(
+        [
+            (CoverageWarningKind.FileIdentityAmbiguous, "", 0),
+            (CoverageWarningKind.MalformedHits, "/a/x.cs", 3),
+            (CoverageWarningKind.MalformedHits, "y.cs", 4),
+        ], CollectionOrdering.Matching);
+        await Assert.That(report.Methods.Select(m => m.LineHits.Values.Single())).IsEquivalentTo([0, 0], CollectionOrdering.Matching);
     }
 
     [Test]

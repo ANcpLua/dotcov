@@ -119,6 +119,46 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
+    public async Task Crap_ParserWarnings_AreWrittenToStderr_AndDoNotChangeTheVerdict()
+    {
+        // A malformed hits attribute inside a method degrades to 0 hits; the CRAP path must
+        // say so — every warning, one line each — while the gate still decides on the data.
+        var path = WriteFile("warn.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("1", "lots").Line(2, hits: 1)))
+            .ToBytes());
+
+        var (code, stdout, stderr) = await Run("crap", path);
+
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("PASS:");
+        await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
+        await Assert.That(stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Count(l => l.StartsWith("warning:"))).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Crap_EmptyDirectory_Nodata_Exits1()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty")).FullName;
+
+        var (code, _, stderr) = await Run("crap", dir);
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("NODATA:");
+    }
+
+    [Test]
+    public async Task Crap_MalformedReport_ErrorNamesTheFileOnce()
+    {
+        var bad = WriteFile("bad/coverage.cobertura.xml", "<coverage><packa"u8.ToArray());
+
+        var (code, _, stderr) = await Run("crap", Path.Combine(_dir.FullName, "bad"));
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith($"error: {bad}: ");
+        await Assert.That(stderr).DoesNotContain($"{bad}: {bad}");
+    }
+
+    [Test]
     public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits1()
     {
         // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.

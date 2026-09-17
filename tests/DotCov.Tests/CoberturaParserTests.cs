@@ -667,19 +667,6 @@ public sealed class CoberturaParserTests
     }
 
     [Test]
-    public async Task ParsePath_WithFile_ParsesSuccessfully()
-    {
-        var report = CoberturaParser.Parse(ReportResolver.Resolve(FixturePath));
-        await Assert.That(report.Files.Count).IsEqualTo(3);
-    }
-
-    [Test]
-    public void ParsePath_WithNonexistentPath_Throws()
-    {
-        Assert.ThrowsExactly<FileNotFoundException>(() => CoberturaParser.Parse(ReportResolver.Resolve("nonexistent")));
-    }
-
-    [Test]
     public async Task Parse_WellFormedXml_EmitsNoWarnings()
     {
         const string xml = """

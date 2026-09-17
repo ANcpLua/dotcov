@@ -147,3 +147,32 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 688/688. Versteckte Verzeichnisse weiterhin über `ReportResolver` (Checkpoint 2).
 
 Checkpoint erfüllt.
+
+## Checkpoint 6: Tests an der Zielstruktur ausrichten
+
+- Neu: `ReportPatternTests` (7 gültige, 9 ungültige Muster parametrisiert; Default, Gleichheit, null),
+  `ReportResolverTests` (echte Temp-Verzeichnisse über `Infrastructure/TempWorkspace`: Datei, fehlender Pfad,
+  fehlendes Verzeichnis, leere Treffermenge, Reports in `.hidden/` und `.artifacts/.cache/…`, ordinale Reihenfolge,
+  nicht-rekursives Muster, `**name` ohne Rekursion, Fremd-Dateinamen, `ReportInput`-Streams),
+  `ParserContractTests` (5 XML-Fälle × Stream sync/async, `FromBytes`, `FromFile`, Resolver → gleiche JSON-Projektion
+  bzw. gleiche Methodenprojektion; Warnungsparität Datei-/Methodenpfad; Merge über mehrere Eingaben; leere Eingabemenge;
+  Stream-Besitz: Aufruferstreams bleiben offen, Eingabestreams sind nach Erfolg und Fehler geschlossen (exklusives
+  Öffnen); Fehlerkoordinaten in `ReportParseException`; Zeichenlimit pro Dokument, über Resolver, 0 = unbegrenzt;
+  sync/async-Fehlerparität).
+- `MethodCoverageParseTests` ergänzt: Methodenidentität `(Datei, Klasse, Name, Signatur)`, Quellwurzelregeln, vollständige
+  Warnungen über mehrere Eingaben. `Cobertura`-Builder um `WithSource` erweitert.
+- `CliCrapTests` ergänzt: Parserwarnungen auf stderr ohne Verdiktänderung, leeres Verzeichnis → `NODATA:` Exit 1,
+  fehlerhafter Report → `error: {file}: …` genau einmal. Buildadapter-Integration folgt in Checkpoint 7.
+- `CrapAnalysisTests`, `CoverageDiffTests` (positive Null, Regression, Formatierung mit Kontrollfall, `FileDelta`-Tabelle,
+  umbenannter Variante-A-Test) wurden bereits in Checkpoint 5a angelegt und bleiben unverändert.
+- Entfernte reine Weiterleitungstests: `ParseDirectoryTests` (8; Verzeichnis-/Musterfälle → `ReportResolverTests`,
+  Merge-Fälle → `ParserContractTests.Parse_MultipleInputs_MergesInInputOrder`), `CoberturaParserTests.ParsePath_*` (2),
+  `MethodCoverageParseTests.ParseMethodsPath_*`/`ParseMethodsDirectory_UnsupportedPattern_Throws` (3 → Resolver/Pattern),
+  `CoreParserRobustnessTests.ParseDirectory_PatternWithDirectoryComponent_Throws` (6 Fälle → `ReportPatternTests`),
+  `…_MaxCharsOverload_*` (2 → `ParserContractTests.MaxChars_*`), `…_SupportedShapes_StillWork` (→ `ReportResolverTests`).
+- Corpus-Zuordnung: alle 13 `CorpusTests` und die `MethodCoverageParseTests` auf Corpus-Dateien laufen unverändert über
+  `ReportResolver.Resolve`/`ReportInput.FromFile`; `MutationKills3/4`, `CoreMutationPinTests`, `CoreApiHardeningTests`,
+  `CorePathIdentityTests`, `MergeConditionIdentityTests` unverändert (Stream-basiert). Keine fachliche Regression ersatzlos entfernt.
+- Build: 0 Fehler. Tests: 725/725.
+
+Checkpoint erfüllt.

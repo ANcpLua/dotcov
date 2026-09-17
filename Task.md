@@ -102,20 +102,20 @@ belegen die Korrekturen zusätzlich zum Parserumbau. Die Dateisuche berücksicht
 
 ### Checkpoint 6: Tests an der Zielstruktur ausrichten
 
-- [ ] Reine Weiterleitungstests entfernen; Verhalten an den neuen Zuständigkeiten prüfen.
-- [ ] `ReportPatternTests`: gültige und ungültige Muster als parametrisierte Fälle prüfen.
-- [ ] `ReportResolverTests`: echte temporäre Verzeichnisse einschließlich passender Reports in versteckten Unterverzeichnissen, Reihenfolge, fehlende Pfade und leere Ergebnisse prüfen.
-- [ ] Parser-Vertragstests: dieselben relevanten XML-Fälle für Speicher- und Dateiquellen verwenden; gleiche fachliche Ergebnisse erwarten.
-- [ ] Datei- und Methodenaggregation gezielt auf ihre jeweiligen Zusammenführungsregeln prüfen.
-- [ ] `MethodCoverageReport` auf Methodenidentität, Quellwurzeln und vollständige Diagnosen prüfen.
-- [ ] Fehlerkoordinaten, Stream-Lebensdauer und Zeichenlimits an den verantwortlichen Schnittstellen testen.
-- [ ] Vorhandene synchrone und asynchrone Parserpfade auf gleiches fachliches Verhalten prüfen.
-- [ ] CLI-/Buildadapter-Integration auf Fehlerausgabe, Warnungen und `NoData` prüfen; den CLI-CRAP-Pfad gesondert einbeziehen.
-- [ ] `CrapAnalysisTests`: Methode mit eingebetteter Komplexität 3 und passendem Metrics-Wert 7 bleibt mit 3 bewertet und gilt als zugeordnet; ein zusätzlicher Metrics-Member ohne Coverage-Gegenstück bleibt als einziger unmatched-Eintrag sichtbar.
-- [ ] `CoverageDiffTests`: Entfernen einer gemessenen 0%-Datei ergibt positive Null und eine Regression; Hinzufügen einer 0%-Datei ergibt keine Verbesserung. Tabellen- und Markdown-Formatierung auf doppelte Vorzeichen prüfen; eine entfernte Datei mit positiver Rate als Kontrollfall verwenden.
-- [ ] `FileDelta` tabellarisch auf hinzugefügte, entfernte und beidseitig vorhandene Dateien prüfen: 0 %, positive Raten, fehlende Messdaten, positive/negative Änderungen sowie Werte unter und genau auf `MovementEpsilon`. Einzelklassifikation und Ergebnisfilter müssen übereinstimmen.
-- [ ] Den bisherigen Test `Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements` gezielt auf Variante A ändern und passend umbenennen; seinen bisherigen Vertrag nicht unverändert migrieren oder ersatzlos löschen.
-- [ ] Bestehende Corpus- und Regressionstestfälle den neuen Tests zuordnen; entfernte oder zusammengeführte Fälle begründen.
+- [x] Reine Weiterleitungstests entfernen; Verhalten an den neuen Zuständigkeiten prüfen.
+- [x] `ReportPatternTests`: gültige und ungültige Muster als parametrisierte Fälle prüfen.
+- [x] `ReportResolverTests`: echte temporäre Verzeichnisse einschließlich passender Reports in versteckten Unterverzeichnissen, Reihenfolge, fehlende Pfade und leere Ergebnisse prüfen.
+- [x] Parser-Vertragstests: dieselben relevanten XML-Fälle für Speicher- und Dateiquellen verwenden; gleiche fachliche Ergebnisse erwarten.
+- [x] Datei- und Methodenaggregation gezielt auf ihre jeweiligen Zusammenführungsregeln prüfen.
+- [x] `MethodCoverageReport` auf Methodenidentität, Quellwurzeln und vollständige Diagnosen prüfen.
+- [x] Fehlerkoordinaten, Stream-Lebensdauer und Zeichenlimits an den verantwortlichen Schnittstellen testen.
+- [x] Vorhandene synchrone und asynchrone Parserpfade auf gleiches fachliches Verhalten prüfen.
+- [x] CLI-/Buildadapter-Integration auf Fehlerausgabe, Warnungen und `NoData` prüfen; den CLI-CRAP-Pfad gesondert einbeziehen.
+- [x] `CrapAnalysisTests`: Methode mit eingebetteter Komplexität 3 und passendem Metrics-Wert 7 bleibt mit 3 bewertet und gilt als zugeordnet; ein zusätzlicher Metrics-Member ohne Coverage-Gegenstück bleibt als einziger unmatched-Eintrag sichtbar.
+- [x] `CoverageDiffTests`: Entfernen einer gemessenen 0%-Datei ergibt positive Null und eine Regression; Hinzufügen einer 0%-Datei ergibt keine Verbesserung. Tabellen- und Markdown-Formatierung auf doppelte Vorzeichen prüfen; eine entfernte Datei mit positiver Rate als Kontrollfall verwenden.
+- [x] `FileDelta` tabellarisch auf hinzugefügte, entfernte und beidseitig vorhandene Dateien prüfen: 0 %, positive Raten, fehlende Messdaten, positive/negative Änderungen sowie Werte unter und genau auf `MovementEpsilon`. Einzelklassifikation und Ergebnisfilter müssen übereinstimmen.
+- [x] Den bisherigen Test `Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements` gezielt auf Variante A ändern und passend umbenennen; seinen bisherigen Vertrag nicht unverändert migrieren oder ersatzlos löschen.
+- [x] Bestehende Corpus- und Regressionstestfälle den neuen Tests zuordnen; entfernte oder zusammengeführte Fälle begründen.
 
 Checkpoint erfüllt: Die Suite prüft die Zielverträge; vorhandene fachliche Regressionen sind weiterhin abgedeckt.
 

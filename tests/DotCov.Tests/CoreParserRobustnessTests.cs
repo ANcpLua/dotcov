@@ -5,10 +5,12 @@ using DotCov.Tests.Infrastructure;
 namespace DotCov.Tests;
 
 /// <summary>
-/// Malformed-input and misconfiguration behavior of the parsing entry points: the DoS
-/// character cap on the sync path, garbage and truncated documents, a bad file inside a
-/// directory aggregate, and the <c>ParseDirectory</c> pattern contract. Every case here is a
-/// way for "nothing was measured" to masquerade as a clean empty report if left unpinned.
+/// Malformed-input behavior of the parsing entry points: the DoS character cap on the sync
+/// path, garbage and truncated documents, and a bad file inside a directory aggregate. Every
+/// case here is a way for "nothing was measured" to masquerade as a clean empty report if
+/// left unpinned. Pattern validation lives in <see cref="ReportPatternTests"/>, input
+/// resolution in <see cref="ReportResolverTests"/>, and cross-source parity in
+/// <see cref="ParserContractTests"/>.
 /// </summary>
 public sealed class CoreParserRobustnessTests
 {
@@ -64,33 +66,6 @@ public sealed class CoreParserRobustnessTests
                 "<coverage><packages>");   // truncated
 
             Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Default)));
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Test]
-    [Arguments("Fixtures/sample.cobertura.xml")]
-    [Arguments("coverage/*.xml")]
-    [Arguments("unit/**/coverage.cobertura.xml")]
-    [Arguments(@"src\coverage.cobertura.xml")]
-    [Arguments("")]
-    [Arguments("**/")]
-    public async Task ParseDirectory_PatternWithDirectoryComponent_Throws(string pattern)
-    {
-        // The parameter is not a glob: any directory component used to be silently discarded,
-        // so "coverage/*.xml" matched the wrong scope (or nothing) and flowed into Evaluate
-        // as NoData — the most invisible misconfiguration. Only 'filename' and '**/filename'
-        // are supported; everything else must throw. "" and "**/" are the empty-filename
-        // holes: Directory.GetFiles(dir, "") matches nothing, so both silently returned an
-        // empty report — the exact failure this gate exists to prevent.
-        var root = Directory.CreateTempSubdirectory("dotcov-pattern-").FullName;
-        try
-        {
-            var ex = Assert.ThrowsExactly<ArgumentException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse(pattern))));
-            await Assert.That(ex.ParamName).IsEqualTo("pattern");
         }
         finally
         {
@@ -165,70 +140,6 @@ public sealed class CoreParserRobustnessTests
 
             // The exception names the malformed report, not the healthy one.
             await Assert.That(ex.SourceName).IsEqualTo(badPath);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    // ── C18: maxChars threading through the path-level entry points ──
-
-    [Test]
-    public async Task ParseDirectory_MaxCharsOverload_EnforcesPerFileCap()
-    {
-        var root = Directory.CreateTempSubdirectory("dotcov-maxchars-").FullName;
-        try
-        {
-            File.WriteAllBytes(Path.Combine(root, "coverage.cobertura.xml"),
-                Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
-
-            Assert.ThrowsExactly<ReportParseException>(() =>
-                CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml")), maxChars: 50));
-            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml")), maxChars: 1_000_000).Files).HasSingleItem();
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Test]
-    public async Task ParsePath_MaxCharsOverload_AppliesToBothFileAndDirectoryInputs()
-    {
-        var root = Directory.CreateTempSubdirectory("dotcov-maxchars-path-").FullName;
-        try
-        {
-            var file = Path.Combine(root, "coverage.cobertura.xml");
-            File.WriteAllBytes(file, Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
-
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.Resolve(file), maxChars: 50));
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.Resolve(root), maxChars: 50));
-            await Assert.That(CoberturaParser.Parse(ReportResolver.Resolve(file), maxChars: 1_000_000).Files).HasSingleItem();
-            await Assert.That(CoberturaParser.Parse(ReportResolver.Resolve(root), maxChars: 1_000_000).Files).HasSingleItem();
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Test]
-    public async Task ParseDirectory_SupportedShapes_StillWork()
-    {
-        // The two documented shapes must keep working after validation: bare filename
-        // (top level only) and the recursive '**/' prefix.
-        var root = Directory.CreateTempSubdirectory("dotcov-shapes-").FullName;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "nested"));
-            File.WriteAllBytes(Path.Combine(root, "coverage.cobertura.xml"),
-                Cobertura.NewDoc().AddClass("top.cs", c => c.Line(1, 1)).ToBytes());
-            File.WriteAllBytes(Path.Combine(root, "nested", "coverage.cobertura.xml"),
-                Cobertura.NewDoc().AddClass("deep.cs", c => c.Line(1, 1)).ToBytes());
-
-            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("coverage.cobertura.xml"))).Files).HasSingleItem();
-            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml"))).Files.Count).IsEqualTo(2);
         }
         finally
         {
