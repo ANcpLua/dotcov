@@ -367,56 +367,31 @@ public static class DotCovCli
     /// <summary>An expected CLI failure whose message is already user-ready (path included).</summary>
     sealed class CliError(string message, Exception? inner = null) : Exception(message, inner);
 
-    // Mirror of the library defaults (default parameter values are baked into callers at
-    // compile time anyway) — these are the values the help text and READMEs document.
-    const string DefaultPattern = "**/coverage.cobertura.xml";
+    // Mirror of the library defaults — these are the values the help text and READMEs document.
     const long DefaultMaxChars = 50_000_000;
 
-    // Thin dispatch onto the library: CoberturaParser.ParseFile already rethrows XmlExceptions
-    // with the failing file's path prefixed (so directory aggregates name the malformed report),
-    // and FileNotFoundException is an IOException — both land in RunAsync's catch as one-line
-    // errors. Only ParseDirectory's unsupported-pattern ArgumentException needs translating:
-    // it is not in RunAsync's catch filter and would otherwise crash with a stack trace.
-    static CoverageReport ParseInput(string path, string pattern, long maxChars)
+    /// <summary>
+    /// The one path-to-inputs step, shared by every command. A missing path is a CLI error;
+    /// an existing directory without matches yields no inputs, and the gate decides what an
+    /// empty report means.
+    /// </summary>
+    static IReadOnlyList<ReportInput> ResolveInputs(string path, ReportPattern pattern)
     {
-        if (File.Exists(path))
-            return CoberturaParser.ParseFile(path, maxChars);
-
-        if (Directory.Exists(path))
+        try
         {
-            try
-            {
-                return CoberturaParser.ParseDirectory(path, pattern, maxChars);
-            }
-            catch (ArgumentException ex)
-            {
-                throw new CliError(ex.Message, ex);
-            }
+            return ReportResolver.Resolve(path, pattern);
         }
-
-        throw new CliError($"No file or directory at '{path}'.");
+        catch (FileNotFoundException ex)
+        {
+            throw new CliError(ex.Message, ex);
+        }
     }
 
-    /// <summary>Method-level twin of <see cref="ParseInput"/>, same dispatch and error contract.</summary>
-    static MethodCoverageReport ParseMethodsInput(string path, string pattern, long maxChars)
-    {
-        if (File.Exists(path))
-            return CoberturaParser.ParseMethodsFile(path, maxChars);
+    static CoverageReport ParseInput(string path, ReportPattern pattern, long maxChars) =>
+        CoberturaParser.Parse(ResolveInputs(path, pattern), maxChars);
 
-        if (Directory.Exists(path))
-        {
-            try
-            {
-                return CoberturaParser.ParseMethodsDirectory(path, pattern, maxChars);
-            }
-            catch (ArgumentException ex)
-            {
-                throw new CliError(ex.Message, ex);
-            }
-        }
-
-        throw new CliError($"No file or directory at '{path}'.");
-    }
+    static MethodCoverageReport ParseMethodsInput(string path, ReportPattern pattern, long maxChars) =>
+        CoberturaParser.ParseMethods(ResolveInputs(path, pattern), maxChars);
 
     /// <summary>Method-level twin of <see cref="ApplyExclusions"/> — same flags, same rule set.</summary>
     static IReadOnlyList<MethodCoverage> ApplyMethodExclusions(
@@ -433,10 +408,15 @@ public static class DotCovCli
 
     /// <summary>Resolve --pattern / --max-chars for the commands that parse coverage input.</summary>
     static bool TryGetParseOptions(
-        Dictionary<string, string> opts, TextWriter stderr, out string pattern, out long maxChars)
+        Dictionary<string, string> opts, TextWriter stderr, out ReportPattern pattern, out long maxChars)
     {
-        pattern = opts.GetValueOrDefault("pattern", DefaultPattern);
+        pattern = ReportPattern.Default;
         maxChars = DefaultMaxChars;
+
+        // A CliError rather than a stderr line: the pattern only matters once a directory is
+        // scanned, and the "error:" prefix is the documented discriminator for could-not-run.
+        if (opts.TryGetValue("pattern", out var rawPattern) && !ReportPattern.TryParse(rawPattern, out pattern!))
+            throw new CliError($"Unsupported pattern '{rawPattern}': only 'filename' and '**/filename' are supported.");
 
         if (opts.TryGetValue("max-chars", out var raw) &&
             // NumberStyles.None: digits only — a sign or separator makes the value invalid,

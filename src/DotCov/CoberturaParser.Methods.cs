@@ -60,20 +60,6 @@ public static partial class CoberturaParser
         return methods.Materialize();
     }
 
-    public static MethodCoverageReport ParseMethodsFile(string path, long maxChars = DefaultMaxChars) =>
-        ParseMethods(ReportInput.FromFile(path), maxChars);
-
-    public static MethodCoverageReport ParseMethodsDirectory(string directory, string pattern = DefaultPattern) =>
-        ParseMethodsDirectory(directory, pattern, DefaultMaxChars);
-
-    public static MethodCoverageReport ParseMethodsDirectory(string directory, string pattern, long maxChars) =>
-        ParseMethods(ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern)), maxChars);
-
-    public static MethodCoverageReport ParseMethodsPath(string path) => ParseMethodsPath(path, DefaultMaxChars);
-
-    public static MethodCoverageReport ParseMethodsPath(string path, long maxChars) =>
-        ParseMethods(ReportResolver.Resolve(path), maxChars);
-
     /// <summary>Walk one document into <paramref name="methods"/>; roots are per document, warnings accumulate.</summary>
     private static void CollectMethods(XmlReader reader, MethodCollector methods)
     {

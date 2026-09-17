@@ -16,7 +16,8 @@ dotnet add package DotCov
 using DotCov;
 using DotCov.Formatters;
 
-var report = CoberturaParser.ParsePath("TestResults/")   // file or directory
+var inputs = ReportResolver.Resolve("TestResults/");      // file or directory
+var report = CoberturaParser.Parse(inputs)
                             .Exclude(ExclusionRules.WellKnown);
 
 Console.WriteLine(TableFormatter.Format(report));
@@ -29,8 +30,10 @@ if (!gate.IsPass)
 }
 ```
 
-`ParsePath` takes a file or a directory; a directory is globbed for
-`**/coverage.cobertura.xml` and every match merged, so a sharded test matrix needs no merge step.
+`ReportResolver.Resolve` takes a file or a directory; a directory is searched for
+`**/coverage.cobertura.xml` (pass a `ReportPattern` to change that) and `Parse` merges every
+match, so a sharded test matrix needs no merge step. An existing directory with no match yields
+no inputs and therefore an empty report; a missing path throws.
 
 ## Two things the API insists on
 
@@ -47,8 +50,8 @@ parsing `Reason`.
 ```csharp
 // Compare two reports — added / removed / modified, per-file deltas, line-level flips
 var diff = CoverageDiff.Compare(
-    CoberturaParser.ParseFile("before.xml"),
-    CoberturaParser.ParseFile("after.xml"));
+    CoberturaParser.Parse(ReportInput.FromFile("before.xml")),
+    CoberturaParser.Parse(ReportInput.FromFile("after.xml")));
 
 foreach (var r in diff.Regressions)
     Console.WriteLine($"{r.Path}: {r.Before:P1} → {r.After:P1}");
@@ -58,7 +61,8 @@ await using var stream = File.OpenRead("coverage.cobertura.xml");
 var report = await CoberturaParser.ParseAsync(stream, ct: cancellationToken);
 
 // Per-method detail — complexity and line hits, the input behind the CRAP gate
-var methods = CoberturaParser.ParseMethodsPath("TestResults/");
+var methods = CoberturaParser.ParseMethods(ReportResolver.Resolve("TestResults/"));
+// methods.Methods, methods.Warnings, methods.SourceRoots
 ```
 
 `TableFormatter`, `MarkdownFormatter`, and `JsonFormatter` render a report for a terminal, a PR

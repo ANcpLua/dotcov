@@ -22,7 +22,7 @@ public sealed class CorpusTests
     {
         // Lines 5,7,8,10,12 with hits 3e9,3e9,0,2,2 → 4/5 hit; branches 7:(1/2) + 12:(2/2) → 3/4.
         // The relative filename `src/calc.c` roots against the single <source> element.
-        var report = CoberturaParser.ParsePath($"{Corpus}/gcovr/coverage.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/gcovr/coverage.xml"));
 
         var calc = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(calc.Path).IsEqualTo("/home/runner/work/myproj/myproj/src/calc.c");
@@ -45,7 +45,7 @@ public sealed class CorpusTests
     {
         // module.py: lines 1-5,7,8 hits 1,1,1,1,0,1,0 → 5/7; branches 3:(1/2) + 7:(2/2) → 3/4.
         // __init__.py: 1/1. Report totals: 6/8 lines = 0.75, 3/4 branches.
-        var report = CoberturaParser.ParsePath($"{Corpus}/coveragepy/coverage.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/coveragepy/coverage.xml"));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);
         var module = report.Files.Single(f => f.Path == "/home/runner/work/myproj/myproj/src/mypkg/module.py");
@@ -72,7 +72,7 @@ public sealed class CorpusTests
         // Lines 10,12,13,15,17 hits 1,1,1,1,0 → 4/5; branches 12:(1/3) + 15:(1/2) → 2/5.
         // The relative root `src/main/java` still prefixes the key — identity must be stable
         // whether or not the root happens to be absolute.
-        var report = CoberturaParser.ParsePath($"{Corpus}/cover2cover/coverage.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/cover2cover/coverage.xml"));
 
         var foo = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(foo.Path).IsEqualTo("src/main/java/com/example/Foo.java");
@@ -90,7 +90,7 @@ public sealed class CorpusTests
     public async Task Grcov_NoOpSourceRootAndCountValuedConditions_KeepsLineAggregate()
     {
         // Lines 3,5,7,9,11 hits 1,7,7,2,0 → 4/5; branches 7:(1/2) + 9:(0/0) → 1/2.
-        var report = CoberturaParser.ParsePath($"{Corpus}/grcov/coverage.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/grcov/coverage.xml"));
 
         var main = await Assert.That(report.Files).HasSingleItem();
         // <source>.</source> is a no-op root: no prefix, no declared root on the report.
@@ -115,7 +115,7 @@ public sealed class CorpusTests
     {
         // Add: 10,11 hits 4,4; Div: 20,21,22,24 hits 2,2,1,0 → 5/6 lines.
         // Branches 11:(2/2) + 21:(1/3) → 3/5. complexity="NaN" must not disturb parsing.
-        var report = CoberturaParser.ParsePath($"{Corpus}/reportgenerator/Cobertura.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/reportgenerator/Cobertura.xml"));
 
         var calc = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(calc.Path).IsEqualTo("/home/runner/work/app/src/MyApp/Calculator.cs");
@@ -135,7 +135,7 @@ public sealed class CorpusTests
         // The canonical coverage-04.dtd document: DOCTYPE must be skipped (not rejected — the
         // format's own emitters write it), and the Windows drive-letter root must prefix the key.
         // Lines 12,13,16,17,19,24 hits 3,19,16,9,7,0 → 5/6; branches 13:(2/2) + 16:(1/2) → 3/4.
-        var report = CoberturaParser.ParsePath($"{Corpus}/reference/cobertura-dtd-example.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/reference/cobertura-dtd-example.xml"));
 
         var search = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(search.Path).IsEqualTo("C:/local/mvn-project/src/main/java/search/BinarySearch.java");
@@ -156,7 +156,7 @@ public sealed class CorpusTests
         // svc-a app/main.py 8/10 and svc-b app/main.py 2/6 are DIFFERENT files. Rooting each
         // key against its report's <source> keeps them distinct: 10/16 lines = 62.5%, never
         // the silently-fused 8/10 that discarding the roots produced.
-        var report = CoberturaParser.ParsePath($"{Corpus}/monorepo");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/monorepo"));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);
         var svcA = report.Files.Single(f => f.Path == "/home/runner/work/mono/mono/services/svc-a/app/main.py");
@@ -184,7 +184,7 @@ public sealed class CorpusTests
         // machine-absolute filename) and DeterministicSourcePaths (root `/_/` + repo-relative
         // filename). No root arithmetic can unify the keys, so the merge keeps both entries
         // (totals double-count: 4/6 lines, 2/4 branches) and MUST surface the ambiguity.
-        var report = CoberturaParser.ParsePath($"{Corpus}/pathidentity");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/pathidentity"));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);
         await Assert.That(report.Files.Count(f => f.Path == "/home/runner/work/app/app/src/MyApp/Calculator.cs")).IsEqualTo(1);
@@ -204,7 +204,7 @@ public sealed class CorpusTests
     [Test]
     public async Task EmptyPackages_NothingMeasured_IsNoDataNotFullCoverage()
     {
-        var report = CoberturaParser.ParsePath($"{Corpus}/edge/empty-packages.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/edge/empty-packages.xml"));
 
         await Assert.That(report.Files).IsEmpty();
         await Assert.That(report.LineRate).IsNull();
@@ -221,7 +221,7 @@ public sealed class CorpusTests
         // linux/net/netfilter really contains both xt_TCPMSS.c (4/4) and xt_tcpmss.c (0/4).
         // Ordinal keying keeps them apart: 4/8 = 50%, not a case-fused 4/4 that erases the
         // uncovered file's misses.
-        var report = CoberturaParser.ParsePath($"{Corpus}/edge/gcovr-case-sensitive.xml");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/edge/gcovr-case-sensitive.xml"));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);
         var upper = report.Files.Single(f => f.Path == "/home/runner/linux/net/netfilter/xt_TCPMSS.c");
@@ -238,7 +238,7 @@ public sealed class CorpusTests
     {
         // gcovr writes coverage.xml, `coverage xml` writes what you tell it: neither matches
         // the default `**/coverage.cobertura.xml` glob — the reason the pattern is settable.
-        var report = CoberturaParser.ParsePath($"{Corpus}/edge/gcovr-named-dir");
+        var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/edge/gcovr-named-dir"));
 
         await Assert.That(report.Files).IsEmpty();
     }
@@ -248,12 +248,12 @@ public sealed class CorpusTests
     {
         // coverage.xml is the gcovr sample (4/5 lines, 3/4 branches); Cobertura.xml is the
         // coverage.py sample (6/8 lines, 3/4 branches). Each pattern selects exactly one.
-        var gcovr = CoberturaParser.ParseDirectory($"{Corpus}/edge/gcovr-named-dir", "coverage.xml");
+        var gcovr = CoberturaParser.Parse(ReportResolver.ResolveDirectory($"{Corpus}/edge/gcovr-named-dir", ReportPattern.Parse("coverage.xml")));
         await Assert.That(gcovr.TotalLines).IsEqualTo(5);
         await Assert.That(gcovr.TotalLinesHit).IsEqualTo(4);
         await Assert.That(gcovr.TotalBranchesHit).IsEqualTo(3);
 
-        var coveragePy = CoberturaParser.ParseDirectory($"{Corpus}/edge/gcovr-named-dir", "cobertura.xml");
+        var coveragePy = CoberturaParser.Parse(ReportResolver.ResolveDirectory($"{Corpus}/edge/gcovr-named-dir", ReportPattern.Parse("cobertura.xml")));
         await Assert.That(coveragePy.TotalLines).IsEqualTo(8);
         await Assert.That(coveragePy.TotalLinesHit).IsEqualTo(6);
         await Assert.That(coveragePy.TotalBranches).IsEqualTo(4);
@@ -269,7 +269,7 @@ public sealed class CorpusTests
         await Assert.That(samples.Length).IsEqualTo(14);
         foreach (var sample in samples)
         {
-            var report = CoberturaParser.ParseFile(sample);
+            var report = CoberturaParser.Parse(ReportInput.FromFile(sample));
             await Assert.That(report).IsNotNull();
         }
     }

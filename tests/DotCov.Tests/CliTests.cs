@@ -444,8 +444,8 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task DirectoryScan_MalformedFile_PrefixesPathExactlyOnce()
     {
-        // The library's ParseFile prefixes the failing path; the CLI must not prefix again
-        // ("error: {path}: {path}: ...").
+        // ReportParseException carries the failing path once; the CLI renders it once
+        // ("error: {path}: ..."), never "error: {path}: {path}: ...".
         var bad = WriteFile("once/coverage.cobertura.xml", "<coverage><packa");
 
         var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "once"));
@@ -502,8 +502,8 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Report_InvalidPattern_FriendlyError_Exits1()
     {
-        // ParseDirectory's pattern gate throws ArgumentException, which is not in RunAsync's
-        // catch filter — the CLI must translate it, not crash with a stack trace.
+        // An invalid --pattern is rejected at the option boundary as a one-line CLI error,
+        // never a stack trace.
         var dir = Directory.CreateDirectory(Path.Combine(_dir.FullName, "pat")).FullName;
 
         var (code, _, stderr) = await Run("report", dir, "--pattern", "sub/coverage.xml");

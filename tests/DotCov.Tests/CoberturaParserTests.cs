@@ -12,7 +12,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_FullyCoveredClass_ReportsAllLinesHit()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
 
         await Assert.That(calculator.LinesTotal).IsEqualTo(4);
@@ -23,7 +23,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_PartiallyCoveredClass_ReportsCorrectHitCount()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
 
         await Assert.That(parser.LinesTotal).IsEqualTo(5);
@@ -34,7 +34,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_UncoveredClass_ReportsZeroLineRate()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
 
         await Assert.That(unused.LinesTotal).IsEqualTo(3);
@@ -45,7 +45,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_FullBranchCoverage_ReportsAllBranchesHit()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
 
         await Assert.That(calculator.BranchesTotal).IsEqualTo(2);
@@ -56,7 +56,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_PartialBranches_ExtractsConditionCoverageCorrectly()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
 
         await Assert.That(parser.BranchesTotal).IsEqualTo(4);
@@ -67,7 +67,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Parse_NoBranches_ReportsNoBranchRate()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
 
         await Assert.That(unused.BranchesTotal).IsEqualTo(0);
@@ -80,7 +80,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Report_AggregateTotals_SumsAcrossAllFiles()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
 
         await Assert.That(report.TotalLines).IsEqualTo(12);
         await Assert.That(report.TotalLinesHit).IsEqualTo(7);
@@ -91,14 +91,14 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Evaluate_AboveMinimum_Passes()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         await Assert.That(report.Evaluate(50).Outcome).IsEqualTo(GateOutcome.Pass);
     }
 
     [Test]
     public async Task Evaluate_BelowMinimum_Fails()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var gate = report.Evaluate(80);
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
         await Assert.That(gate.Reason).Contains("line coverage below threshold");
@@ -107,7 +107,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Evaluate_WithBranchMinimum_ChecksBoth()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         await Assert.That(report.Evaluate(50, 50).Outcome).IsEqualTo(GateOutcome.Pass);
         await Assert.That(report.Evaluate(50, 60).Outcome).IsEqualTo(GateOutcome.Fail);
     }
@@ -115,7 +115,7 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task BelowPercent_ReturnsOnlyFilesUnderThreshold()
     {
-        var report = CoberturaParser.ParseFile(FixturePath);
+        var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
         var below80 = report.BelowPercent(80).ToList();
 
         await Assert.That(below80.Count).IsEqualTo(2);
@@ -669,14 +669,14 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task ParsePath_WithFile_ParsesSuccessfully()
     {
-        var report = CoberturaParser.ParsePath(FixturePath);
+        var report = CoberturaParser.Parse(ReportResolver.Resolve(FixturePath));
         await Assert.That(report.Files.Count).IsEqualTo(3);
     }
 
     [Test]
     public void ParsePath_WithNonexistentPath_Throws()
     {
-        Assert.ThrowsExactly<FileNotFoundException>(() => CoberturaParser.ParsePath("nonexistent"));
+        Assert.ThrowsExactly<FileNotFoundException>(() => CoberturaParser.Parse(ReportResolver.Resolve("nonexistent")));
     }
 
     [Test]

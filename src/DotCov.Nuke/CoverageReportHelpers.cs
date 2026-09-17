@@ -10,39 +10,15 @@ namespace DotCov.Nuke;
 public static class CoverageReportHelpers
 {
     /// <summary>
-    /// Discovers and merges coverage via <see cref="CoberturaParser.ParseDirectory"/> —
-    /// the library's hardened path (deterministic ordinal file order). A missing directory
-    /// behaves like an empty one: both yield the <see cref="CoverageReport.Empty"/> singleton,
-    /// which lets callers distinguish "no files discovered" from a parsed-but-empty report.
+    /// Validates the report-name pattern parameter (<see cref="ReportPattern"/> accepts only
+    /// <c>filename</c> and <c>**/filename</c>), naming the parameter on rejection like the
+    /// strict parsers below.
     /// </summary>
-    public static CoverageReport LoadReport(string searchDirectory) =>
-        LoadReport(searchDirectory, "**/coverage.cobertura.xml", 50_000_000);
-
-    /// <summary>
-    /// <see cref="LoadReport(string)"/> with an explicit report-name pattern and per-file
-    /// character cap — the NUKE-side twin of the CLI's <c>--pattern</c>/<c>--max-chars</c>
-    /// (gcovr and coverage.py emit <c>coverage.xml</c>, which the default pattern never
-    /// matches). A separate overload, not optional parameters on the existing signature:
-    /// defaults are baked into compiled callers, so widening the published signature would
-    /// be binary-breaking. An unsupported pattern (<see cref="CoberturaParser.ParseDirectory(string, string, long)"/>
-    /// accepts only <c>filename</c> and <c>**/filename</c>) rethrows as a parameter error
-    /// naming <c>Coverage Pattern</c>, consistent with the strict parsers below.
-    /// </summary>
-    public static CoverageReport LoadReport(string searchDirectory, string pattern, long maxChars)
-    {
-        if (!Directory.Exists(searchDirectory)) return CoverageReport.Empty;
-        try
-        {
-            return CoberturaParser.ParseDirectory(searchDirectory, pattern, maxChars);
-        }
-        // Scoped to the pattern gate's exception (ParamName "pattern"): ArgumentOutOfRangeException
-        // from a negative maxChars derives from ArgumentException and must not be blamed on the pattern.
-        catch (ArgumentException ex) when (ex.ParamName == nameof(pattern))
-        {
-            throw new ArgumentException(
-                $"Invalid Coverage Pattern: '{pattern}' (only 'filename' and '**/filename' are supported).", ex);
-        }
-    }
+    public static ReportPattern ParsePattern(string value, string parameterName) =>
+        ReportPattern.TryParse(value, out var parsed)
+            ? parsed
+            : throw new ArgumentException(
+                $"Invalid {parameterName}: '{value}' (only 'filename' and '**/filename' are supported).");
 
     /// <summary>
     /// Strict per-file character-cap parse mirroring the CLI's <c>--max-chars</c>: digits

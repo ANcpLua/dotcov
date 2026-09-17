@@ -75,15 +75,15 @@ Checkpoint erfüllt: Ergebnisse und Fehler enthalten ihre Diagnosen; Stream-Besi
 
 ### Checkpoint 5: Alte API entfernen und Aufrufer umstellen
 
-- [ ] `ParseFile`, `ParseDirectory` und `ParsePath` samt Overloads löschen.
-- [ ] `ParseMethodsFile`, `ParseMethodsDirectory` und `ParseMethodsPath` samt Overloads löschen.
-- [ ] CLI und Buildadapter auf denselben `ReportResolver` plus `Parse` beziehungsweise `ParseMethods` umstellen.
-- [ ] `LoadReport`-Kompatibilitäts-Overload entfernen.
-- [ ] Erkennung fehlender Reports über `ReferenceEquals(..., CoverageReport.Empty)` durch Prüfung der Eingabemenge ersetzen.
-- [ ] Fehlerbehandlung und Diagnoseausgabe von CLI und Buildadapter anpassen.
-- [ ] Betroffene Tests, Hilfsfunktionen, Dokumentation und `cref`-Signaturen aktualisieren.
-- [ ] Kommentare entfernen, deren einzige Begründung Binärkompatibilität ist.
-- [ ] Keine Alias- oder Übergangs-Wrapper hinzufügen.
+- [x] `ParseFile`, `ParseDirectory` und `ParsePath` samt Overloads löschen.
+- [x] `ParseMethodsFile`, `ParseMethodsDirectory` und `ParseMethodsPath` samt Overloads löschen.
+- [x] CLI und Buildadapter auf denselben `ReportResolver` plus `Parse` beziehungsweise `ParseMethods` umstellen.
+- [x] `LoadReport`-Kompatibilitäts-Overload entfernen.
+- [x] Erkennung fehlender Reports über `ReferenceEquals(..., CoverageReport.Empty)` durch Prüfung der Eingabemenge ersetzen.
+- [x] Fehlerbehandlung und Diagnoseausgabe von CLI und Buildadapter anpassen.
+- [x] Betroffene Tests, Hilfsfunktionen, Dokumentation und `cref`-Signaturen aktualisieren.
+- [x] Kommentare entfernen, deren einzige Begründung Binärkompatibilität ist.
+- [x] Keine Alias- oder Übergangs-Wrapper hinzufügen.
 
 Checkpoint erfüllt: Keine Aufrufstelle oder Dokumentationsreferenz benötigt die entfernte API.
 

@@ -47,14 +47,19 @@ public interface ICoverageReport : INukeBuild
         .TryDependsOn<ICompile>()
         .Executes(() =>
         {
-            var report = CoverageReportHelpers.LoadReport(CoverageSearchDirectory, Pattern, MaxChars);
+            var pattern = CoverageReportHelpers.ParsePattern(Pattern, "Coverage Pattern");
+            var inputs = Directory.Exists(CoverageSearchDirectory)
+                ? ReportResolver.ResolveDirectory(CoverageSearchDirectory, pattern)
+                : [];
 
-            // LoadReport yields the CoverageReport.Empty singleton only when discovery matched
-            // no files; a file that parsed to zero coverage is a distinct instance and flows to
-            // the NoData gate below. The message names the configured pattern — hard-coding the
-            // default file name would lie once --coverage-pattern is set.
-            Assert.True(!ReferenceEquals(report, CoverageReport.Empty),
+            // No inputs is a configuration problem and fails here; a report that parsed to
+            // zero coverage is a distinct case and flows to the NoData gate below. The message
+            // names the configured pattern — hard-coding the default file name would lie once
+            // --coverage-pattern is set.
+            Assert.True(inputs.Count > 0,
                 $"No files matching '{Pattern}' found in {CoverageSearchDirectory}");
+
+            var report = CoberturaParser.Parse(inputs, MaxChars);
 
             if (ExcludeGenerated)
                 report = report.Exclude(ExclusionRules.WellKnown);

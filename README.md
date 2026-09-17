@@ -175,7 +175,7 @@ point elsewhere.
 using DotCov;
 using DotCov.Formatters;
 
-var report = CoberturaParser.ParsePath("TestResults/")   // file or directory
+var report = CoberturaParser.Parse(ReportResolver.Resolve("TestResults/"))   // file or directory
                             .Exclude(ExclusionRules.WellKnown);
 
 var gate = report.Evaluate(minLinePercent: 80, minBranchPercent: 60);
@@ -190,8 +190,8 @@ Console.WriteLine(TableFormatter.Format(report));
 
 Rates are `double?`: `null` means *unanswerable*, which is neither 0.0 nor 1.0. `Evaluate`
 returns four outcomes (`Pass`, `Fail`, `NoData`, `Disabled`) and `IsPass` covers only the first.
-`CoverageDiff.Compare` gives you the diff model, `CoberturaParser.ParseMethods*` the per-method
-data behind `crap`, and `ParseAsync` a cancellable streaming overload.
+`CoverageDiff.Compare` gives you the diff model, `CoberturaParser.ParseMethods` the per-method
+data behind `crap` (with its warnings and source roots), and `ParseAsync` a cancellable streaming overload.
 
 Parsing is `XmlReader`-streaming with `DtdProcessing.Prohibit`, `XmlResolver = null`, and a
 50,000,000-character-per-file cap (`--max-chars`, or the `maxChars` overloads; `0` disables).

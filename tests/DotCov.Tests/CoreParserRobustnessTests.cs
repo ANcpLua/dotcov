@@ -63,7 +63,7 @@ public sealed class CoreParserRobustnessTests
             File.WriteAllText(Path.Combine(root, "bad", "coverage.cobertura.xml"),
                 "<coverage><packages>");   // truncated
 
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseDirectory(root));
+            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Default)));
         }
         finally
         {
@@ -89,7 +89,7 @@ public sealed class CoreParserRobustnessTests
         var root = Directory.CreateTempSubdirectory("dotcov-pattern-").FullName;
         try
         {
-            var ex = Assert.ThrowsExactly<ArgumentException>(() => CoberturaParser.ParseDirectory(root, pattern));
+            var ex = Assert.ThrowsExactly<ArgumentException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse(pattern))));
             await Assert.That(ex.ParamName).IsEqualTo("pattern");
         }
         finally
@@ -112,7 +112,7 @@ public sealed class CoreParserRobustnessTests
             var path = Path.Combine(root, "bad.xml");
             File.WriteAllText(path, "<coverage><packa");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseFile(path));
+            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
 
             await Assert.That(ex.SourceName).IsEqualTo(path);
             await Assert.That(ex.Message).DoesNotContain(path);   // the message is the reader's, unmodified
@@ -135,7 +135,7 @@ public sealed class CoreParserRobustnessTests
             var path = Path.Combine(root, "bad.xml");
             File.WriteAllText(path, "<coverage><packa");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseFile(path));
+            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
 
             var inner = ex.InnerException;
             await Assert.That(inner.LineNumber).IsNotEqualTo(0);
@@ -161,7 +161,7 @@ public sealed class CoreParserRobustnessTests
             var badPath = Path.Combine(root, "bad", "coverage.cobertura.xml");
             File.WriteAllText(badPath, "<coverage><packages>");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseDirectory(root));
+            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Default)));
 
             // The exception names the malformed report, not the healthy one.
             await Assert.That(ex.SourceName).IsEqualTo(badPath);
@@ -184,8 +184,8 @@ public sealed class CoreParserRobustnessTests
                 Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
 
             Assert.ThrowsExactly<ReportParseException>(() =>
-                CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 50));
-            await Assert.That(CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 1_000_000).Files).HasSingleItem();
+                CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml")), maxChars: 50));
+            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml")), maxChars: 1_000_000).Files).HasSingleItem();
         }
         finally
         {
@@ -202,10 +202,10 @@ public sealed class CoreParserRobustnessTests
             var file = Path.Combine(root, "coverage.cobertura.xml");
             File.WriteAllBytes(file, Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
 
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParsePath(file, maxChars: 50));
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParsePath(root, maxChars: 50));
-            await Assert.That(CoberturaParser.ParsePath(file, maxChars: 1_000_000).Files).HasSingleItem();
-            await Assert.That(CoberturaParser.ParsePath(root, maxChars: 1_000_000).Files).HasSingleItem();
+            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.Resolve(file), maxChars: 50));
+            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.Resolve(root), maxChars: 50));
+            await Assert.That(CoberturaParser.Parse(ReportResolver.Resolve(file), maxChars: 1_000_000).Files).HasSingleItem();
+            await Assert.That(CoberturaParser.Parse(ReportResolver.Resolve(root), maxChars: 1_000_000).Files).HasSingleItem();
         }
         finally
         {
@@ -227,8 +227,8 @@ public sealed class CoreParserRobustnessTests
             File.WriteAllBytes(Path.Combine(root, "nested", "coverage.cobertura.xml"),
                 Cobertura.NewDoc().AddClass("deep.cs", c => c.Line(1, 1)).ToBytes());
 
-            await Assert.That(CoberturaParser.ParseDirectory(root, "coverage.cobertura.xml").Files).HasSingleItem();
-            await Assert.That(CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml").Files.Count).IsEqualTo(2);
+            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("coverage.cobertura.xml"))).Files).HasSingleItem();
+            await Assert.That(CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Parse("**/coverage.cobertura.xml"))).Files.Count).IsEqualTo(2);
         }
         finally
         {

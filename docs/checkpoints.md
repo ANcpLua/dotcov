@@ -107,3 +107,22 @@ Checkpoint erfüllt.
 - Build: 0 Fehler. Tests: 679/679.
 
 Checkpoint erfüllt.
+
+## Checkpoint 5: Alte API entfernen und Aufrufer umstellen
+
+- Gelöscht: `ParseFile`, `ParseDirectory` (2 Overloads), `ParsePath` (2), `ParseMethodsFile`,
+  `ParseMethodsDirectory` (2), `ParseMethodsPath` (2), `CoverageReportHelpers.LoadReport` (2).
+- CLI: `ResolveInputs` (ein `ReportResolver.Resolve`-Aufruf für alle Befehle, fehlender Pfad → `CliError`),
+  `--pattern` wird an der Optionsgrenze als `ReportPattern` validiert (`error: Unsupported pattern …`).
+- Nuke-Target: `ReportResolver.ResolveDirectory` + `CoberturaParser.Parse(inputs)`; „keine Reports“ über
+  `inputs.Count > 0` statt `ReferenceEquals(report, CoverageReport.Empty)`. `CoverageReportHelpers.ParsePattern`
+  ersetzt die Pattern-Übersetzung von `LoadReport`.
+- READMEs (Wurzel, `src/DotCov`) und `cref` in `CodeMetrics.cs` aktualisiert; Kommentare mit reiner
+  Binärkompatibilitätsbegründung entfernt (Overload-statt-Default-Parameter, „compiled consumers“, Regex-Rethrow).
+- Tests: Aufrufstellen mechanisch auf `Parse(ReportInput.FromFile(…))`, `Parse(ReportResolver.Resolve(…))`,
+  `Parse(ReportResolver.ResolveDirectory(…, ReportPattern.Parse(…)))` (analog `ParseMethods`) umgestellt.
+  Die 10 `LoadReport_*`-Tests entfernt (Vertrag existiert nicht mehr; Resolver-Verhalten wird in Checkpoint 6 als
+  `ReportResolverTests` abgedeckt). `ParseDirectoryTests` bleiben bis Checkpoint 6 als Weiterleitungstests bestehen.
+- Build: 0 Fehler. Tests: 669/669 (679 − 10 entfernte).
+
+Checkpoint erfüllt.

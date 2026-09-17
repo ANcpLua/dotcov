@@ -82,8 +82,8 @@ public static class CodeMetricsReader
     }
 
     /// <summary>
-    /// <see cref="Parse"/> from a file path, with the same path-prefixing
-    /// <see cref="XmlException"/> rethrow contract as <see cref="CoberturaParser.ParseFile"/>.
+    /// <see cref="Parse"/> from a file path. A malformed document rethrows as
+    /// <see cref="XmlException"/> with the path prefixed, so the CLI can name the file.
     /// </summary>
     public static IReadOnlyList<CodeMetricsMember> ParseFile(string path, long maxChars = DefaultMaxChars)
     {

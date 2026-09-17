@@ -19,96 +19,6 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
         File.WriteAllBytes(full, builder.ToBytes());
     }
 
-    // ── LoadReport ────────────────────────────────────────────────────────────
-
-    [Test]
-    public async Task LoadReport_MissingDirectory_ReturnsEmptySingleton() =>
-        await Assert.That(CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"))).IsSameReferenceAs(CoverageReport.Empty);
-
-    [Test]
-    public async Task LoadReport_EmptyDirectory_ReturnsEmptySingleton() =>
-        await Assert.That(CoverageReportHelpers.LoadReport(_root)).IsSameReferenceAs(CoverageReport.Empty);
-
-    [Test]
-    public async Task LoadReport_FileWithNoClasses_IsNotTheEmptySingleton()
-    {
-        // The target's hard-fail relies on this boundary: a discovered-but-dataless report
-        // must reach the gate (NoData), not the "no files found" assert.
-        Write("coverage.cobertura.xml", Cobertura.NewDoc());
-
-        var report = CoverageReportHelpers.LoadReport(_root);
-
-        await Assert.That(report).IsNotSameReferenceAs(CoverageReport.Empty);
-        await Assert.That(report.Files).IsEmpty();
-    }
-
-    [Test]
-    public async Task LoadReport_NestedFiles_MergesAll()
-    {
-        Write("test1/coverage.cobertura.xml",
-            Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1).Line(2, 0)));
-        Write("test2/coverage.cobertura.xml",
-            Cobertura.NewDoc().AddClass("b.cs", c => c.Line(1, 1)));
-
-        var report = CoverageReportHelpers.LoadReport(_root);
-
-        await Assert.That(report.Files.Count).IsEqualTo(2);
-    }
-
-    [Test]
-    public async Task LoadReport_MergeOrder_IsOrdinalByPath_NotCreationOrder()
-    {
-        // zeta is created first; the ordinal sort must still parse alpha first, pinning the
-        // BranchTotalMismatch operand order regardless of filesystem enumeration order
-        // (the raw GlobFiles pipeline this replaced was enumeration-order-dependent).
-        Write("zeta/coverage.cobertura.xml",
-            Cobertura.NewDoc().AddClass("a.cs", c => c.Branch(10, "50% (1/2)")));
-        Write("alpha/coverage.cobertura.xml",
-            Cobertura.NewDoc().AddClass("a.cs", c => c.Branch(10, "75% (3/4)")));
-
-        var report = CoverageReportHelpers.LoadReport(_root);
-
-        var warning = await Assert.That(report.Warnings).HasSingleItem();
-        await Assert.That(warning.Kind).IsEqualTo(CoverageWarningKind.BranchTotalMismatch);
-        await Assert.That(warning.Detail).IsEqualTo("Total 4 vs 2 — keeping 4");
-    }
-
-    [Test]
-    public async Task LoadReport_CustomPattern_DiscoversNonCoverletReportNames()
-    {
-        // gcovr and coverage.py emit coverage.xml — invisible to the default pattern, the
-        // exact parity gap the CLI's --pattern already closes for terminal users.
-        Write("job/coverage.xml", Cobertura.NewDoc().AddClass("a.c", c => c.Line(1, 1)));
-
-        await Assert.That(CoverageReportHelpers.LoadReport(_root)).IsSameReferenceAs(CoverageReport.Empty);
-        await Assert.That(CoverageReportHelpers.LoadReport(_root, "**/coverage.xml", 50_000_000).Files).HasSingleItem();
-    }
-
-    [Test]
-    public async Task LoadReport_UnsupportedPattern_ThrowsNamingTheParameter()
-    {
-        // ParseDirectory's ArgumentException surfaces as a parameter error naming
-        // "Coverage Pattern", consistent with the strict parsers below.
-        var ex = Assert.ThrowsExactly<ArgumentException>(
-            () => CoverageReportHelpers.LoadReport(_root, "cov/*.xml", 50_000_000));
-
-        await Assert.That(ex.Message).Contains("Coverage Pattern");
-        await Assert.That(ex.Message).Contains("'cov/*.xml'");
-    }
-
-    [Test]
-    public async Task LoadReport_MaxChars_EnforcesPerFileCap()
-    {
-        Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
-
-        Assert.ThrowsExactly<ReportParseException>(() => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
-        await Assert.That(CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 1_000_000).Files).HasSingleItem();
-    }
-
-    [Test]
-    public async Task LoadReport_MissingDirectory_WithExplicitPattern_ReturnsEmptySingleton() =>
-        await Assert.That(CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"), "**/coverage.xml", 50_000_000)).IsSameReferenceAs(CoverageReport.Empty);
-
     // ── ParseMaxChars ─────────────────────────────────────────────────────────
 
     [Test]
@@ -232,17 +142,4 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
     public async Task TryAppendGitHubStepSummary_MissingParentDirectory_ReturnsFalseWithoutThrowing() =>
         await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(
             Path.Combine(_root, "no-such-dir", "summary.md"), "# md")).IsFalse();
-
-    [Test]
-    public async Task LoadReport_NegativeMaxChars_IsNotBlamedOnThePattern()
-    {
-        // ArgumentOutOfRangeException derives from ArgumentException; the pattern-gate rethrow
-        // must not swallow it into "Invalid Coverage Pattern".
-        Write("coverage.cobertura.xml", Cobertura.NewDoc());
-
-        var ex = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
-            CoverageReportHelpers.LoadReport(_root, "coverage.cobertura.xml", -1));
-
-        await Assert.That(ex.Message).DoesNotContain("Invalid Coverage Pattern");
-    }
 }

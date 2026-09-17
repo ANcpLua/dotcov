@@ -21,7 +21,6 @@ namespace DotCov;
 public static partial class CoberturaParser
 {
     private const long DefaultMaxChars = 50_000_000;
-    private const string DefaultPattern = ReportPattern.DefaultText;
 
     public static CoverageReport Parse(Stream stream, long maxChars = DefaultMaxChars)
     {
@@ -86,20 +85,6 @@ public static partial class CoberturaParser
 
         return merged ?? CoverageReport.Empty;
     }
-
-    public static CoverageReport ParseFile(string path, long maxChars = DefaultMaxChars) =>
-        Parse(ReportInput.FromFile(path), maxChars);
-
-    public static CoverageReport ParseDirectory(string directory, string pattern = DefaultPattern) =>
-        ParseDirectory(directory, pattern, DefaultMaxChars);
-
-    public static CoverageReport ParseDirectory(string directory, string pattern, long maxChars) =>
-        Parse(ReportResolver.ResolveDirectory(directory, ReportPattern.Parse(pattern)), maxChars);
-
-    public static CoverageReport ParsePath(string path) => ParsePath(path, DefaultMaxChars);
-
-    public static CoverageReport ParsePath(string path, long maxChars) =>
-        Parse(ReportResolver.Resolve(path), maxChars);
 
     // ── XML reader ────────────────────────────────────────────────────────────
 

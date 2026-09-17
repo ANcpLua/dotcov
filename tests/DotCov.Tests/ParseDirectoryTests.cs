@@ -22,7 +22,7 @@ public sealed class ParseDirectoryTests : IDisposable
     [Test]
     public async Task ParseDirectory_NoFilesFound_ReturnsEmptyReport()
     {
-        var report = CoberturaParser.ParseDirectory(_root);
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Default));
 
         await Assert.That(report.Files).IsEmpty();
         await Assert.That(report).IsSameReferenceAs(CoverageReport.Empty);
@@ -34,7 +34,7 @@ public sealed class ParseDirectoryTests : IDisposable
         Write("coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParseDirectory(_root);
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Default));
 
         await Assert.That(report.Files).HasSingleItem();
     }
@@ -47,7 +47,7 @@ public sealed class ParseDirectoryTests : IDisposable
         Write("test2/coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("b.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParseDirectory(_root);
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Default));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);
     }
@@ -60,7 +60,7 @@ public sealed class ParseDirectoryTests : IDisposable
         Write("r2/coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(2, 1).Line(3, 0)));
 
-        var report = CoberturaParser.ParseDirectory(_root);
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Default));
 
         var file = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(file.LinesTotal).IsEqualTo(3);
@@ -73,7 +73,7 @@ public sealed class ParseDirectoryTests : IDisposable
         Write("top.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
         Write("nested/inner.xml", Cobertura.NewDoc().AddClass("b.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParseDirectory(_root, "*.xml");
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Parse("*.xml")));
 
         await Assert.That(report.Files).HasSingleItem();
     }
@@ -89,7 +89,7 @@ public sealed class ParseDirectoryTests : IDisposable
         Write("coverage.xml", Cobertura.NewDoc().AddClass("top.cs", c => c.Line(1, 1)));
         Write("nested/coverage.xml", Cobertura.NewDoc().AddClass("deep.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParseDirectory(_root, "**coverage.xml");
+        var report = CoberturaParser.Parse(ReportResolver.ResolveDirectory(_root, ReportPattern.Parse("**coverage.xml")));
 
         await Assert.That(report.Files.Single().Path).IsEqualTo("top.cs");
     }
@@ -99,7 +99,7 @@ public sealed class ParseDirectoryTests : IDisposable
     {
         var path = Write("c.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParsePath(path);
+        var report = CoberturaParser.Parse(ReportResolver.Resolve(path));
 
         await Assert.That(report.Files).HasSingleItem();
     }
@@ -109,7 +109,7 @@ public sealed class ParseDirectoryTests : IDisposable
     {
         Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
-        var report = CoberturaParser.ParsePath(_root);
+        var report = CoberturaParser.Parse(ReportResolver.Resolve(_root));
 
         await Assert.That(report.Files).HasSingleItem();
     }
