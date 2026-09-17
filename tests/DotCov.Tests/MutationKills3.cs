@@ -1,6 +1,5 @@
 using System.Text;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -29,8 +28,8 @@ public sealed class MutationKills3
 
     // ── ConsumeSource: the reader-positioning contract ──
 
-    [Fact]
-    public void Parse_EmptySourceElement_DoesNotSwallowTheFollowingRoot()
+    [Test]
+    public async Task Parse_EmptySourceElement_DoesNotSwallowTheFollowingRoot()
     {
         // Kills CoberturaParser.cs:219 (remove `if (reader.IsEmptyElement) return;`).
         // Without the guard, ConsumeSource issues an extra Read() on `<source/>` that leaves
@@ -39,12 +38,12 @@ public sealed class MutationKills3
         // relative filename loses its identity prefix.
         var report = ParseXml(Doc("<sources><source/><source>/repo</source></sources>", "app/main.py"));
 
-        Assert.Equal("/repo", Assert.Single(report.SourceRoots));
-        Assert.Equal("/repo/app/main.py", Assert.Single(report.Files).Path);
+        await Assert.That(report.SourceRoots.Single()).IsEqualTo("/repo");
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/app/main.py");
     }
 
-    [Fact]
-    public void Parse_CommentInsideSource_IsNotARoot()
+    [Test]
+    public async Task Parse_CommentInsideSource_IsNotARoot()
     {
         // Kills CoberturaParser.cs:220 (`||` -> `&&` in the Read/NodeType guard). The mutant
         // short-circuits past the node-type check whenever Read() succeeds, so a Comment
@@ -52,12 +51,12 @@ public sealed class MutationKills3
         var report = ParseXml(Doc(
             "<sources><source><!--ci checkout--></source></sources>", "app/main.py"));
 
-        Assert.Empty(report.SourceRoots);
-        Assert.Equal("app/main.py", Assert.Single(report.Files).Path);
+        await Assert.That(report.SourceRoots).IsEmpty();
+        await Assert.That(report.Files.Single().Path).IsEqualTo("app/main.py");
     }
 
-    [Fact]
-    public void Parse_MultipleRoots_WarningIsReportScopedWithEmptyFile()
+    [Test]
+    public async Task Parse_MultipleRoots_WarningIsReportScopedWithEmptyFile()
     {
         // Kills CoberturaParser.cs:232 (File: "" -> "Stryker was here!"). The multi-root
         // FileIdentityAmbiguous warning is report-scoped: consumers keying warnings by file
@@ -65,17 +64,17 @@ public sealed class MutationKills3
         // the root actually used for resolution.
         var report = ParseXml(Doc("<sources><source>/a</source><source>/b</source></sources>", "x.cs"));
 
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Equal("", w.File);
-        Assert.Equal(0, w.Line);
-        Assert.Contains("'/a'", w.Detail, StringComparison.Ordinal);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.File).IsEqualTo("");
+        await Assert.That(w.Line).IsEqualTo(0);
+        await Assert.That(w.Detail).Contains("'/a'");
     }
 
     // ── ConsumeClass: the -1 condition-line sentinel ──
 
-    [Fact]
-    public void Parse_BranchOnLineZero_StillCollectsConditionDetail()
+    [Test]
+    public async Task Parse_BranchOnLineZero_StillCollectsConditionDetail()
     {
         // Kills CoberturaParser.cs:276 (`conditionLine >= 0` -> `> 0`). The no-current-line
         // sentinel is -1 precisely so that line number 0 stays a valid attribution target;
@@ -85,15 +84,16 @@ public sealed class MutationKills3
             .AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%")))
             .Parse().Files[0];
 
-        Assert.Equal((1, 2), f.BranchesByLine[0]);
-        var conds = Assert.Single(f.ConditionsByLine).Value;
-        Assert.Equal(1, conds[0]);
+        await Assert.That(f.BranchesByLine[0]).IsEqualTo((1, 2));
+        await Assert.That(f.ConditionsByLine).HasSingleItem();
+        var conds = f.ConditionsByLine.Single().Value;
+        await Assert.That(conds[0]).IsEqualTo(1);
     }
 
     // ── ResolveFileKey: drive-letter normalization must touch ONLY drive-letter paths ──
 
-    [Fact]
-    public void Parse_LowercaseRelativePath_IsNotDriveLetterUppercased()
+    [Test]
+    public async Task Parse_LowercaseRelativePath_IsNotDriveLetterUppercased()
     {
         // Kills the CoberturaParser.cs:368 `&&`->`||` mutants: with either of the first two
         // conjuncts weakened to a disjunction, ANY lowercase-starting path ("src/app.cs")
@@ -103,11 +103,11 @@ public sealed class MutationKills3
             .AddClass("src/app.cs", c => c.Line(1, hits: 1))
             .Parse().Files[0];
 
-        Assert.Equal("src/app.cs", f.Path);
+        await Assert.That(f.Path).IsEqualTo("src/app.cs");
     }
 
-    [Fact]
-    public void Parse_TwoCharDirectoryPath_IsNotDriveLetterUppercased()
+    [Test]
+    public async Task Parse_TwoCharDirectoryPath_IsNotDriveLetterUppercased()
     {
         // Kills CoberturaParser.cs:368 third-`&&`->`||`: `(len && lower && colon) || f[2]=='/'`
         // fires for any two-character directory ("ab/foo.py" has '/' at index 2) and
@@ -116,11 +116,11 @@ public sealed class MutationKills3
             .AddClass("ab/foo.py", c => c.Line(1, hits: 1))
             .Parse().Files[0];
 
-        Assert.Equal("ab/foo.py", f.Path);
+        await Assert.That(f.Path).IsEqualTo("ab/foo.py");
     }
 
-    [Fact]
-    public void Parse_BareDriveRoot_ExactlyThreeChars_IsStillNormalized()
+    [Test]
+    public async Task Parse_BareDriveRoot_ExactlyThreeChars_IsStillNormalized()
     {
         // Kills CoberturaParser.cs:368 `>= 3` -> `> 3`: the shortest possible drive-rooted
         // path ("c:/", length exactly 3) sits on the boundary and must still normalize its
@@ -129,11 +129,11 @@ public sealed class MutationKills3
             .AddClass("c:\\", c => c.Line(1, hits: 1))
             .Parse().Files[0];
 
-        Assert.Equal("C:/", f.Path);
+        await Assert.That(f.Path).IsEqualTo("C:/");
     }
 
-    [Fact]
-    public void Parse_EmptyFilenameWithSourceRoot_DoesNotThrow()
+    [Test]
+    public async Task Parse_EmptyFilenameWithSourceRoot_DoesNotThrow()
     {
         // Kills CoberturaParser.cs:376 `&&`->`||` in IsRooted: the mutant evaluates
         // `char.IsAsciiLetter(path[0])` on a zero-length filename and throws
@@ -141,24 +141,24 @@ public sealed class MutationKills3
         // output, but the parser's contract is warnings-not-crashes for malformed input.
         var report = ParseXml(Doc("<sources><source>/repo</source></sources>", ""));
 
-        Assert.Equal("/repo/", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/");
     }
 
-    [Fact]
-    public void Parse_TwoCharDriveRelativeFilename_CountsAsRooted()
+    [Test]
+    public async Task Parse_TwoCharDriveRelativeFilename_CountsAsRooted()
     {
         // Kills CoberturaParser.cs:376 `>= 2` -> `> 2`: "c:" (length exactly 2) is a
         // drive-relative Windows path — already rooted, so the <source> root must NOT be
         // prepended. The mutant reclassifies it as relative and invents "/repo/c:".
         var report = ParseXml(Doc("<sources><source>/repo</source></sources>", "c:"));
 
-        Assert.Equal("c:", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("c:");
     }
 
     // ── MergeWith: the ConditionIdentityMismatch warning payload ──
 
-    [Fact]
-    public void Merge_ConditionIdentityMismatch_DetailNamesBothNumberSetsAscending()
+    [Test]
+    public async Task Merge_ConditionIdentityMismatch_DetailNamesBothNumberSetsAscending()
     {
         // Kills the CoverageReport.cs:403-404 string mutants and both Order() ->
         // OrderDescending() mutants: the warning detail is the only place the divergent
@@ -173,17 +173,17 @@ public sealed class MutationKills3
 
         var merged = CoverageReport.Merge(a, b);
 
-        var w = Assert.Single(merged.Warnings);
-        Assert.Equal(CoverageWarningKind.ConditionIdentityMismatch, w.Kind);
-        Assert.Equal("x.cs", w.File);
-        Assert.Equal(5, w.Line);
-        Assert.Equal("condition numbers [1,3] vs [2,4] - using the line aggregate", w.Detail);
+        var w = await Assert.That(merged.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.ConditionIdentityMismatch);
+        await Assert.That(w.File).IsEqualTo("x.cs");
+        await Assert.That(w.Line).IsEqualTo(5);
+        await Assert.That(w.Detail).IsEqualTo("condition numbers [1,3] vs [2,4] - using the line aggregate");
     }
 
     // ── Merge: cross-convention file-identity ambiguity ──
 
-    [Fact]
-    public void Merge_RootedWithRootless_StillWarnsOnAmbiguousFileIdentity()
+    [Test]
+    public async Task Merge_RootedWithRootless_StillWarnsOnAmbiguousFileIdentity()
     {
         // Kills the CoverageReport.cs:700 guard mutants (`&&` -> `||`, `is 0` -> `is not 0`):
         // the flagship ambiguity scenario is exactly one side declaring a <source> root while
@@ -205,21 +205,21 @@ public sealed class MutationKills3
             """);
         var rootless = ParseXml(Doc("", "app.cs"));
 
-        var w = Assert.Single(CoverageReport.Merge(rooted, rootless).Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Contains("/repo/src/app.cs", w.Detail, StringComparison.Ordinal);
-        Assert.Contains("'app.cs'", w.Detail, StringComparison.Ordinal);
+        var w = await Assert.That(CoverageReport.Merge(rooted, rootless).Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("/repo/src/app.cs");
+        await Assert.That(w.Detail).Contains("'app.cs'");
 
         // Mirrored order kills the symmetric `b.SourceRoots.Count is not 0` guard mutant:
         // the ambiguity scan must fire regardless of which side carries the root.
-        var mirrored = Assert.Single(CoverageReport.Merge(rootless, rooted).Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, mirrored.Kind);
+        var mirrored = await Assert.That(CoverageReport.Merge(rootless, rooted).Warnings).HasSingleItem();
+        await Assert.That(mirrored.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
     }
 
     // ── CoverageDiff: the movement-epsilon boundary ──
 
-    [Fact]
-    public void Compare_DeltaExactlyMovementEpsilon_IsModified()
+    [Test]
+    public async Task Compare_DeltaExactlyMovementEpsilon_IsModified()
     {
         // Kills CoverageDiff.cs:222 (`<` -> `<=`). MovementEpsilon's contract is "a rate delta
         // CLOSER TO ZERO than this is measurement noise" — a movement of exactly epsilon is
@@ -233,15 +233,15 @@ public sealed class MutationKills3
 
         var result = CoverageDiff.Compare(before, after);
 
-        var file = Assert.Single(result.Files);
-        Assert.Equal(CoverageDiff.MovementEpsilon, file.Delta);
-        Assert.Equal(FileChangeKind.Modified, file.Change);
+        var file = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(file.Delta).IsEqualTo(CoverageDiff.MovementEpsilon);
+        await Assert.That(file.Change).IsEqualTo(FileChangeKind.Modified);
     }
 
     // ── GateResult: the verdict comparison itself ──
 
-    [Fact]
-    public void Evaluate_RateExactlyOnEpsilonBoundary_Passes()
+    [Test]
+    public async Task Evaluate_RateExactlyOnEpsilonBoundary_Passes()
     {
         // Kills GateResult.cs:74 (`>=` -> `>`). With rate 25/100, `rate * 100` is exactly
         // 25.0, and `(25.0 + 1e-9) - RateEpsilon` computes back to exactly 25.0 in IEEE 754
@@ -249,12 +249,12 @@ public sealed class MutationKills3
         // "an exactly-met threshold passes" contract.
         var gate = Reports.Single("a.cs", hit: 25, total: 100).Evaluate(25.0 + 1e-9);
 
-        Assert.Equal(GateOutcome.Pass, gate.Outcome);
-        Assert.True(gate.IsPass);
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Pass);
+        await Assert.That(gate.IsPass).IsTrue();
     }
 
-    [Fact]
-    public void BranchBelowThreshold_UnarmedGate_NeverReportsBelow()
+    [Test]
+    public async Task BranchBelowThreshold_UnarmedGate_NeverReportsBelow()
     {
         // Kills GateResult.cs:84 (`MinBranchPercent > 0` -> `>= 0`). BranchBelowThreshold's
         // contract requires an ARMED branch threshold; with MinBranchPercent = 0 it must be
@@ -262,6 +262,6 @@ public sealed class MutationKills3
         // hand-built GateResult must not flip an unarmed gate to "below threshold".
         var gate = new GateResult(GateOutcome.Pass, 1.0, -0.5, 80, 0, "unarmed");
 
-        Assert.False(gate.BranchBelowThreshold);
+        await Assert.That(gate.BranchBelowThreshold).IsFalse();
     }
 }

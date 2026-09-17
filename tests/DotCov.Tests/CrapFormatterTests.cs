@@ -1,8 +1,6 @@
-using System.Globalization;
 using System.Text.Json;
 using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -10,10 +8,8 @@ namespace DotCov.Tests;
 /// Pins the CRAP formatters: worst-first ordering, --top display truncation (gate still sees
 /// all), the honesty trailers, and — because this output lands in CI logs and PR summaries —
 /// invariant numeric formatting under a comma-decimal culture (same policy as
-/// <see cref="FormatterCultureTests"/>, and serialized in <c>EnvCollection</c> for the same
-/// CurrentCulture-is-thread-state reason).
+/// <see cref="FormatterCultureTests"/>, via the same per-test <see cref="CultureScope"/>).
 /// </summary>
-[Collection(nameof(EnvCollection))]
 public sealed class CrapFormatterTests
 {
     private static readonly CrapReport Report = CrapAnalysis.Analyze([
@@ -22,24 +18,8 @@ public sealed class CrapFormatterTests
         Method("MyApp.A", "Mid", 3, [(20, 1), (21, 0)]),            // comp 3, cov .5 → 4.125
     ]);
 
-    private static string InCommaDecimalCulture(Func<string> render)
-    {
-        var original = CultureInfo.CurrentCulture;
-        try
-        {
-            var commaCulture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
-            commaCulture.NumberFormat.NumberDecimalSeparator = ",";
-            CultureInfo.CurrentCulture = commaCulture;
-            return render();
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = original;
-        }
-    }
-
-    [Fact]
-    public void Table_OrdersWorstFirst()
+    [Test]
+    public async Task Table_OrdersWorstFirst()
     {
         var gate = Report.Evaluate(6);
         var output = CrapFormatter.Format(Report, gate);
@@ -47,87 +27,87 @@ public sealed class CrapFormatterTests
         var worst = output.IndexOf("MyApp.A.Worst", StringComparison.Ordinal);
         var mid = output.IndexOf("MyApp.A.Mid", StringComparison.Ordinal);
         var low = output.IndexOf("MyApp.A.Low", StringComparison.Ordinal);
-        Assert.True(worst < mid && mid < low, $"expected worst-first ordering in:\n{output}");
+        await Assert.That(worst < mid && mid < low).IsTrue().Because($"expected worst-first ordering in:\n{output}");
     }
 
-    [Fact]
-    public void Table_TopTruncatesDisplay_GateStillSeesAll()
+    [Test]
+    public async Task Table_TopTruncatesDisplay_GateStillSeesAll()
     {
         var gate = Report.Evaluate(6);
         var output = CrapFormatter.Format(Report, gate, top: 1);
 
-        Assert.Contains("MyApp.A.Worst", output);
-        Assert.DoesNotContain("MyApp.A.Low", output);
-        Assert.Contains("2 more methods below", output);
-        Assert.Equal(3, gate.ScoredMethods);   // the gate is computed over the full set
+        await Assert.That(output).Contains("MyApp.A.Worst");
+        await Assert.That(output).DoesNotContain("MyApp.A.Low");
+        await Assert.That(output).Contains("2 more methods below");
+        await Assert.That(gate.ScoredMethods).IsEqualTo(3);   // the gate is computed over the full set
     }
 
-    [Fact]
-    public void Table_UnderCommaDecimalCulture_UsesDotDecimals()
+    [Test]
+    public async Task Table_UnderCommaDecimalCulture_UsesDotDecimals()
     {
-        var output = InCommaDecimalCulture(() => CrapFormatter.Format(Report, Report.Evaluate(6)));
+        var output = CultureScope.RenderWithCommaDecimal(() => CrapFormatter.Format(Report, Report.Evaluate(6)));
 
-        Assert.Contains("30.0", output);
-        Assert.Contains("0.0%", output);
-        Assert.DoesNotContain("30,0", output);
-        Assert.DoesNotContain("0,0%", output);
+        await Assert.That(output).Contains("30.0");
+        await Assert.That(output).Contains("0.0%");
+        await Assert.That(output).DoesNotContain("30,0");
+        await Assert.That(output).DoesNotContain("0,0%");
     }
 
-    [Fact]
-    public void Markdown_UnderCommaDecimalCulture_UsesDotDecimals()
+    [Test]
+    public async Task Markdown_UnderCommaDecimalCulture_UsesDotDecimals()
     {
-        var md = InCommaDecimalCulture(() => CrapFormatter.FormatMarkdown(Report, Report.Evaluate(6)));
+        var md = CultureScope.RenderWithCommaDecimal(() => CrapFormatter.FormatMarkdown(Report, Report.Evaluate(6)));
 
-        Assert.Contains("| `MyApp.A.Worst` | 5 | 0.0% | 30.0 ❌ |", md);
-        Assert.DoesNotContain("30,0", md);
+        await Assert.That(md).Contains("| `MyApp.A.Worst` | 5 | 0.0% | 30.0 ❌ |");
+        await Assert.That(md).DoesNotContain("30,0");
     }
 
-    [Fact]
-    public void Markdown_FailBadgeAndBacktickedVerdict_FromSameGate()
+    [Test]
+    public async Task Markdown_FailBadgeAndBacktickedVerdict_FromSameGate()
     {
         var md = CrapFormatter.FormatMarkdown(Report, Report.Evaluate(6));
 
-        Assert.Contains("## CRAP Report ❌", md);
-        Assert.Contains("`FAIL: worst CRAP 30.0 (max 6) - 1 of 3 methods above threshold`", md);
+        await Assert.That(md).Contains("## CRAP Report ❌");
+        await Assert.That(md).Contains("`FAIL: worst CRAP 30.0 (max 6) - 1 of 3 methods above threshold`");
     }
 
-    [Fact]
-    public void Markdown_PassBadge_WhenAllUnderThreshold()
+    [Test]
+    public async Task Markdown_PassBadge_WhenAllUnderThreshold()
     {
         var md = CrapFormatter.FormatMarkdown(Report, Report.Evaluate(50));
 
-        Assert.Contains("## CRAP Report ✅", md);
-        Assert.Contains("`PASS:", md);
-        Assert.DoesNotContain("❌", md);
+        await Assert.That(md).Contains("## CRAP Report ✅");
+        await Assert.That(md).Contains("`PASS:");
+        await Assert.That(md).DoesNotContain("❌");
     }
 
-    [Fact]
-    public void Markdown_NoData_WarnBadgeAndBlockquoteVerdict()
+    [Test]
+    public async Task Markdown_NoData_WarnBadgeAndBlockquoteVerdict()
     {
         // No scorable methods: ⚠️ badge, a blockquote naming the reason, and no table at all.
         var report = CrapAnalysis.Analyze([Method("MyApp.A", "NoComp", null, [(1, 1)])]);
 
         var md = CrapFormatter.FormatMarkdown(report, report.Evaluate(6));
 
-        Assert.Contains("## CRAP Report ⚠️", md);
-        Assert.Contains("> **No verdict:**", md);
-        Assert.Contains("--metrics", md);
-        Assert.DoesNotContain("| Method |", md);
-        Assert.Contains("`NODATA:", md);
+        await Assert.That(md).Contains("## CRAP Report ⚠️");
+        await Assert.That(md).Contains("> **No verdict:**");
+        await Assert.That(md).Contains("--metrics");
+        await Assert.That(md).DoesNotContain("| Method |");
+        await Assert.That(md).Contains("`NODATA:");
     }
 
-    [Fact]
-    public void Markdown_TopTruncatesDisplay_NotesGateEvaluatesAll()
+    [Test]
+    public async Task Markdown_TopTruncatesDisplay_NotesGateEvaluatesAll()
     {
         var md = CrapFormatter.FormatMarkdown(Report, Report.Evaluate(6), top: 1);
 
-        Assert.Contains("| `MyApp.A.Worst` |", md);
-        Assert.DoesNotContain("MyApp.A.Low", md);
-        Assert.Contains("2 more methods below (top 1 shown; the gate evaluates all)", md);
+        await Assert.That(md).Contains("| `MyApp.A.Worst` |");
+        await Assert.That(md).DoesNotContain("MyApp.A.Low");
+        await Assert.That(md).Contains("2 more methods below (top 1 shown; the gate evaluates all)");
     }
 
-    [Fact]
-    public void Markdown_ListsUnscoredAndUnmatched_NeverSilentlyDrops()
+    [Test]
+    public async Task Markdown_ListsUnscoredAndUnmatched_NeverSilentlyDrops()
     {
         // Same honesty channels as the table formatter, in PR-summary form.
         var report = CrapAnalysis.Analyze(
@@ -136,41 +116,41 @@ public sealed class CrapFormatterTests
 
         var md = CrapFormatter.FormatMarkdown(report, report.Evaluate(6));
 
-        Assert.Contains("### Unscored methods (no complexity source)", md);
-        Assert.Contains("- `MyApp.A.NoComp` — no matching member in the metrics file", md);
-        Assert.Contains("### Unmatched metrics members", md);
-        Assert.Contains("- `void B.Ghost()`", md);
+        await Assert.That(md).Contains("### Unscored methods (no complexity source)");
+        await Assert.That(md).Contains("- `MyApp.A.NoComp` — no matching member in the metrics file");
+        await Assert.That(md).Contains("### Unmatched metrics members");
+        await Assert.That(md).Contains("- `void B.Ghost()`");
     }
 
-    [Fact]
-    public void Json_ShapeAndInvariance()
+    [Test]
+    public async Task Json_ShapeAndInvariance()
     {
-        var json = InCommaDecimalCulture(() => CrapFormatter.FormatJson(Report, Report.Evaluate(6)));
+        var json = CultureScope.RenderWithCommaDecimal(() => CrapFormatter.FormatJson(Report, Report.Evaluate(6)));
 
         var root = JsonDocument.Parse(json).RootElement;
         var gate = root.GetProperty("gate");
-        Assert.Equal("fail", gate.GetProperty("outcome").GetString());
-        Assert.Equal(6, gate.GetProperty("maxCrap").GetDouble());
-        Assert.Equal(3, gate.GetProperty("scoredMethods").GetInt32());
-        Assert.Equal(1, gate.GetProperty("aboveThreshold").GetInt32());
-        Assert.Equal(30.0, gate.GetProperty("worstScore").GetDouble());
+        await Assert.That(gate.GetProperty("outcome").GetString()).IsEqualTo("fail");
+        await Assert.That(gate.GetProperty("maxCrap").GetDouble()).IsEqualTo(6);
+        await Assert.That(gate.GetProperty("scoredMethods").GetInt32()).IsEqualTo(3);
+        await Assert.That(gate.GetProperty("aboveThreshold").GetInt32()).IsEqualTo(1);
+        await Assert.That(gate.GetProperty("worstScore").GetDouble()).IsEqualTo(30.0);
 
         var methods = root.GetProperty("methods").EnumerateArray().ToList();
-        Assert.Equal(3, methods.Count);
+        await Assert.That(methods.Count).IsEqualTo(3);
         var worst = methods[0];   // worst-first in JSON too
-        Assert.Equal("MyApp.A.Worst", worst.GetProperty("method").GetString());
-        Assert.Equal(5, worst.GetProperty("complexity").GetInt32());
-        Assert.Equal(30.0, worst.GetProperty("crap").GetDouble());
-        Assert.True(worst.GetProperty("aboveThreshold").GetBoolean());
-        Assert.Equal("coverageReport", worst.GetProperty("complexitySource").GetString());
+        await Assert.That(worst.GetProperty("method").GetString()).IsEqualTo("MyApp.A.Worst");
+        await Assert.That(worst.GetProperty("complexity").GetInt32()).IsEqualTo(5);
+        await Assert.That(worst.GetProperty("crap").GetDouble()).IsEqualTo(30.0);
+        await Assert.That(worst.GetProperty("aboveThreshold").GetBoolean()).IsTrue();
+        await Assert.That(worst.GetProperty("complexitySource").GetString()).IsEqualTo("coverageReport");
 
         // Absent key == clean: no unscored/unmatched arrays on a fully scored report.
-        Assert.False(root.TryGetProperty("unscored", out _));
-        Assert.False(root.TryGetProperty("unmatchedMetricsMembers", out _));
+        await Assert.That(root.TryGetProperty("unscored", out _)).IsFalse();
+        await Assert.That(root.TryGetProperty("unmatchedMetricsMembers", out _)).IsFalse();
     }
 
-    [Fact]
-    public void Json_UnscoredAndUnmatched_PresentWhenNonEmpty()
+    [Test]
+    public async Task Json_UnscoredAndUnmatched_PresentWhenNonEmpty()
     {
         var report = CrapAnalysis.Analyze(
             [Method("MyApp.A", "NoComp", null, [(1, 1)])],
@@ -179,14 +159,12 @@ public sealed class CrapFormatterTests
         var json = CrapFormatter.FormatJson(report, report.Evaluate(6));
 
         var root = JsonDocument.Parse(json).RootElement;
-        Assert.Equal("MyApp.A.NoComp",
-            root.GetProperty("unscored")[0].GetProperty("method").GetString());
-        Assert.Equal("void B.Ghost()",
-            root.GetProperty("unmatchedMetricsMembers")[0].GetString());
+        await Assert.That(root.GetProperty("unscored")[0].GetProperty("method").GetString()).IsEqualTo("MyApp.A.NoComp");
+        await Assert.That(root.GetProperty("unmatchedMetricsMembers")[0].GetString()).IsEqualTo("void B.Ghost()");
     }
 
-    [Fact]
-    public void Table_ListsUnscoredAndUnmatched_NeverSilentlyDrops()
+    [Test]
+    public async Task Table_ListsUnscoredAndUnmatched_NeverSilentlyDrops()
     {
         var report = CrapAnalysis.Analyze(
             [Method("MyApp.A", "NoComp", null, [(1, 1)])],
@@ -194,10 +172,10 @@ public sealed class CrapFormatterTests
 
         var output = CrapFormatter.Format(report, report.Evaluate(6));
 
-        Assert.Contains("Unscored (no complexity source): 1", output);
-        Assert.Contains("MyApp.A.NoComp", output);
-        Assert.Contains("Unmatched metrics members: 1", output);
-        Assert.Contains("void B.Ghost()", output);
+        await Assert.That(output).Contains("Unscored (no complexity source): 1");
+        await Assert.That(output).Contains("MyApp.A.NoComp");
+        await Assert.That(output).Contains("Unmatched metrics members: 1");
+        await Assert.That(output).Contains("void B.Ghost()");
     }
 
     private static MethodCoverage Method(string className, string name, int? complexity, (int Line, int Hits)[] lines)

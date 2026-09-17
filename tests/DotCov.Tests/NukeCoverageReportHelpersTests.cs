@@ -1,6 +1,5 @@
 using DotCov.Nuke;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -22,17 +21,16 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
 
     // ── LoadReport ────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void LoadReport_MissingDirectory_ReturnsEmptySingleton() =>
-        Assert.Same(CoverageReport.Empty,
-            CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist")));
+    [Test]
+    public async Task LoadReport_MissingDirectory_ReturnsEmptySingleton() =>
+        await Assert.That(CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"))).IsSameReferenceAs(CoverageReport.Empty);
 
-    [Fact]
-    public void LoadReport_EmptyDirectory_ReturnsEmptySingleton() =>
-        Assert.Same(CoverageReport.Empty, CoverageReportHelpers.LoadReport(_root));
+    [Test]
+    public async Task LoadReport_EmptyDirectory_ReturnsEmptySingleton() =>
+        await Assert.That(CoverageReportHelpers.LoadReport(_root)).IsSameReferenceAs(CoverageReport.Empty);
 
-    [Fact]
-    public void LoadReport_FileWithNoClasses_IsNotTheEmptySingleton()
+    [Test]
+    public async Task LoadReport_FileWithNoClasses_IsNotTheEmptySingleton()
     {
         // The target's hard-fail relies on this boundary: a discovered-but-dataless report
         // must reach the gate (NoData), not the "no files found" assert.
@@ -40,12 +38,12 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
 
         var report = CoverageReportHelpers.LoadReport(_root);
 
-        Assert.NotSame(CoverageReport.Empty, report);
-        Assert.Empty(report.Files);
+        await Assert.That(report).IsNotSameReferenceAs(CoverageReport.Empty);
+        await Assert.That(report.Files).IsEmpty();
     }
 
-    [Fact]
-    public void LoadReport_NestedFiles_MergesAll()
+    [Test]
+    public async Task LoadReport_NestedFiles_MergesAll()
     {
         Write("test1/coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1).Line(2, 0)));
@@ -54,11 +52,11 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
 
         var report = CoverageReportHelpers.LoadReport(_root);
 
-        Assert.Equal(2, report.Files.Count);
+        await Assert.That(report.Files.Count).IsEqualTo(2);
     }
 
-    [Fact]
-    public void LoadReport_MergeOrder_IsOrdinalByPath_NotCreationOrder()
+    [Test]
+    public async Task LoadReport_MergeOrder_IsOrdinalByPath_NotCreationOrder()
     {
         // zeta is created first; the ordinal sort must still parse alpha first, pinning the
         // BranchTotalMismatch operand order regardless of filesystem enumeration order
@@ -70,184 +68,181 @@ public sealed class NukeCoverageReportHelpersTests : IDisposable
 
         var report = CoverageReportHelpers.LoadReport(_root);
 
-        var warning = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.BranchTotalMismatch, warning.Kind);
-        Assert.Equal("Total 4 vs 2 — keeping 4", warning.Detail);
+        var warning = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(warning.Kind).IsEqualTo(CoverageWarningKind.BranchTotalMismatch);
+        await Assert.That(warning.Detail).IsEqualTo("Total 4 vs 2 — keeping 4");
     }
 
-    [Fact]
-    public void LoadReport_CustomPattern_DiscoversNonCoverletReportNames()
+    [Test]
+    public async Task LoadReport_CustomPattern_DiscoversNonCoverletReportNames()
     {
         // gcovr and coverage.py emit coverage.xml — invisible to the default pattern, the
         // exact parity gap the CLI's --pattern already closes for terminal users.
         Write("job/coverage.xml", Cobertura.NewDoc().AddClass("a.c", c => c.Line(1, 1)));
 
-        Assert.Same(CoverageReport.Empty, CoverageReportHelpers.LoadReport(_root));
-        Assert.Single(CoverageReportHelpers.LoadReport(_root, "**/coverage.xml", 50_000_000).Files);
+        await Assert.That(CoverageReportHelpers.LoadReport(_root)).IsSameReferenceAs(CoverageReport.Empty);
+        await Assert.That(CoverageReportHelpers.LoadReport(_root, "**/coverage.xml", 50_000_000).Files).HasSingleItem();
     }
 
-    [Fact]
-    public void LoadReport_UnsupportedPattern_ThrowsNamingTheParameter()
+    [Test]
+    public async Task LoadReport_UnsupportedPattern_ThrowsNamingTheParameter()
     {
         // ParseDirectory's ArgumentException surfaces as a parameter error naming
         // "Coverage Pattern", consistent with the strict parsers below.
-        var ex = Assert.Throws<ArgumentException>(
+        var ex = Assert.ThrowsExactly<ArgumentException>(
             () => CoverageReportHelpers.LoadReport(_root, "cov/*.xml", 50_000_000));
 
-        Assert.Contains("Coverage Pattern", ex.Message);
-        Assert.Contains("'cov/*.xml'", ex.Message);
+        await Assert.That(ex.Message).Contains("Coverage Pattern");
+        await Assert.That(ex.Message).Contains("'cov/*.xml'");
     }
 
-    [Fact]
-    public void LoadReport_MaxChars_EnforcesPerFileCap()
+    [Test]
+    public async Task LoadReport_MaxChars_EnforcesPerFileCap()
     {
         Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
-        Assert.Throws<System.Xml.XmlException>(
-            () => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
-        Assert.Single(
-            CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 1_000_000).Files);
+        Assert.ThrowsExactly<System.Xml.XmlException>(() => CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 50));
+        await Assert.That(CoverageReportHelpers.LoadReport(_root, "**/coverage.cobertura.xml", 1_000_000).Files).HasSingleItem();
     }
 
-    [Fact]
-    public void LoadReport_MissingDirectory_WithExplicitPattern_ReturnsEmptySingleton() =>
-        Assert.Same(CoverageReport.Empty,
-            CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"), "**/coverage.xml", 50_000_000));
+    [Test]
+    public async Task LoadReport_MissingDirectory_WithExplicitPattern_ReturnsEmptySingleton() =>
+        await Assert.That(CoverageReportHelpers.LoadReport(Path.Combine(_root, "does-not-exist"), "**/coverage.xml", 50_000_000)).IsSameReferenceAs(CoverageReport.Empty);
 
     // ── ParseMaxChars ─────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("50000000", 50_000_000L)]
-    [InlineData("0", 0L)] // 0 = no cap (XmlReaderSettings.MaxCharactersInDocument semantics)
-    [InlineData("1024", 1024L)]
-    public void ParseMaxChars_ValidValue_Parses(string value, long expected) =>
-        Assert.Equal(expected, CoverageReportHelpers.ParseMaxChars(value, "Coverage MaxCharsParam"));
+    [Test]
+    [Arguments("50000000", 50_000_000L)]
+    [Arguments("0", 0L)] // 0 = no cap (XmlReaderSettings.MaxCharactersInDocument semantics)
+    [Arguments("1024", 1024L)]
+    public async Task ParseMaxChars_ValidValue_Parses(string value, long expected) =>
+        await Assert.That(CoverageReportHelpers.ParseMaxChars(value, "Coverage MaxCharsParam")).IsEqualTo(expected);
 
-    [Theory]
-    [InlineData("-1")] // digits only, mirroring the CLI's --max-chars: a sign is invalid
-    [InlineData("+1")]
-    [InlineData("1_000")]
-    [InlineData("ten")]
-    [InlineData("")]
-    public void ParseMaxChars_Garbage_ThrowsNamingTheParameter(string value)
+    [Test]
+    [Arguments("-1")] // digits only, mirroring the CLI's --max-chars: a sign is invalid
+    [Arguments("+1")]
+    [Arguments("1_000")]
+    [Arguments("ten")]
+    [Arguments("")]
+    public async Task ParseMaxChars_Garbage_ThrowsNamingTheParameter(string value)
     {
-        var ex = Assert.Throws<ArgumentException>(
+        var ex = Assert.ThrowsExactly<ArgumentException>(
             () => CoverageReportHelpers.ParseMaxChars(value, "Coverage MaxCharsParam"));
 
-        Assert.Contains("Coverage MaxCharsParam", ex.Message);
-        Assert.Contains($"'{value}'", ex.Message);
+        await Assert.That(ex.Message).Contains("Coverage MaxCharsParam");
+        await Assert.That(ex.Message).Contains($"'{value}'");
     }
 
     // ── ParseThreshold ────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("80", 80.0)]
-    [InlineData("0", 0.0)]
-    [InlineData("72.5", 72.5)]
-    public void ParseThreshold_ValidNumber_Parses(string value, double expected) =>
-        Assert.Equal(expected, CoverageReportHelpers.ParseThreshold(value, "Coverage MinLine"));
+    [Test]
+    [Arguments("80", 80.0)]
+    [Arguments("0", 0.0)]
+    [Arguments("72.5", 72.5)]
+    public async Task ParseThreshold_ValidNumber_Parses(string value, double expected) =>
+        await Assert.That(CoverageReportHelpers.ParseThreshold(value, "Coverage MinLine")).IsEqualTo(expected);
 
-    [Theory]
-    [InlineData("eighty")]
-    [InlineData("80,5")] // invariant culture: comma is not a decimal separator
-    [InlineData("")]
-    public void ParseThreshold_Garbage_ThrowsNamingTheParameter(string value)
+    [Test]
+    [Arguments("eighty")]
+    [Arguments("80,5")] // invariant culture: comma is not a decimal separator
+    [Arguments("")]
+    public async Task ParseThreshold_Garbage_ThrowsNamingTheParameter(string value)
     {
-        var ex = Assert.Throws<ArgumentException>(
+        var ex = Assert.ThrowsExactly<ArgumentException>(
             () => CoverageReportHelpers.ParseThreshold(value, "Coverage MinLine"));
 
-        Assert.Contains("Coverage MinLine", ex.Message);
-        Assert.Contains($"'{value}'", ex.Message);
+        await Assert.That(ex.Message).Contains("Coverage MinLine");
+        await Assert.That(ex.Message).Contains($"'{value}'");
     }
 
     // ── ParseFlag ─────────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("true", true)]
-    [InlineData("True", true)]
-    [InlineData("false", false)]
-    [InlineData("FALSE", false)]
-    public void ParseFlag_TrueOrFalse_Parses(string value, bool expected) =>
-        Assert.Equal(expected, CoverageReportHelpers.ParseFlag(value, "Coverage ExcludeGeneratedParam"));
+    [Test]
+    [Arguments("true", true)]
+    [Arguments("True", true)]
+    [Arguments("false", false)]
+    [Arguments("FALSE", false)]
+    public async Task ParseFlag_TrueOrFalse_Parses(string value, bool expected) =>
+        await Assert.That(CoverageReportHelpers.ParseFlag(value, "Coverage ExcludeGeneratedParam")).IsEqualTo(expected);
 
-    [Theory]
-    [InlineData("1")]
-    [InlineData("yes")]
-    [InlineData("on")]
-    [InlineData("")]
-    public void ParseFlag_TruthySpelling_FailsLoudlyInsteadOfSilentFalse(string value)
+    [Test]
+    [Arguments("1")]
+    [Arguments("yes")]
+    [Arguments("on")]
+    [Arguments("")]
+    public async Task ParseFlag_TruthySpelling_FailsLoudlyInsteadOfSilentFalse(string value)
     {
-        var ex = Assert.Throws<ArgumentException>(
+        var ex = Assert.ThrowsExactly<ArgumentException>(
             () => CoverageReportHelpers.ParseFlag(value, "Coverage ExcludeGeneratedParam"));
 
-        Assert.Contains("Coverage ExcludeGeneratedParam", ex.Message);
-        Assert.Contains($"'{value}'", ex.Message);
+        await Assert.That(ex.Message).Contains("Coverage ExcludeGeneratedParam");
+        await Assert.That(ex.Message).Contains($"'{value}'");
     }
 
     // ── ParseFormat ───────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("table", "table")]
-    [InlineData("json", "json")]
-    [InlineData("markdown", "markdown")]
-    [InlineData("md", "markdown")] // alias canonicalizes
-    public void ParseFormat_KnownFormat_ReturnsCanonicalName(string value, string expected) =>
-        Assert.Equal(expected, CoverageReportHelpers.ParseFormat(value, "Coverage Format"));
+    [Test]
+    [Arguments("table", "table")]
+    [Arguments("json", "json")]
+    [Arguments("markdown", "markdown")]
+    [Arguments("md", "markdown")] // alias canonicalizes
+    public async Task ParseFormat_KnownFormat_ReturnsCanonicalName(string value, string expected) =>
+        await Assert.That(CoverageReportHelpers.ParseFormat(value, "Coverage Format")).IsEqualTo(expected);
 
-    [Theory]
-    [InlineData("markdwon")] // the typo the old silent-table fallback swallowed
-    [InlineData("xml")]
-    [InlineData("TABLE")] // case-sensitive, matching the original switch arms
-    [InlineData("")]
-    public void ParseFormat_UnknownFormat_FailsLoudlyInsteadOfSilentTable(string value)
+    [Test]
+    [Arguments("markdwon")] // the typo the old silent-table fallback swallowed
+    [Arguments("xml")]
+    [Arguments("TABLE")] // case-sensitive, matching the original switch arms
+    [Arguments("")]
+    public async Task ParseFormat_UnknownFormat_FailsLoudlyInsteadOfSilentTable(string value)
     {
-        var ex = Assert.Throws<ArgumentException>(
+        var ex = Assert.ThrowsExactly<ArgumentException>(
             () => CoverageReportHelpers.ParseFormat(value, "Coverage Format"));
 
-        Assert.Contains("Coverage Format", ex.Message);
-        Assert.Contains($"'{value}'", ex.Message);
+        await Assert.That(ex.Message).Contains("Coverage Format");
+        await Assert.That(ex.Message).Contains($"'{value}'");
     }
 
     // ── TryAppendGitHubStepSummary ────────────────────────────────────────────
 
-    [Fact]
-    public void TryAppendGitHubStepSummary_NullPath_ReturnsFalse() =>
-        Assert.False(CoverageReportHelpers.TryAppendGitHubStepSummary(null, "# md"));
+    [Test]
+    public async Task TryAppendGitHubStepSummary_NullPath_ReturnsFalse() =>
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(null, "# md")).IsFalse();
 
-    [Fact]
-    public void TryAppendGitHubStepSummary_EmptyPath_ReturnsFalse() =>
-        Assert.False(CoverageReportHelpers.TryAppendGitHubStepSummary("", "# md"));
+    [Test]
+    public async Task TryAppendGitHubStepSummary_EmptyPath_ReturnsFalse() =>
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary("", "# md")).IsFalse();
 
-    [Fact]
-    public void TryAppendGitHubStepSummary_WritablePath_Appends()
+    [Test]
+    public async Task TryAppendGitHubStepSummary_WritablePath_Appends()
     {
         var path = Path.Combine(_root, "summary.md");
 
-        Assert.True(CoverageReportHelpers.TryAppendGitHubStepSummary(path, "one"));
-        Assert.True(CoverageReportHelpers.TryAppendGitHubStepSummary(path, "two"));
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(path, "one")).IsTrue();
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(path, "two")).IsTrue();
 
-        Assert.Equal("onetwo", File.ReadAllText(path));
+        await Assert.That(File.ReadAllText(path)).IsEqualTo("onetwo");
     }
 
-    [Fact]
-    public void TryAppendGitHubStepSummary_PathIsDirectory_ReturnsFalseWithoutThrowing() =>
-        Assert.False(CoverageReportHelpers.TryAppendGitHubStepSummary(_root, "# md"));
+    [Test]
+    public async Task TryAppendGitHubStepSummary_PathIsDirectory_ReturnsFalseWithoutThrowing() =>
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(_root, "# md")).IsFalse();
 
-    [Fact]
-    public void TryAppendGitHubStepSummary_MissingParentDirectory_ReturnsFalseWithoutThrowing() =>
-        Assert.False(CoverageReportHelpers.TryAppendGitHubStepSummary(
-            Path.Combine(_root, "no-such-dir", "summary.md"), "# md"));
+    [Test]
+    public async Task TryAppendGitHubStepSummary_MissingParentDirectory_ReturnsFalseWithoutThrowing() =>
+        await Assert.That(CoverageReportHelpers.TryAppendGitHubStepSummary(
+            Path.Combine(_root, "no-such-dir", "summary.md"), "# md")).IsFalse();
 
-    [Fact]
-    public void LoadReport_NegativeMaxChars_IsNotBlamedOnThePattern()
+    [Test]
+    public async Task LoadReport_NegativeMaxChars_IsNotBlamedOnThePattern()
     {
         // ArgumentOutOfRangeException derives from ArgumentException; the pattern-gate rethrow
         // must not swallow it into "Invalid Coverage Pattern".
         Write("coverage.cobertura.xml", Cobertura.NewDoc());
 
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var ex = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             CoverageReportHelpers.LoadReport(_root, "coverage.cobertura.xml", -1));
 
-        Assert.DoesNotContain("Invalid Coverage Pattern", ex.Message);
+        await Assert.That(ex.Message).DoesNotContain("Invalid Coverage Pattern");
     }
 }

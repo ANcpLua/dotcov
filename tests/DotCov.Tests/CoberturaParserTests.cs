@@ -1,7 +1,7 @@
+using TUnit.Assertions.Enums;
 using System.Text;
 using System.Xml;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -9,122 +9,122 @@ public sealed class CoberturaParserTests
 {
     private const string FixturePath = "Fixtures/sample.cobertura.xml";
 
-    [Fact]
-    public void Parse_FullyCoveredClass_ReportsAllLinesHit()
+    [Test]
+    public async Task Parse_FullyCoveredClass_ReportsAllLinesHit()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
 
-        Assert.Equal(4, calculator.LinesTotal);
-        Assert.Equal(4, calculator.LinesHit);
-        Assert.Equal(1.0, calculator.LineRate);
+        await Assert.That(calculator.LinesTotal).IsEqualTo(4);
+        await Assert.That(calculator.LinesHit).IsEqualTo(4);
+        await Assert.That(calculator.LineRate).IsEqualTo(1.0);
     }
 
-    [Fact]
-    public void Parse_PartiallyCoveredClass_ReportsCorrectHitCount()
+    [Test]
+    public async Task Parse_PartiallyCoveredClass_ReportsCorrectHitCount()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
 
-        Assert.Equal(5, parser.LinesTotal);
-        Assert.Equal(3, parser.LinesHit);
-        Assert.Equal(0.6, parser.LineRate);
+        await Assert.That(parser.LinesTotal).IsEqualTo(5);
+        await Assert.That(parser.LinesHit).IsEqualTo(3);
+        await Assert.That(parser.LineRate).IsEqualTo(0.6);
     }
 
-    [Fact]
-    public void Parse_UncoveredClass_ReportsZeroLineRate()
+    [Test]
+    public async Task Parse_UncoveredClass_ReportsZeroLineRate()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
 
-        Assert.Equal(3, unused.LinesTotal);
-        Assert.Equal(0, unused.LinesHit);
-        Assert.Equal(0.0, unused.LineRate);
+        await Assert.That(unused.LinesTotal).IsEqualTo(3);
+        await Assert.That(unused.LinesHit).IsEqualTo(0);
+        await Assert.That(unused.LineRate).IsEqualTo(0.0);
     }
 
-    [Fact]
-    public void Parse_FullBranchCoverage_ReportsAllBranchesHit()
+    [Test]
+    public async Task Parse_FullBranchCoverage_ReportsAllBranchesHit()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
 
-        Assert.Equal(2, calculator.BranchesTotal);
-        Assert.Equal(2, calculator.BranchesHit);
-        Assert.Equal(1.0, calculator.BranchRate);
+        await Assert.That(calculator.BranchesTotal).IsEqualTo(2);
+        await Assert.That(calculator.BranchesHit).IsEqualTo(2);
+        await Assert.That(calculator.BranchRate).IsEqualTo(1.0);
     }
 
-    [Fact]
-    public void Parse_PartialBranches_ExtractsConditionCoverageCorrectly()
+    [Test]
+    public async Task Parse_PartialBranches_ExtractsConditionCoverageCorrectly()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
 
-        Assert.Equal(4, parser.BranchesTotal);
-        Assert.Equal(1, parser.BranchesHit);
-        Assert.Equal(0.25, parser.BranchRate);
+        await Assert.That(parser.BranchesTotal).IsEqualTo(4);
+        await Assert.That(parser.BranchesHit).IsEqualTo(1);
+        await Assert.That(parser.BranchRate).IsEqualTo(0.25);
     }
 
-    [Fact]
-    public void Parse_NoBranches_ReportsNoBranchRate()
+    [Test]
+    public async Task Parse_NoBranches_ReportsNoBranchRate()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
 
-        Assert.Equal(0, unused.BranchesTotal);
+        await Assert.That(unused.BranchesTotal).IsEqualTo(0);
         // Not 1.0. A file with no branches has no branch rate - reporting "100%" for absent
         // data is what let a --min-branch gate pass on reports carrying no branch data at all.
-        Assert.Null(unused.BranchRate);
-        Assert.False(unused.HasBranchData);
+        await Assert.That(unused.BranchRate).IsNull();
+        await Assert.That(unused.HasBranchData).IsFalse();
     }
 
-    [Fact]
-    public void Report_AggregateTotals_SumsAcrossAllFiles()
+    [Test]
+    public async Task Report_AggregateTotals_SumsAcrossAllFiles()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
 
-        Assert.Equal(12, report.TotalLines);
-        Assert.Equal(7, report.TotalLinesHit);
-        Assert.Equal(6, report.TotalBranches);
-        Assert.Equal(3, report.TotalBranchesHit);
+        await Assert.That(report.TotalLines).IsEqualTo(12);
+        await Assert.That(report.TotalLinesHit).IsEqualTo(7);
+        await Assert.That(report.TotalBranches).IsEqualTo(6);
+        await Assert.That(report.TotalBranchesHit).IsEqualTo(3);
     }
 
-    [Fact]
-    public void Evaluate_AboveMinimum_Passes()
+    [Test]
+    public async Task Evaluate_AboveMinimum_Passes()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.Equal(GateOutcome.Pass, report.Evaluate(50).Outcome);
+        await Assert.That(report.Evaluate(50).Outcome).IsEqualTo(GateOutcome.Pass);
     }
 
-    [Fact]
-    public void Evaluate_BelowMinimum_Fails()
+    [Test]
+    public async Task Evaluate_BelowMinimum_Fails()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var gate = report.Evaluate(80);
-        Assert.Equal(GateOutcome.Fail, gate.Outcome);
-        Assert.Contains("line coverage below threshold", gate.Reason);
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
+        await Assert.That(gate.Reason).Contains("line coverage below threshold");
     }
 
-    [Fact]
-    public void Evaluate_WithBranchMinimum_ChecksBoth()
+    [Test]
+    public async Task Evaluate_WithBranchMinimum_ChecksBoth()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
-        Assert.Equal(GateOutcome.Pass, report.Evaluate(50, 50).Outcome);
-        Assert.Equal(GateOutcome.Fail, report.Evaluate(50, 60).Outcome);
+        await Assert.That(report.Evaluate(50, 50).Outcome).IsEqualTo(GateOutcome.Pass);
+        await Assert.That(report.Evaluate(50, 60).Outcome).IsEqualTo(GateOutcome.Fail);
     }
 
-    [Fact]
-    public void BelowPercent_ReturnsOnlyFilesUnderThreshold()
+    [Test]
+    public async Task BelowPercent_ReturnsOnlyFilesUnderThreshold()
     {
         var report = CoberturaParser.ParseFile(FixturePath);
         var below80 = report.BelowPercent(80).ToList();
 
-        Assert.Equal(2, below80.Count);
-        Assert.Contains(below80, f => f.Path == "src/Parser.cs");
-        Assert.Contains(below80, f => f.Path == "src/Unused.cs");
-        Assert.DoesNotContain(below80, f => f.Path == "src/Calculator.cs");
+        await Assert.That(below80.Count).IsEqualTo(2);
+        await Assert.That(below80).Contains(f => f.Path == "src/Parser.cs");
+        await Assert.That(below80).Contains(f => f.Path == "src/Unused.cs");
+        await Assert.That(below80).DoesNotContain(f => f.Path == "src/Calculator.cs");
     }
 
-    [Fact]
+    [Test]
     public void Parse_XxeEntityReference_Throws()
     {
         // The actual XXE shape: a DTD-declared external entity *referenced* in content.
@@ -141,11 +141,11 @@ public sealed class CoberturaParserTests
                                  """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
-        Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream));
+        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
-    [Fact]
-    public void Parse_BenignDoctype_ParsesLikeReferenceCobertura()
+    [Test]
+    public async Task Parse_BenignDoctype_ParsesLikeReferenceCobertura()
     {
         // Reference Cobertura, gcovr, and coverage.py emit this DOCTYPE on every report.
         // DtdProcessing.Prohibit rejected the format's canonical emitters; the DOCTYPE must
@@ -164,14 +164,14 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
         var report = CoberturaParser.Parse(stream);
 
-        var file = Assert.Single(report.Files);
-        Assert.Equal(2, file.LinesTotal);
-        Assert.Equal(1, file.LinesHit);
-        Assert.Empty(report.Warnings);
+        var file = await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(file.LinesTotal).IsEqualTo(2);
+        await Assert.That(file.LinesHit).IsEqualTo(1);
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_EmptyPackages_ReturnsEmptyReport()
+    [Test]
+    public async Task Parse_EmptyPackages_ReturnsEmptyReport()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -181,13 +181,13 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Empty(report.Files);
-        Assert.Null(report.LineRate);
-        Assert.False(report.HasLineData);
+        await Assert.That(report.Files).IsEmpty();
+        await Assert.That(report.LineRate).IsNull();
+        await Assert.That(report.HasLineData).IsFalse();
     }
 
-    [Fact]
-    public void Parse_CoverletLayout_DedupesMethodsAndClassLines()
+    [Test]
+    public async Task Parse_CoverletLayout_DedupesMethodsAndClassLines()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -225,17 +225,17 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
-        var file = Assert.Single(report.Files);
+        var file = await Assert.That(report.Files).HasSingleItem();
 
-        Assert.Equal(4, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);
-        Assert.Equal(4, file.BranchesTotal);
-        Assert.Equal(1, file.BranchesHit);
-        Assert.Equal([20, 21], file.UncoveredLines);
+        await Assert.That(file.LinesTotal).IsEqualTo(4);
+        await Assert.That(file.LinesHit).IsEqualTo(2);
+        await Assert.That(file.BranchesTotal).IsEqualTo(4);
+        await Assert.That(file.BranchesHit).IsEqualTo(1);
+        await Assert.That(file.UncoveredLines).IsEquivalentTo([20, 21], CollectionOrdering.Matching);
     }
 
-    [Fact]
-    public void Parse_BranchedLines_PopulatesBranchesByLineFromXml()
+    [Test]
+    public async Task Parse_BranchedLines_PopulatesBranchesByLineFromXml()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -251,19 +251,19 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = Assert.Single(CoberturaParser.Parse(stream).Files);
+        var file = await Assert.That(CoberturaParser.Parse(stream).Files).HasSingleItem();
 
-        Assert.Equal(2, file.BranchesByLine.Count);
-        Assert.Equal((1, 2), file.BranchesByLine[10]);
-        Assert.Equal((4, 4), file.BranchesByLine[20]);
-        Assert.False(file.BranchesByLine.ContainsKey(30));
-        Assert.Equal(LineStatus.Partial, file.GetLineStatus(10));
-        Assert.Equal(LineStatus.Hit, file.GetLineStatus(20));
-        Assert.Equal(LineStatus.Hit, file.GetLineStatus(30));
+        await Assert.That(file.BranchesByLine.Count).IsEqualTo(2);
+        await Assert.That(file.BranchesByLine[10]).IsEqualTo((1, 2));
+        await Assert.That(file.BranchesByLine[20]).IsEqualTo((4, 4));
+        await Assert.That(file.BranchesByLine.ContainsKey(30)).IsFalse();
+        await Assert.That(file.GetLineStatus(10)).IsEqualTo(LineStatus.Partial);
+        await Assert.That(file.GetLineStatus(20)).IsEqualTo(LineStatus.Hit);
+        await Assert.That(file.GetLineStatus(30)).IsEqualTo(LineStatus.Hit);
     }
 
-    [Fact]
-    public void Parse_LineWithMissingHitsAttribute_TreatsAsZeroWithoutWarning()
+    [Test]
+    public async Task Parse_LineWithMissingHitsAttribute_TreatsAsZeroWithoutWarning()
     {
         // Absent is not malformed: some emitters omit `hits` on summary lines, so a missing
         // attribute is a plain uncovered line with no warning noise.
@@ -280,18 +280,18 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
-        var file = Assert.Single(report.Files);
+        var file = await Assert.That(report.Files).HasSingleItem();
 
-        Assert.Equal(1, file.LinesTotal);
-        Assert.Equal(0, file.LinesHit);
-        Assert.Equal([1], file.UncoveredLines);
-        Assert.Empty(report.Warnings);
+        await Assert.That(file.LinesTotal).IsEqualTo(1);
+        await Assert.That(file.LinesHit).IsEqualTo(0);
+        await Assert.That(file.UncoveredLines).IsEquivalentTo([1], CollectionOrdering.Matching);
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Theory]
-    [InlineData("not-a-number")]
-    [InlineData("1.5")]
-    public void Parse_UnparseableHits_TreatsAsZeroAndEmitsWarning(string hits)
+    [Test]
+    [Arguments("not-a-number")]
+    [Arguments("1.5")]
+    public async Task Parse_UnparseableHits_TreatsAsZeroAndEmitsWarning(string hits)
     {
         // Present-but-unparseable must not silently flip a possibly-covered line to a miss:
         // the line still counts as uncovered (the conservative reading), but the degradation
@@ -309,19 +309,19 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
-        var file = Assert.Single(report.Files);
+        var file = await Assert.That(report.Files).HasSingleItem();
 
-        Assert.Equal(1, file.LinesTotal);
-        Assert.Equal(0, file.LinesHit);
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.MalformedHits, w.Kind);
-        Assert.Equal("src/A.cs", w.File);
-        Assert.Equal(7, w.Line);
-        Assert.Contains(hits, w.Detail);
+        await Assert.That(file.LinesTotal).IsEqualTo(1);
+        await Assert.That(file.LinesHit).IsEqualTo(0);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.MalformedHits);
+        await Assert.That(w.File).IsEqualTo("src/A.cs");
+        await Assert.That(w.Line).IsEqualTo(7);
+        await Assert.That(w.Detail).Contains(hits);
     }
 
-    [Fact]
-    public void Parse_HitsAboveIntMax_CountsAsCoveredLine()
+    [Test]
+    public async Task Parse_HitsAboveIntMax_CountsAsCoveredLine()
     {
         // 64-bit hit counts are real (soak runs; gcovr/llvm-cov/JaCoCo converters use long
         // counters and the Cobertura DTD does not bound hits). Overflow must saturate, not
@@ -341,20 +341,20 @@ public sealed class CoberturaParserTests
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
-        var file = Assert.Single(report.Files);
+        var file = await Assert.That(report.Files).HasSingleItem();
 
-        Assert.Equal(2, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);
-        Assert.Equal(1.0, file.LineRate);
-        Assert.Equal(int.MaxValue, file.LineHits[1]);   // saturated, still "covered"
-        Assert.Empty(report.Warnings);
+        await Assert.That(file.LinesTotal).IsEqualTo(2);
+        await Assert.That(file.LinesHit).IsEqualTo(2);
+        await Assert.That(file.LineRate).IsEqualTo(1.0);
+        await Assert.That(file.LineHits[1]).IsEqualTo(int.MaxValue);   // saturated, still "covered"
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Theory]
-    [InlineData("true")]
-    [InlineData("True")]
-    [InlineData("TRUE")]
-    public void Parse_BranchAttribute_IsCaseInsensitive(string branchValue)
+    [Test]
+    [Arguments("true")]
+    [Arguments("True")]
+    [Arguments("TRUE")]
+    public async Task Parse_BranchAttribute_IsCaseInsensitive(string branchValue)
     {
         var xml = $"""
                    <?xml version="1.0"?>
@@ -370,12 +370,12 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Equal(2, report.TotalBranches);
-        Assert.Equal(1, report.TotalBranchesHit);
+        await Assert.That(report.TotalBranches).IsEqualTo(2);
+        await Assert.That(report.TotalBranchesHit).IsEqualTo(1);
     }
 
-    [Fact]
-    public void Parse_ClassWithNoLines_ReportsZeroTotals()
+    [Test]
+    public async Task Parse_ClassWithNoLines_ReportsZeroTotals()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -388,25 +388,25 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Single(report.Files);
-        Assert.Equal(0, report.Files[0].LinesTotal);
+        await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(report.Files[0].LinesTotal).IsEqualTo(0);
         // A class the emitter listed but recorded no lines for is unmeasured, not fully covered.
-        Assert.Null(report.Files[0].LineRate);
+        await Assert.That(report.Files[0].LineRate).IsNull();
     }
 
-    [Fact]
-    public void Merge_TwoReports_CombinesFilesByPath()
+    [Test]
+    public async Task Merge_TwoReports_CombinesFilesByPath()
     {
         var a = new CoverageReport([new FileCoverage("a.cs", 3, 10, 0, 0)]);
         var b = new CoverageReport([new FileCoverage("b.cs", 5, 10, 0, 0)]);
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(2, merged.Files.Count);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);
     }
 
-    [Fact]
-    public void Merge_SameFile_DedupesLinesByNumberTakingMaxHits()
+    [Test]
+    public async Task Merge_SameFile_DedupesLinesByNumberTakingMaxHits()
     {
         var a = Reports.ClassifiedFile("a.cs", linesHit: 2, linesTotal: 4, branchesHit: 1, branchesTotal: 2,
             lineHits: new Dictionary<int, int> { [1] = 3, [2] = 0, [3] = 5, [4] = 0 },
@@ -417,15 +417,15 @@ public sealed class CoberturaParserTests
 
         var merged = CoverageReport.Merge(new CoverageReport([a]), new CoverageReport([b]));
 
-        Assert.Single(merged.Files);
-        Assert.Equal(5, merged.Files[0].LinesTotal);
-        Assert.Equal(4, merged.Files[0].LinesHit);
-        Assert.Equal(3, merged.Files[0].BranchesHit);
-        Assert.Equal(6, merged.Files[0].BranchesTotal);
+        await Assert.That(merged.Files).HasSingleItem();
+        await Assert.That(merged.Files[0].LinesTotal).IsEqualTo(5);
+        await Assert.That(merged.Files[0].LinesHit).IsEqualTo(4);
+        await Assert.That(merged.Files[0].BranchesHit).IsEqualTo(3);
+        await Assert.That(merged.Files[0].BranchesTotal).IsEqualTo(6);
     }
 
-    [Fact]
-    public void Merge_SameFile_OverlappingBranchLines_DedupesViaMathMax()
+    [Test]
+    public async Task Merge_SameFile_OverlappingBranchLines_DedupesViaMathMax()
     {
         var a = Reports.ClassifiedFile("a.cs", 1, 1, 1, 2,
             lineHits: new Dictionary<int, int> { [10] = 1 },
@@ -436,13 +436,13 @@ public sealed class CoberturaParserTests
 
         var (merged, _) = a.MergeWith(b);
 
-        Assert.Equal(1, merged.LinesTotal);
-        Assert.Equal(2, merged.BranchesHit);
-        Assert.Equal(2, merged.BranchesTotal);
+        await Assert.That(merged.LinesTotal).IsEqualTo(1);
+        await Assert.That(merged.BranchesHit).IsEqualTo(2);
+        await Assert.That(merged.BranchesTotal).IsEqualTo(2);
     }
 
-    [Fact]
-    public void Merge_SplitConditionRuns_UnionsByConditionNumber_NotLineLevelMax()
+    [Test]
+    public async Task Merge_SplitConditionRuns_UnionsByConditionNumber_NotLineLevelMax()
     {
         // Two runs cover DIFFERENT conditions of the same branched line. Coverlet exposes
         // per-branch identity (<condition number= coverage=>), so the true union is 5/6 — a
@@ -459,12 +459,12 @@ public sealed class CoberturaParserTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(5, merged.TotalBranchesHit);
-        Assert.Equal(6, merged.TotalBranches);
+        await Assert.That(merged.TotalBranchesHit).IsEqualTo(5);
+        await Assert.That(merged.TotalBranches).IsEqualTo(6);
     }
 
-    [Fact]
-    public void Parse_UnparseableConditionCoverage_IgnoresConditionKeepsLineAggregate()
+    [Test]
+    public async Task Parse_UnparseableConditionCoverage_IgnoresConditionKeepsLineAggregate()
     {
         // A coverlet emitter regression (garbage `coverage`) must not crash and must not poison
         // the per-condition map — the line still parses via its line-level aggregate.
@@ -472,13 +472,13 @@ public sealed class CoberturaParserTests
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (1/2)", (1, "garbage")))
             .Parse().Files[0];
 
-        Assert.Equal(1, f.BranchesHit);            // aggregate (1/2) preserved
-        Assert.Equal(2, f.BranchesTotal);
-        Assert.Empty(f.ConditionsByLine);          // the unparseable condition was dropped
+        await Assert.That(f.BranchesHit).IsEqualTo(1);            // aggregate (1/2) preserved
+        await Assert.That(f.BranchesTotal).IsEqualTo(2);
+        await Assert.That(f.ConditionsByLine).IsEmpty();          // the unparseable condition was dropped
     }
 
-    [Fact]
-    public void Parse_ConditionCountInconsistentWithAggregate_DropsConditionDetail()
+    [Test]
+    public async Task Parse_ConditionCountInconsistentWithAggregate_DropsConditionDetail()
     {
         // 1 condition but the line aggregate reports 4 outcomes (a switch jump-table). 1*2 != 4,
         // so the 2-outcome reconstruction is unsafe — drop to the aggregate rather than invent a total.
@@ -486,12 +486,12 @@ public sealed class CoberturaParserTests
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "25% (1/4)", (1, "50%")))
             .Parse().Files[0];
 
-        Assert.Equal(4, f.BranchesTotal);          // aggregate (1/4) preserved
-        Assert.Empty(f.ConditionsByLine);          // gate dropped the inconsistent detail
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);          // aggregate (1/4) preserved
+        await Assert.That(f.ConditionsByLine).IsEmpty();          // gate dropped the inconsistent detail
     }
 
-    [Fact]
-    public void Parse_SameConditionUnderMultipleClassBlocks_DedupesViaMathMax()
+    [Test]
+    public async Task Parse_SameConditionUnderMultipleClassBlocks_DedupesViaMathMax()
     {
         // Coverlet emits the same line under <method><lines> AND <class><lines>; the per-condition
         // covered count must Math.Max across blocks, not sum (which would over-count the branch).
@@ -500,11 +500,11 @@ public sealed class CoberturaParserTests
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, "100%")))
             .Parse().Files[0];
 
-        Assert.Equal(2, f.ConditionsByLine[10][1]);   // Math.Max(1, 2), not 1 + 2
+        await Assert.That(f.ConditionsByLine[10][1]).IsEqualTo(2);   // Math.Max(1, 2), not 1 + 2
     }
 
-    [Fact]
-    public void Merge_MismatchedConditionNumberSets_FallsBackToLineAggregateAndWarns()
+    [Test]
+    public async Task Merge_MismatchedConditionNumberSets_FallsBackToLineAggregateAndWarns()
     {
         // Coverlet condition `number`s are IL branch offsets — stable only for the identical
         // assembly build. When the two sides' number sets for a line differ, they no longer
@@ -520,18 +520,18 @@ public sealed class CoberturaParserTests
         var merged = CoverageReport.Merge(a, b);
         var f = merged.Files[0];
 
-        Assert.Equal(4, f.BranchesHit);    // line-level Math.Max of (2/4) and (4/6)
-        Assert.Equal(6, f.BranchesTotal);
+        await Assert.That(f.BranchesHit).IsEqualTo(4);    // line-level Math.Max of (2/4) and (4/6)
+        await Assert.That(f.BranchesTotal).IsEqualTo(6);
         // The untrustworthy identity is not merely dropped but POISONED: the empty sentinel
         // entry marks the line so no later merge can resurrect one side's detail and make
         // the aggregate depend on fold order (see MergeConditionIdentityTests).
-        Assert.Empty(f.ConditionsByLine[10]);
-        Assert.Contains(merged.Warnings, w =>
+        await Assert.That(f.ConditionsByLine[10]).IsEmpty();
+        await Assert.That(merged.Warnings).Contains(w =>
             w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
     }
 
-    [Fact]
-    public void Merge_DisjointConditionNumbersSameTotal_DoesNotInventBranchTotal()
+    [Test]
+    public async Task Merge_DisjointConditionNumbersSameTotal_DoesNotInventBranchTotal()
     {
         // The Debug-vs-Release repro: the same physical 2-way branch gets condition number 0
         // in one build and 139 in the other, with identical totals. The old per-number union
@@ -548,14 +548,14 @@ public sealed class CoberturaParserTests
         var merged = CoverageReport.Merge(a, b);
         var f = merged.Files[0];
 
-        Assert.Equal(2, f.BranchesHit);
-        Assert.Equal(2, f.BranchesTotal);
-        Assert.Contains(merged.Warnings, w =>
+        await Assert.That(f.BranchesHit).IsEqualTo(2);
+        await Assert.That(f.BranchesTotal).IsEqualTo(2);
+        await Assert.That(merged.Warnings).Contains(w =>
             w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
     }
 
-    [Fact]
-    public void Merge_OneSidedConditionDetail_SurvivesAndNeverRegressesTheAggregate()
+    [Test]
+    public async Task Merge_OneSidedConditionDetail_SurvivesAndNeverRegressesTheAggregate()
     {
         // Report `a` carries per-condition detail; `b` (a different emitter) ships only the
         // line aggregate. The detail must be carried forward — an intersection would erase it,
@@ -570,15 +570,15 @@ public sealed class CoberturaParserTests
 
         var f = CoverageReport.Merge(a, b).Files[0];
 
-        Assert.True(f.ConditionsByLine.ContainsKey(10));    // detail survives for future merges
-        Assert.Equal(1, f.ConditionsByLine[10][1]);
-        Assert.Equal(0, f.ConditionsByLine[10][2]);
-        Assert.Equal(2, f.BranchesHit);                     // b's line-level (2/4) not regressed
-        Assert.Equal(4, f.BranchesTotal);
+        await Assert.That(f.ConditionsByLine.ContainsKey(10)).IsTrue();    // detail survives for future merges
+        await Assert.That(f.ConditionsByLine[10][1]).IsEqualTo(1);
+        await Assert.That(f.ConditionsByLine[10][2]).IsEqualTo(0);
+        await Assert.That(f.BranchesHit).IsEqualTo(2);                     // b's line-level (2/4) not regressed
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);
     }
 
-    [Fact]
-    public void Merge_ThreeReports_MiddleWithoutConditionDetail_IsOrderIndependent()
+    [Test]
+    public async Task Merge_ThreeReports_MiddleWithoutConditionDetail_IsOrderIndependent()
     {
         // Merge(Merge(A,B),C) must equal Merge(A,Merge(B,C)) even when B carries no condition
         // detail: A and C each exercised a DIFFERENT condition of line 10, so the true union
@@ -597,17 +597,17 @@ public sealed class CoberturaParserTests
         var leftFold = CoverageReport.Merge(CoverageReport.Merge(A(), B()), C()).Files[0];
         var rightFold = CoverageReport.Merge(A(), CoverageReport.Merge(B(), C())).Files[0];
 
-        Assert.Equal(3, leftFold.BranchesHit);      // #1 max(1,0)=1, #2 max(0,2)=2
-        Assert.Equal(4, leftFold.BranchesTotal);
-        Assert.Equal(leftFold.BranchesHit, rightFold.BranchesHit);
-        Assert.Equal(leftFold.BranchesTotal, rightFold.BranchesTotal);
+        await Assert.That(leftFold.BranchesHit).IsEqualTo(3);      // #1 max(1,0)=1, #2 max(0,2)=2
+        await Assert.That(leftFold.BranchesTotal).IsEqualTo(4);
+        await Assert.That(rightFold.BranchesHit).IsEqualTo(leftFold.BranchesHit);
+        await Assert.That(rightFold.BranchesTotal).IsEqualTo(leftFold.BranchesTotal);
     }
 
-    [Theory]
-    [InlineData("200%")]
-    [InlineData("-50%")]
-    [InlineData("NaN%")]
-    public void Parse_OutOfRangeConditionCoverage_DropsConditionKeepsLineAggregate(string coverage)
+    [Test]
+    [Arguments("200%")]
+    [Arguments("-50%")]
+    [Arguments("NaN%")]
+    public async Task Parse_OutOfRangeConditionCoverage_DropsConditionKeepsLineAggregate(string coverage)
     {
         // A condition percent outside [0,100] cannot describe a 2-way jump. Left unclamped,
         // coverage="200%" recorded covered=4 for one condition, and a later merge recompute
@@ -618,9 +618,9 @@ public sealed class CoberturaParserTests
             .Parse();
         var f = report.Files[0];
 
-        Assert.Equal(2, f.BranchesHit);
-        Assert.Equal(2, f.BranchesTotal);
-        Assert.Empty(f.ConditionsByLine);
+        await Assert.That(f.BranchesHit).IsEqualTo(2);
+        await Assert.That(f.BranchesTotal).IsEqualTo(2);
+        await Assert.That(f.ConditionsByLine).IsEmpty();
 
         // And the invariant the clamp protects: merging two such reports can never push
         // BranchesHit past BranchesTotal.
@@ -628,13 +628,13 @@ public sealed class CoberturaParserTests
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, coverage)))
             .Parse();
         var merged = CoverageReport.Merge(report, again).Files[0];
-        Assert.True(merged.BranchesHit <= merged.BranchesTotal);
-        Assert.Equal(2, merged.BranchesHit);
-        Assert.Equal(2, merged.BranchesTotal);
+        await Assert.That(merged.BranchesHit <= merged.BranchesTotal).IsTrue();
+        await Assert.That(merged.BranchesHit).IsEqualTo(2);
+        await Assert.That(merged.BranchesTotal).IsEqualTo(2);
     }
 
-    [Fact]
-    public void Parse_MalformedAndStrayConditions_AreIgnored_KeepsLineAggregate()
+    [Test]
+    public async Task Parse_MalformedAndStrayConditions_AreIgnored_KeepsLineAggregate()
     {
         // Robustness against bad emitter output: a <condition> outside any branched line, one with
         // a non-numeric `number`, and one missing its `coverage` must all be ignored — no crash,
@@ -661,26 +661,26 @@ public sealed class CoberturaParserTests
 
         var f = CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml))).Files[0];
 
-        Assert.Equal(2, f.BranchesHit);     // line-level aggregate (2/4) preserved
-        Assert.Equal(4, f.BranchesTotal);
-        Assert.Empty(f.ConditionsByLine);   // stray / non-numeric / coverage-less conditions all dropped
+        await Assert.That(f.BranchesHit).IsEqualTo(2);     // line-level aggregate (2/4) preserved
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);
+        await Assert.That(f.ConditionsByLine).IsEmpty();   // stray / non-numeric / coverage-less conditions all dropped
     }
 
-    [Fact]
-    public void ParsePath_WithFile_ParsesSuccessfully()
+    [Test]
+    public async Task ParsePath_WithFile_ParsesSuccessfully()
     {
         var report = CoberturaParser.ParsePath(FixturePath);
-        Assert.Equal(3, report.Files.Count);
+        await Assert.That(report.Files.Count).IsEqualTo(3);
     }
 
-    [Fact]
+    [Test]
     public void ParsePath_WithNonexistentPath_Throws()
     {
-        Assert.Throws<FileNotFoundException>(() => CoberturaParser.ParsePath("nonexistent"));
+        Assert.ThrowsExactly<FileNotFoundException>(() => CoberturaParser.ParsePath("nonexistent"));
     }
 
-    [Fact]
-    public void Parse_WellFormedXml_EmitsNoWarnings()
+    [Test]
+    public async Task Parse_WellFormedXml_EmitsNoWarnings()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -696,11 +696,11 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Empty(report.Warnings);
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_MalformedConditionString_EmitsWarning()
+    [Test]
+    public async Task Parse_MalformedConditionString_EmitsWarning()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -716,18 +716,18 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Equal(0, report.Files[0].BranchesTotal);
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
-        Assert.Equal("src/A.cs", w.File);
-        Assert.Equal(42, w.Line);
-        Assert.Contains("garbage", w.Detail);
+        await Assert.That(report.Files[0].BranchesTotal).IsEqualTo(0);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.MalformedConditionCoverage);
+        await Assert.That(w.File).IsEqualTo("src/A.cs");
+        await Assert.That(w.Line).IsEqualTo(42);
+        await Assert.That(w.Detail).Contains("garbage");
     }
 
-    [Theory]
-    [InlineData("50% (99999999999999/2)")]
-    [InlineData("50% (1/99999999999999)")]
-    public void Parse_ConditionCoverageWithIntOverflow_EmitsWarning(string condition)
+    [Test]
+    [Arguments("50% (99999999999999/2)")]
+    [Arguments("50% (1/99999999999999)")]
+    public async Task Parse_ConditionCoverageWithIntOverflow_EmitsWarning(string condition)
     {
         var xml = $"""
                    <?xml version="1.0"?>
@@ -744,14 +744,14 @@ public sealed class CoberturaParserTests
         var report = CoberturaParser.Parse(stream);
 
         // The overflowing branch entry is dropped (not silently zeroed INTO the totals)...
-        Assert.Equal(0, report.Files[0].BranchesTotal);
+        await Assert.That(report.Files[0].BranchesTotal).IsEqualTo(0);
         // ...and the drop is observable as a structured warning.
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
-        Assert.Contains(condition, w.Detail);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.MalformedConditionCoverage);
+        await Assert.That(w.Detail).Contains(condition);
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_MalformedConditionString_EmitsWarning()
     {
         const string xml = """
@@ -768,13 +768,13 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = await CoberturaParser.ParseAsync(stream);
 
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
-        Assert.Equal(3, w.Line);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.MalformedConditionCoverage);
+        await Assert.That(w.Line).IsEqualTo(3);
     }
 
-    [Fact]
-    public void Parse_MultipleClassBlocksSameFile_UnionLinesWithMaxHits()
+    [Test]
+    public async Task Parse_MultipleClassBlocksSameFile_UnionLinesWithMaxHits()
     {
         const string xml = """
                            <?xml version="1.0" encoding="utf-8"?>
@@ -799,30 +799,30 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var file = CoberturaParser.Parse(stream).Files.Single();
 
-        Assert.Equal("src/Dto.cs", file.Path);
-        Assert.Equal(3, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);
-        Assert.Equal([12], file.UncoveredLines);
-        Assert.Equal(5, file.LineHits[10]);
+        await Assert.That(file.Path).IsEqualTo("src/Dto.cs");
+        await Assert.That(file.LinesTotal).IsEqualTo(3);
+        await Assert.That(file.LinesHit).IsEqualTo(2);
+        await Assert.That(file.UncoveredLines).IsEquivalentTo([12], CollectionOrdering.Matching);
+        await Assert.That(file.LineHits[10]).IsEqualTo(5);
     }
 
     // ── Path identity: separator normalization and case-insensitivity ──
     // The normalized filename is the file's merge-identity key across Windows/Linux CI jobs;
     // these pin the contract the ConsumeClass comment declares.
 
-    [Fact]
-    public void Parse_BackslashFilename_NormalizesToForwardSlashPath()
+    [Test]
+    public async Task Parse_BackslashFilename_NormalizesToForwardSlashPath()
     {
         var report = Cobertura.NewDoc()
             .AddClass(@"src\App\A.cs", c => c.Line(1, hits: 1))
             .Parse();
 
-        var file = Assert.Single(report.Files);
-        Assert.Equal("src/App/A.cs", file.Path);
+        var file = await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(file.Path).IsEqualTo("src/App/A.cs");
     }
 
-    [Fact]
-    public void Merge_BackslashAndForwardSlashReports_UnionAsOneFile()
+    [Test]
+    public async Task Merge_BackslashAndForwardSlashReports_UnionAsOneFile()
     {
         // The exact Windows+Linux CI matrix scenario: coverlet on Windows writes `src\A.cs`,
         // on Linux `src/A.cs`. The merged report must union their lines as one file, not
@@ -836,14 +836,14 @@ public sealed class CoberturaParserTests
 
         var merged = CoverageReport.Merge(windows, linux);
 
-        var file = Assert.Single(merged.Files);
-        Assert.Equal(3, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);   // 1 from windows, 2 from linux
-        Assert.Equal([3], file.UncoveredLines);
+        var file = await Assert.That(merged.Files).HasSingleItem();
+        await Assert.That(file.LinesTotal).IsEqualTo(3);
+        await Assert.That(file.LinesHit).IsEqualTo(2);   // 1 from windows, 2 from linux
+        await Assert.That(file.UncoveredLines).IsEquivalentTo([3], CollectionOrdering.Matching);
     }
 
-    [Fact]
-    public void Parse_ClassBlocksDifferingOnlyInPathCase_StayDistinctFiles()
+    [Test]
+    public async Task Parse_ClassBlocksDifferingOnlyInPathCase_StayDistinctFiles()
     {
         // File identity is Ordinal: case-differing filenames are genuinely distinct files on
         // the case-sensitive filesystems Cobertura's native emitters run on —
@@ -855,11 +855,11 @@ public sealed class CoberturaParserTests
             .AddClass("net/netfilter/xt_tcpmss.c", c => c.Line(1, hits: 0).Line(2, hits: 0))
             .Parse();
 
-        Assert.Equal(2, report.Files.Count);
-        Assert.Equal(4, report.TotalLines);
-        Assert.Equal(2, report.TotalLinesHit);
-        Assert.Equal(0.5, report.LineRate);
+        await Assert.That(report.Files.Count).IsEqualTo(2);
+        await Assert.That(report.TotalLines).IsEqualTo(4);
+        await Assert.That(report.TotalLinesHit).IsEqualTo(2);
+        await Assert.That(report.LineRate).IsEqualTo(0.5);
         var uncoveredFile = report.Files.Single(f => f.Path == "net/netfilter/xt_tcpmss.c");
-        Assert.Equal(0.0, uncoveredFile.LineRate);
+        await Assert.That(uncoveredFile.LineRate).IsEqualTo(0.0);
     }
 }

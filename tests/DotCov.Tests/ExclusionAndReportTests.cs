@@ -1,25 +1,25 @@
+using TUnit.Assertions.Enums;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
 public sealed class ExclusionAndReportTests
 {
-    [Fact]
-    public void WellKnown_HasNoStructurallyDeadRules()
+    [Test]
+    public async Task WellKnown_HasNoStructurallyDeadRules()
     {
         // No "d__" rule: it matched on Path (the filename), but coverlet only ever puts d__ in the
         // *class name* — so the rule was structurally dead. Assert it's gone, not present.
         // (The behavioral effect of every live pattern is protected by the Exclude_WellKnown_*
         // theories below — mirroring the list contents here would just restate the data.)
-        Assert.DoesNotContain("d__", ExclusionRules.WellKnown);
+        await Assert.That(ExclusionRules.WellKnown).DoesNotContain("d__");
         // No bare "GlobalUsings" substring either: it swallowed real product code in any
         // directory whose name contains it (src/GlobalUsingsGenerator/…).
-        Assert.DoesNotContain("GlobalUsings", ExclusionRules.WellKnown);
+        await Assert.That(ExclusionRules.WellKnown).DoesNotContain("GlobalUsings");
     }
 
-    [Fact]
-    public void Exclude_WithKeep_RestoresFilesMatchingKeepPattern()
+    [Test]
+    public async Task Exclude_WithKeep_RestoresFilesMatchingKeepPattern()
     {
         // `Program.cs` is in WellKnown, but a CLI tool whose entire surface lives there
         // can opt back in with `--keep Program.cs`.
@@ -31,13 +31,13 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown, keep: ["Program.cs"]);
 
-        Assert.Contains(filtered.Files, f => f.Path.EndsWith("Program.cs"));    // exempted
-        Assert.Contains(filtered.Files, f => f.Path.EndsWith("Service.cs"));    // never excluded
-        Assert.DoesNotContain(filtered.Files, f => f.Path.Contains("/obj/"));   // still excluded
+        await Assert.That(filtered.Files).Contains(f => f.Path.EndsWith("Program.cs"));    // exempted
+        await Assert.That(filtered.Files).Contains(f => f.Path.EndsWith("Service.cs"));    // never excluded
+        await Assert.That(filtered.Files).DoesNotContain(f => f.Path.Contains("/obj/"));   // still excluded
     }
 
-    [Fact]
-    public void Exclude_KeepNotMatched_LeavesExclusionInPlace()
+    [Test]
+    public async Task Exclude_KeepNotMatched_LeavesExclusionInPlace()
     {
         var report = new CoverageReport([
             new FileCoverage("src/MyApp/Program.cs", 10, 12, 0, 0)
@@ -45,28 +45,28 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown, keep: ["Worker.cs"]);
 
-        Assert.Empty(filtered.Files);
+        await Assert.That(filtered.Files).IsEmpty();
     }
 
-    [Fact]
-    public void Exclude_EmptyPatterns_ReturnsSameInstance()
+    [Test]
+    public async Task Exclude_EmptyPatterns_ReturnsSameInstance()
     {
         var report = Reports.Mixed;
 
         var filtered = report.Exclude([]);
 
-        Assert.Same(report, filtered);
+        await Assert.That(filtered).IsSameReferenceAs(report);
     }
 
-    [Theory]
-    [InlineData("src/MyApp/obj/Debug/file.cs")]
-    [InlineData("src/MyApp/OBJ/Debug/file.cs")]
-    [InlineData("src/MyApp/bin/Release/file.cs")]
-    [InlineData("src/Foo.g.cs")]
-    [InlineData("src/Form.Designer.cs")]
-    [InlineData("src/MyApp/Migrations/20230101_Init.cs")]
-    [InlineData("src/GlobalUsings.cs")]
-    public void Exclude_WellKnown_RemovesMatchingFile(string path)
+    [Test]
+    [Arguments("src/MyApp/obj/Debug/file.cs")]
+    [Arguments("src/MyApp/OBJ/Debug/file.cs")]
+    [Arguments("src/MyApp/bin/Release/file.cs")]
+    [Arguments("src/Foo.g.cs")]
+    [Arguments("src/Form.Designer.cs")]
+    [Arguments("src/MyApp/Migrations/20230101_Init.cs")]
+    [Arguments("src/GlobalUsings.cs")]
+    public async Task Exclude_WellKnown_RemovesMatchingFile(string path)
     {
         var report = new CoverageReport([
             new FileCoverage(path, 1, 1, 0, 0),
@@ -75,17 +75,17 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
-        Assert.DoesNotContain(filtered.Files, f => f.Path == path);
+        await Assert.That(filtered.Files).DoesNotContain(f => f.Path == path);
     }
 
-    [Theory]
-    [InlineData("Source/file.cs")]
-    [InlineData("src/MyService.cs")]
+    [Test]
+    [Arguments("Source/file.cs")]
+    [Arguments("src/MyService.cs")]
     // Real product code whose *directory name* contains "GlobalUsings" — the old unanchored
     // substring rule silently dropped this whole directory, which could flip a failing
     // `check --min-line` gate to PASS.
-    [InlineData("src/GlobalUsingsGenerator/Emitter.cs")]
-    public void Exclude_WellKnown_KeepsNonMatchingFile(string path)
+    [Arguments("src/GlobalUsingsGenerator/Emitter.cs")]
+    public async Task Exclude_WellKnown_KeepsNonMatchingFile(string path)
     {
         var report = new CoverageReport([
             new FileCoverage(path, 1, 1, 0, 0),
@@ -94,13 +94,13 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
-        Assert.Contains(filtered.Files, f => f.Path == path);
+        await Assert.That(filtered.Files).Contains(f => f.Path == path);
     }
 
-    [Theory]
-    [InlineData("Program.cs")]        // no directory prefix at all (project-root file)
-    [InlineData("GlobalUsings.cs")]
-    public void Exclude_WellKnown_LeadingSeparatorRules_MatchRootLevelPaths(string path)
+    [Test]
+    [Arguments("Program.cs")]        // no directory prefix at all (project-root file)
+    [Arguments("GlobalUsings.cs")]
+    public async Task Exclude_WellKnown_LeadingSeparatorRules_MatchRootLevelPaths(string path)
     {
         // Emitters disagree on whether `filename` carries a directory prefix: the same
         // Program.cs must be excluded whether it arrives as "src/App/Program.cs" or as a
@@ -113,12 +113,12 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
-        Assert.DoesNotContain(filtered.Files, f => f.Path == path);
-        Assert.Contains(filtered.Files, f => f.Path == "KeepThis.cs");
+        await Assert.That(filtered.Files).DoesNotContain(f => f.Path == path);
+        await Assert.That(filtered.Files).Contains(f => f.Path == "KeepThis.cs");
     }
 
-    [Fact]
-    public void Exclude_WellKnown_CannotFlipAFailingGateByDroppingProductCode()
+    [Test]
+    public async Task Exclude_WellKnown_CannotFlipAFailingGateByDroppingProductCode()
     {
         // The end-to-end hazard the anchored GlobalUsings rule prevents: 0%-covered product
         // code under src/GlobalUsingsGenerator/ must keep counting, so --exclude-generated
@@ -130,55 +130,55 @@ public sealed class ExclusionAndReportTests
 
         var gate = report.Exclude(ExclusionRules.WellKnown).Evaluate(80);
 
-        Assert.Equal(GateOutcome.Fail, gate.Outcome);
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
     }
 
-    [Fact]
-    public void Exclude_DoesNotMutateSource()
+    [Test]
+    public async Task Exclude_DoesNotMutateSource()
     {
         var report = Reports.Mixed;
         var originalCount = report.Files.Count;
 
         _ = report.Exclude(["Unused"]);
 
-        Assert.Equal(originalCount, report.Files.Count);
+        await Assert.That(report.Files.Count).IsEqualTo(originalCount);
     }
 
-    [Fact]
-    public void Empty_StaticInstance_HasNoFilesAndNoRates()
+    [Test]
+    public async Task Empty_StaticInstance_HasNoFilesAndNoRates()
     {
         // The empty report is the whole point of this change: it used to claim 1.0/1.0, so a
         // glob that matched nothing rendered as flawless coverage and cleared every threshold.
-        Assert.Empty(CoverageReport.Empty.Files);
-        Assert.Null(CoverageReport.Empty.LineRate);
-        Assert.Null(CoverageReport.Empty.BranchRate);
-        Assert.False(CoverageReport.Empty.HasLineData);
-        Assert.False(CoverageReport.Empty.HasBranchData);
+        await Assert.That(CoverageReport.Empty.Files).IsEmpty();
+        await Assert.That(CoverageReport.Empty.LineRate).IsNull();
+        await Assert.That(CoverageReport.Empty.BranchRate).IsNull();
+        await Assert.That(CoverageReport.Empty.HasLineData).IsFalse();
+        await Assert.That(CoverageReport.Empty.HasBranchData).IsFalse();
     }
 
-    [Fact]
-    public void HasBranchData_FileWithBranches_True()
+    [Test]
+    public async Task HasBranchData_FileWithBranches_True()
     {
         var file = new FileCoverage("a.cs", 1, 2, 1, 2);
-        Assert.True(file.HasBranchData);
+        await Assert.That(file.HasBranchData).IsTrue();
     }
 
-    [Fact]
-    public void HasBranchData_FileWithoutBranches_False()
+    [Test]
+    public async Task HasBranchData_FileWithoutBranches_False()
     {
         var file = new FileCoverage("a.cs", 1, 2, 0, 0);
-        Assert.False(file.HasBranchData);
+        await Assert.That(file.HasBranchData).IsFalse();
     }
 
-    [Fact]
-    public void HasBranchData_ReportWithoutAnyBranches_False()
+    [Test]
+    public async Task HasBranchData_ReportWithoutAnyBranches_False()
     {
-        Assert.False(Reports.LinesOnly.HasBranchData);
-        Assert.True(Reports.Mixed.HasBranchData);
+        await Assert.That(Reports.LinesOnly.HasBranchData).IsFalse();
+        await Assert.That(Reports.Mixed.HasBranchData).IsTrue();
     }
 
-    [Fact]
-    public void FileCoverage_MergeWith_UnionsLinesAndAppendsPartialBranches()
+    [Test]
+    public async Task FileCoverage_MergeWith_UnionsLinesAndAppendsPartialBranches()
     {
         // `a` covers line 5, misses 10, has a partial branch on line 15 (1/2).
         // `b` covers lines 20 and 30, misses 25, has a partial branch on line 25 (0/2).
@@ -193,16 +193,16 @@ public sealed class ExclusionAndReportTests
 
         var (merged, _) = a.MergeWith(b);
 
-        Assert.Equal([10, 25], merged.UncoveredLines);
-        Assert.Equal(2, merged.PartialBranches.Count);
-        Assert.Equal(3, merged.LinesHit);      // 5, 20, 30
-        Assert.Equal(5, merged.LinesTotal);    // 5, 10, 20, 25, 30
-        Assert.Equal(1, merged.BranchesHit);   // 1 (line 15) + 0 (line 25)
-        Assert.Equal(4, merged.BranchesTotal); // 2 + 2
+        await Assert.That(merged.UncoveredLines).IsEquivalentTo([10, 25], CollectionOrdering.Matching);
+        await Assert.That(merged.PartialBranches.Count).IsEqualTo(2);
+        await Assert.That(merged.LinesHit).IsEqualTo(3);      // 5, 20, 30
+        await Assert.That(merged.LinesTotal).IsEqualTo(5);    // 5, 10, 20, 25, 30
+        await Assert.That(merged.BranchesHit).IsEqualTo(1);   // 1 (line 15) + 0 (line 25)
+        await Assert.That(merged.BranchesTotal).IsEqualTo(4); // 2 + 2
     }
 
-    [Fact]
-    public void FileCoverage_MergeWith_BranchesOnlyInOther_PreservesEntry()
+    [Test]
+    public async Task FileCoverage_MergeWith_BranchesOnlyInOther_PreservesEntry()
     {
         // `a` has the same line tracked but no branch data for it; `b` carries the branches.
         // The merge must keep `b`'s BranchesByLine entry — a regression that overwrote with
@@ -216,74 +216,74 @@ public sealed class ExclusionAndReportTests
 
         var (merged, _) = a.MergeWith(b);
 
-        Assert.Equal((1, 2), merged.BranchesByLine[10]);
-        Assert.Equal(LineStatus.Partial, merged.GetLineStatus(10));
+        await Assert.That(merged.BranchesByLine[10]).IsEqualTo((1, 2));
+        await Assert.That(merged.GetLineStatus(10)).IsEqualTo(LineStatus.Partial);
     }
 
     // ── Codecov-style strict line classification (Hit / Partial / Miss) ──
 
-    [Fact]
-    public void GetLineStatus_FullyCoveredLineWithoutBranches_IsHit()
+    [Test]
+    public async Task GetLineStatus_FullyCoveredLineWithoutBranches_IsHit()
     {
         var f = Reports.ClassifiedFile("a.cs", 1, 1, 0, 0,
             lineHits: new Dictionary<int, int> { [10] = 3 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)>());
 
-        Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
+        await Assert.That(f.GetLineStatus(10)).IsEqualTo(LineStatus.Hit);
     }
 
-    [Fact]
-    public void GetLineStatus_FullyCoveredLineWithAllBranchesExercised_IsHit()
+    [Test]
+    public async Task GetLineStatus_FullyCoveredLineWithAllBranchesExercised_IsHit()
     {
         var f = Reports.ClassifiedFile("a.cs", 1, 1, 2, 2,
             lineHits: new Dictionary<int, int> { [10] = 3 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (2, 2) });
 
-        Assert.Equal(LineStatus.Hit, f.GetLineStatus(10));
+        await Assert.That(f.GetLineStatus(10)).IsEqualTo(LineStatus.Hit);
     }
 
-    [Fact]
-    public void GetLineStatus_ExecutedLineWithIncompleteBranches_IsPartial()
+    [Test]
+    public async Task GetLineStatus_ExecutedLineWithIncompleteBranches_IsPartial()
     {
         var f = Reports.ClassifiedFile("a.cs", 1, 1, 1, 2,
             lineHits: new Dictionary<int, int> { [10] = 3 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) });
 
-        Assert.Equal(LineStatus.Partial, f.GetLineStatus(10));
+        await Assert.That(f.GetLineStatus(10)).IsEqualTo(LineStatus.Partial);
     }
 
-    [Fact]
-    public void GetLineStatus_ZeroHits_IsMissEvenWithBranchData()
+    [Test]
+    public async Task GetLineStatus_ZeroHits_IsMissEvenWithBranchData()
     {
         var f = Reports.ClassifiedFile("a.cs", 0, 1, 0, 2,
             lineHits: new Dictionary<int, int> { [10] = 0 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)> { [10] = (0, 2) });
 
-        Assert.Equal(LineStatus.Miss, f.GetLineStatus(10));
+        await Assert.That(f.GetLineStatus(10)).IsEqualTo(LineStatus.Miss);
     }
 
-    [Fact]
-    public void GetLineStatus_UnknownLine_IsMiss()
+    [Test]
+    public async Task GetLineStatus_UnknownLine_IsMiss()
     {
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
-        Assert.Equal(LineStatus.Miss, f.GetLineStatus(999));
+        await Assert.That(f.GetLineStatus(999)).IsEqualTo(LineStatus.Miss);
     }
 
-    [Fact]
-    public void TryGetLineStatus_TrackedHitLine_ReturnsTrueAndHit()
+    [Test]
+    public async Task TryGetLineStatus_TrackedHitLine_ReturnsTrueAndHit()
     {
         var f = new FileCoverage("a.cs", 1, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 3 }
         };
 
-        Assert.True(f.TryGetLineStatus(10, out var status));
-        Assert.Equal(LineStatus.Hit, status);
+        await Assert.That(f.TryGetLineStatus(10, out var status)).IsTrue();
+        await Assert.That(status).IsEqualTo(LineStatus.Hit);
     }
 
-    [Fact]
-    public void TryGetLineStatus_TrackedZeroHitLine_ReturnsTrueAndMiss()
+    [Test]
+    public async Task TryGetLineStatus_TrackedZeroHitLine_ReturnsTrueAndMiss()
     {
         // The key contract: line IS tracked but had zero hits. Distinct from untracked.
         var f = new FileCoverage("a.cs", 0, 1, 0, 0)
@@ -291,12 +291,12 @@ public sealed class ExclusionAndReportTests
             LineHits = new Dictionary<int, int> { [10] = 0 }
         };
 
-        Assert.True(f.TryGetLineStatus(10, out var status));
-        Assert.Equal(LineStatus.Miss, status);
+        await Assert.That(f.TryGetLineStatus(10, out var status)).IsTrue();
+        await Assert.That(status).IsEqualTo(LineStatus.Miss);
     }
 
-    [Fact]
-    public void TryGetLineStatus_TrackedPartialBranchLine_ReturnsTrueAndPartial()
+    [Test]
+    public async Task TryGetLineStatus_TrackedPartialBranchLine_ReturnsTrueAndPartial()
     {
         var f = new FileCoverage("a.cs", 1, 1, 1, 2)
         {
@@ -304,22 +304,22 @@ public sealed class ExclusionAndReportTests
             BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [10] = (1, 2) }
         };
 
-        Assert.True(f.TryGetLineStatus(10, out var status));
-        Assert.Equal(LineStatus.Partial, status);
+        await Assert.That(f.TryGetLineStatus(10, out var status)).IsTrue();
+        await Assert.That(status).IsEqualTo(LineStatus.Partial);
     }
 
-    [Fact]
-    public void TryGetLineStatus_UnknownLine_ReturnsFalseAndMiss()
+    [Test]
+    public async Task TryGetLineStatus_UnknownLine_ReturnsFalseAndMiss()
     {
         // The other key contract: false signals "not tracked", out param is Miss for ergonomics.
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
-        Assert.False(f.TryGetLineStatus(999, out var status));
-        Assert.Equal(LineStatus.Miss, status);
+        await Assert.That(f.TryGetLineStatus(999, out var status)).IsFalse();
+        await Assert.That(status).IsEqualTo(LineStatus.Miss);
     }
 
-    [Fact]
-    public void StrictLineRate_DowngradesPartialBranches()
+    [Test]
+    public async Task StrictLineRate_DowngradesPartialBranches()
     {
         // 3 lines tracked: line 1 fully hit (no branches), line 2 hit but with partial branches,
         // line 3 missed. Standard LineRate = 2/3 ≈ 66.7% (lines 1 and 2 are "hit").
@@ -328,14 +328,14 @@ public sealed class ExclusionAndReportTests
             lineHits: new Dictionary<int, int> { [1] = 5, [2] = 3, [3] = 0 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) });
 
-        Assert.Equal(2.0 / 3.0, f.LineRate!.Value, 4);
-        Assert.Equal(1.0 / 3.0, f.StrictLineRate!.Value, 4);
-        Assert.Equal(1, f.StrictlyHitLines);
-        Assert.Equal(1, f.PartiallyHitLines);
+        await Assert.That(f.LineRate!.Value).IsEqualTo(2.0 / 3.0);
+        await Assert.That(f.StrictLineRate!.Value).IsEqualTo(1.0 / 3.0);
+        await Assert.That(f.StrictlyHitLines).IsEqualTo(1);
+        await Assert.That(f.PartiallyHitLines).IsEqualTo(1);
     }
 
-    [Fact]
-    public void StrictLineRate_AllLinesPartial_IsZero()
+    [Test]
+    public async Task StrictLineRate_AllLinesPartial_IsZero()
     {
         // Boundary: every tracked line has unfinished branches → StrictLineRate must be 0,
         // even though LineRate stays at 1.0 (every line was executed).
@@ -347,30 +347,30 @@ public sealed class ExclusionAndReportTests
                 [20] = (1, 2)
             });
 
-        Assert.Equal(1.0, f.LineRate);
-        Assert.Equal(0.0, f.StrictLineRate);
-        Assert.Equal(0, f.StrictlyHitLines);
-        Assert.Equal(2, f.PartiallyHitLines);
+        await Assert.That(f.LineRate).IsEqualTo(1.0);
+        await Assert.That(f.StrictLineRate).IsEqualTo(0.0);
+        await Assert.That(f.StrictlyHitLines).IsEqualTo(0);
+        await Assert.That(f.PartiallyHitLines).IsEqualTo(2);
     }
 
-    [Fact]
-    public void StrictLineRate_EmptyReport_ReturnsNull()
+    [Test]
+    public async Task StrictLineRate_EmptyReport_ReturnsNull()
     {
-        Assert.Null(CoverageReport.Empty.StrictLineRate);
+        await Assert.That(CoverageReport.Empty.StrictLineRate).IsNull();
     }
 
-    [Fact]
-    public void FileCoverage_StrictLineRate_EmptyLines_ReturnsNull()
+    [Test]
+    public async Task FileCoverage_StrictLineRate_EmptyLines_ReturnsNull()
     {
         // Empty FileCoverage (no LineHits at all) — null, not a vacuous 1.0. Callers do have to
         // handle empty files, and the type now makes them: that is the point, not an inconvenience.
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
-        Assert.Null(f.StrictLineRate);
+        await Assert.That(f.StrictLineRate).IsNull();
     }
 
-    [Fact]
-    public void CoverageReport_StrictLineRate_SumsAcrossFiles()
+    [Test]
+    public async Task CoverageReport_StrictLineRate_SumsAcrossFiles()
     {
         // File A: 1 strict-hit + 1 partial + 1 miss → 1/3 strict.
         // File B: 2 strict-hits → 2/2 strict.
@@ -384,11 +384,11 @@ public sealed class ExclusionAndReportTests
                 branchesByLine: new Dictionary<int, (int Covered, int Total)>())
         ]);
 
-        Assert.Equal(0.6, report.StrictLineRate!.Value, 4);
+        await Assert.That(report.StrictLineRate!.Value).IsEqualTo(0.6);
     }
 
-    [Fact]
-    public void CoverageDiffResult_Improvements_FilterPositiveDeltas()
+    [Test]
+    public async Task CoverageDiffResult_Improvements_FilterPositiveDeltas()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([
@@ -400,63 +400,63 @@ public sealed class ExclusionAndReportTests
                 new FileCoverage("down.cs", 5, 10, 0, 0)
             ]));
 
-        Assert.Single(diff.Improvements);
-        Assert.Single(diff.Regressions);
-        Assert.Equal("up.cs", diff.Improvements.Single().Path);
+        await Assert.That(diff.Improvements).HasSingleItem();
+        await Assert.That(diff.Regressions).HasSingleItem();
+        await Assert.That(diff.Improvements.Single().Path).IsEqualTo("up.cs");
     }
 
     // ── Single-pass classification: precomputed counts vs. previous getter logic ──
 
-    [Fact]
-    public void Classify_MixedHitPartialFullMissed_CountsStrictAndPartial() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_MixedHitPartialFullMissed_CountsStrictAndPartial() =>
+        await AssertClassification(
             lineHits: new() { [1] = 5, [2] = 3, [3] = 7, [4] = 0 },
             branchesByLine: new() { [2] = (1, 2), [3] = (4, 4) },
             expectedStrict: 2, expectedPartial: 1);
 
-    [Fact]
-    public void Classify_AllHitNoBranches_AllStrict() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_AllHitNoBranches_AllStrict() =>
+        await AssertClassification(
             lineHits: new() { [1] = 1, [2] = 1, [3] = 1 },
             branchesByLine: new(),
             expectedStrict: 3, expectedPartial: 0);
 
-    [Fact]
-    public void Classify_EveryLinePartial_NoneStrict() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_EveryLinePartial_NoneStrict() =>
+        await AssertClassification(
             lineHits: new() { [10] = 1, [20] = 1 },
             branchesByLine: new() { [10] = (1, 2), [20] = (0, 2) },
             expectedStrict: 0, expectedPartial: 2);
 
-    [Fact]
-    public void Classify_AllMissed_NoneStrictOrPartial() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_AllMissed_NoneStrictOrPartial() =>
+        await AssertClassification(
             lineHits: new() { [1] = 0, [2] = 0 },
             branchesByLine: new(),
             expectedStrict: 0, expectedPartial: 0);
 
-    [Fact]
-    public void Classify_EmptyDict_NoneStrictOrPartial() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_EmptyDict_NoneStrictOrPartial() =>
+        await AssertClassification(
             lineHits: new(),
             branchesByLine: new(),
             expectedStrict: 0, expectedPartial: 0);
 
-    [Fact]
-    public void Classify_BranchFullyCovered_CountsStrict() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_BranchFullyCovered_CountsStrict() =>
+        await AssertClassification(
             lineHits: new() { [1] = 1 },
             branchesByLine: new() { [1] = (2, 2) },
             expectedStrict: 1, expectedPartial: 0);
 
-    [Fact]
-    public void Classify_BranchEntryOnMissedLine_StaysMiss() =>
-        AssertClassification(
+    [Test]
+    public async Task Classify_BranchEntryOnMissedLine_StaysMiss() =>
+        await AssertClassification(
             lineHits: new() { [1] = 0 },
             branchesByLine: new() { [1] = (0, 2) },
             expectedStrict: 0, expectedPartial: 0);
 
-    private static void AssertClassification(
+    private static async Task AssertClassification(
         Dictionary<int, int> lineHits,
         Dictionary<int, (int Covered, int Total)> branchesByLine,
         int expectedStrict, int expectedPartial)
@@ -464,17 +464,17 @@ public sealed class ExclusionAndReportTests
         var f = Reports.ClassifiedFile("x.cs", 0, lineHits.Count, 0, 0,
             lineHits: lineHits, branchesByLine: branchesByLine);
 
-        Assert.Equal(expectedStrict, f.StrictlyHitLines);
-        Assert.Equal(expectedPartial, f.PartiallyHitLines);
+        await Assert.That(f.StrictlyHitLines).IsEqualTo(expectedStrict);
+        await Assert.That(f.PartiallyHitLines).IsEqualTo(expectedPartial);
 
         var strictViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Hit);
         var partialViaStatus = lineHits.Keys.Count(k => f.GetLineStatus(k) is LineStatus.Partial);
-        Assert.Equal(strictViaStatus, f.StrictlyHitLines);
-        Assert.Equal(partialViaStatus, f.PartiallyHitLines);
+        await Assert.That(f.StrictlyHitLines).IsEqualTo(strictViaStatus);
+        await Assert.That(f.PartiallyHitLines).IsEqualTo(partialViaStatus);
     }
 
-    [Fact]
-    public void MergeWith_PrecomputedCountsMatchClassifyLines()
+    [Test]
+    public async Task MergeWith_PrecomputedCountsMatchClassifyLines()
     {
         // MergeWith must compute the counts once over the merged dicts. The output struct's
         // StrictlyHitLines/PartiallyHitLines must agree with what a fresh classification
@@ -495,38 +495,38 @@ public sealed class ExclusionAndReportTests
             merged.LinesHit, merged.LinesTotal, merged.BranchesHit, merged.BranchesTotal,
             lineHits: merged.LineHits, branchesByLine: merged.BranchesByLine);
 
-        Assert.Equal(reference.StrictlyHitLines, merged.StrictlyHitLines);
-        Assert.Equal(reference.PartiallyHitLines, merged.PartiallyHitLines);
+        await Assert.That(merged.StrictlyHitLines).IsEqualTo(reference.StrictlyHitLines);
+        await Assert.That(merged.PartiallyHitLines).IsEqualTo(reference.PartiallyHitLines);
 
         // Concrete sanity numbers: lines 1 (partial after merge), 2 (strict — hits=5, no branch
         // for that line), 3 (strict — branch 2/2), 4 (partial — branch 1/2).
         // Line 2 had a branch entry in `a` but it was for a different line; line 2 itself never
         // had branch data, so post-merge it's strict.
-        Assert.Equal(2, merged.StrictlyHitLines);
-        Assert.Equal(2, merged.PartiallyHitLines);
+        await Assert.That(merged.StrictlyHitLines).IsEqualTo(2);
+        await Assert.That(merged.PartiallyHitLines).IsEqualTo(2);
     }
 
     // ── Coverage warnings: BranchTotalMismatch from cross-report MergeWith ──
 
-    [Fact]
-    public void Warnings_DefaultEmptyOnFreshReport()
+    [Test]
+    public async Task Warnings_DefaultEmptyOnFreshReport()
     {
         // The init-only contract: a freshly-constructed CoverageReport has an empty Warnings
         // collection, not a null. Lets consumers safely iterate without null-checking.
         var report = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)]);
 
-        Assert.Empty(report.Warnings);
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Empty_HasEmptyWarnings()
+    [Test]
+    public async Task Empty_HasEmptyWarnings()
     {
-        Assert.Empty(CoverageReport.Empty.Warnings);
+        await Assert.That(CoverageReport.Empty.Warnings).IsEmpty();
     }
 
 
-    [Fact]
-    public void MergeWith_BranchTotalMismatch_EmitsWarningAndKeepsMax()
+    [Test]
+    public async Task MergeWith_BranchTotalMismatch_EmitsWarningAndKeepsMax()
     {
         // Two CI jobs disagree on the branch Total for line 10 — usually Release vs. Debug
         // builds. The merge keeps the larger total (Math.Max) and surfaces the divergence
@@ -544,17 +544,17 @@ public sealed class ExclusionAndReportTests
 
         var (merged, warnings) = a.MergeWith(b);
 
-        Assert.Equal((4, 7), merged.BranchesByLine[10]);
-        var w = Assert.Single(warnings);
-        Assert.Equal(CoverageWarningKind.BranchTotalMismatch, w.Kind);
-        Assert.Equal("src/Calculator.cs", w.File);
-        Assert.Equal(10, w.Line);
-        Assert.Contains("Total 5 vs 7", w.Detail);
-        Assert.Contains("keeping 7", w.Detail);
+        await Assert.That(merged.BranchesByLine[10]).IsEqualTo((4, 7));
+        var w = await Assert.That(warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.BranchTotalMismatch);
+        await Assert.That(w.File).IsEqualTo("src/Calculator.cs");
+        await Assert.That(w.Line).IsEqualTo(10);
+        await Assert.That(w.Detail).Contains("Total 5 vs 7");
+        await Assert.That(w.Detail).Contains("keeping 7");
     }
 
-    [Fact]
-    public void MergeWith_MatchingTotals_EmitsNoWarning()
+    [Test]
+    public async Task MergeWith_MatchingTotals_EmitsNoWarning()
     {
         // Identical totals are a normal multi-upload — Math.Max on Covered, no divergence
         // to flag. Guards against false-positive noise on perfectly-aligned CI runs.
@@ -571,12 +571,12 @@ public sealed class ExclusionAndReportTests
 
         var (merged, warnings) = a.MergeWith(b);
 
-        Assert.Empty(warnings);
-        Assert.Equal((2, 2), merged.BranchesByLine[10]);
+        await Assert.That(warnings).IsEmpty();
+        await Assert.That(merged.BranchesByLine[10]).IsEqualTo((2, 2));
     }
 
-    [Fact]
-    public void MergeWith_DisjointBranchLines_EmitsNoWarning()
+    [Test]
+    public async Task MergeWith_DisjointBranchLines_EmitsNoWarning()
     {
         // Different lines branched on each side — nothing to compare, nothing to warn about.
         var a = new FileCoverage("a.cs", 1, 1, 1, 2)
@@ -592,11 +592,11 @@ public sealed class ExclusionAndReportTests
 
         var (_, warnings) = a.MergeWith(b);
 
-        Assert.Empty(warnings);
+        await Assert.That(warnings).IsEmpty();
     }
 
-    [Fact]
-    public void CoverageReport_Merge_PropagatesPerSideWarningsAndAppendsNew()
+    [Test]
+    public async Task CoverageReport_Merge_PropagatesPerSideWarningsAndAppendsNew()
     {
         // a.Warnings + b.Warnings must carry through, and any new BranchTotalMismatch
         // surfaced by the per-file MergeWithWarnings call gets appended on top.
@@ -628,15 +628,15 @@ public sealed class ExclusionAndReportTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(3, merged.Warnings.Count);
-        Assert.Equal("from-a", merged.Warnings[0].Detail);
-        Assert.Equal("from-b", merged.Warnings[1].Detail);
-        Assert.Equal(CoverageWarningKind.BranchTotalMismatch, merged.Warnings[2].Kind);
-        Assert.Equal(10, merged.Warnings[2].Line);
+        await Assert.That(merged.Warnings.Count).IsEqualTo(3);
+        await Assert.That(merged.Warnings[0].Detail).IsEqualTo("from-a");
+        await Assert.That(merged.Warnings[1].Detail).IsEqualTo("from-b");
+        await Assert.That(merged.Warnings[2].Kind).IsEqualTo(CoverageWarningKind.BranchTotalMismatch);
+        await Assert.That(merged.Warnings[2].Line).IsEqualTo(10);
     }
 
-    [Fact]
-    public void CoverageReport_Merge_DistinctFiles_PropagatesWarningsWithoutNewOnes()
+    [Test]
+    public async Task CoverageReport_Merge_DistinctFiles_PropagatesWarningsWithoutNewOnes()
     {
         // No path overlap → no per-file MergeWithWarnings call → only the carried-over
         // warnings come through. Guards against the merge fabricating false anomalies.
@@ -648,12 +648,12 @@ public sealed class ExclusionAndReportTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        var w = Assert.Single(merged.Warnings);
-        Assert.Equal("a.cs", w.File);
+        var w = await Assert.That(merged.Warnings).HasSingleItem();
+        await Assert.That(w.File).IsEqualTo("a.cs");
     }
 
-    [Fact]
-    public void Exclude_PreservesWarnings_EvenWhenSourceFileFilteredOut()
+    [Test]
+    public async Task Exclude_PreservesWarnings_EvenWhenSourceFileFilteredOut()
     {
         // Filtering files for display doesn't change the fact that the parser observed an
         // anomaly. Warnings should stay observable on the filtered report so downstream
@@ -669,7 +669,7 @@ public sealed class ExclusionAndReportTests
 
         var filtered = report.Exclude(ExclusionRules.WellKnown);
 
-        Assert.Empty(filtered.Files);
-        Assert.Single(filtered.Warnings);
+        await Assert.That(filtered.Files).IsEmpty();
+        await Assert.That(filtered.Warnings).HasSingleItem();
     }
 }

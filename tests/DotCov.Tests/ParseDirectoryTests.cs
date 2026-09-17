@@ -1,5 +1,4 @@
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -20,28 +19,28 @@ public sealed class ParseDirectoryTests : IDisposable
         return full;
     }
 
-    [Fact]
-    public void ParseDirectory_NoFilesFound_ReturnsEmptyReport()
+    [Test]
+    public async Task ParseDirectory_NoFilesFound_ReturnsEmptyReport()
     {
         var report = CoberturaParser.ParseDirectory(_root);
 
-        Assert.Empty(report.Files);
-        Assert.Same(CoverageReport.Empty, report);
+        await Assert.That(report.Files).IsEmpty();
+        await Assert.That(report).IsSameReferenceAs(CoverageReport.Empty);
     }
 
-    [Fact]
-    public void ParseDirectory_SingleFile_ParsesIt()
+    [Test]
+    public async Task ParseDirectory_SingleFile_ParsesIt()
     {
         Write("coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
         var report = CoberturaParser.ParseDirectory(_root);
 
-        Assert.Single(report.Files);
+        await Assert.That(report.Files).HasSingleItem();
     }
 
-    [Fact]
-    public void ParseDirectory_MultipleNestedFiles_MergesAcrossPaths()
+    [Test]
+    public async Task ParseDirectory_MultipleNestedFiles_MergesAcrossPaths()
     {
         Write("test1/coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1).Line(2, 0)));
@@ -50,11 +49,11 @@ public sealed class ParseDirectoryTests : IDisposable
 
         var report = CoberturaParser.ParseDirectory(_root);
 
-        Assert.Equal(2, report.Files.Count);
+        await Assert.That(report.Files.Count).IsEqualTo(2);
     }
 
-    [Fact]
-    public void ParseDirectory_SameFileAcrossReports_AggregatesCounts()
+    [Test]
+    public async Task ParseDirectory_SameFileAcrossReports_AggregatesCounts()
     {
         Write("r1/coverage.cobertura.xml",
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
@@ -63,24 +62,24 @@ public sealed class ParseDirectoryTests : IDisposable
 
         var report = CoberturaParser.ParseDirectory(_root);
 
-        var file = Assert.Single(report.Files);
-        Assert.Equal(3, file.LinesTotal);
-        Assert.Equal(2, file.LinesHit);
+        var file = await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(file.LinesTotal).IsEqualTo(3);
+        await Assert.That(file.LinesHit).IsEqualTo(2);
     }
 
-    [Fact]
-    public void ParseDirectory_NonRecursivePattern_OnlyScansTopLevel()
+    [Test]
+    public async Task ParseDirectory_NonRecursivePattern_OnlyScansTopLevel()
     {
         Write("top.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
         Write("nested/inner.xml", Cobertura.NewDoc().AddClass("b.cs", c => c.Line(1, 1)));
 
         var report = CoberturaParser.ParseDirectory(_root, "*.xml");
 
-        Assert.Single(report.Files);
+        await Assert.That(report.Files).HasSingleItem();
     }
 
-    [Fact]
-    public void ParseDirectory_StarStarInsideNamePortion_DoesNotRecurse()
+    [Test]
+    public async Task ParseDirectory_StarStarInsideNamePortion_DoesNotRecurse()
     {
         // '**coverage.xml' has an empty directory prefix, so the pattern gate classifies it
         // as filename-shaped — top level only. Recursion is decided by the same admitted
@@ -92,26 +91,26 @@ public sealed class ParseDirectoryTests : IDisposable
 
         var report = CoberturaParser.ParseDirectory(_root, "**coverage.xml");
 
-        Assert.Equal("top.cs", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("top.cs");
     }
 
-    [Fact]
-    public void ParsePath_File_DelegatesToParseFile()
+    [Test]
+    public async Task ParsePath_File_DelegatesToParseFile()
     {
         var path = Write("c.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
         var report = CoberturaParser.ParsePath(path);
 
-        Assert.Single(report.Files);
+        await Assert.That(report.Files).HasSingleItem();
     }
 
-    [Fact]
-    public void ParsePath_Directory_DelegatesToParseDirectory()
+    [Test]
+    public async Task ParsePath_Directory_DelegatesToParseDirectory()
     {
         Write("coverage.cobertura.xml", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)));
 
         var report = CoberturaParser.ParsePath(_root);
 
-        Assert.Single(report.Files);
+        await Assert.That(report.Files).HasSingleItem();
     }
 }

@@ -28,3 +28,33 @@ Jeder Checkpoint ist ein lokaler Commit. Build-/Testläufe sind Protokoll, kein 
   `ExcludeByFile **/obj/**/*.cs`.
 
 Checkpoint erfüllt.
+
+## Checkpoint 1: Bestehende Tests auf TUnit umstellen
+
+- Werkzeug: `TUnitMigrator 0.2.0` (`tunit-migrate -t .`) für Attribute, Assertions, Paketverwaltung,
+  `OutputType=Exe` und den `global.json`-Eintrag `"test": { "runner": "Microsoft.Testing.Platform" }`.
+  Der Migrator wählte TUnit 1.68.4; zentral auf `TUnitVersion=1.67.0` festgelegt. xUnit, xUnit-Runner,
+  `Microsoft.NET.Test.Sdk` und `coverlet.collector` aus `Directory.Packages.props` und dem Testprojekt entfernt.
+- Nacharbeit von Hand (Build hatte 107 Fehler nach dem Migrator):
+  - verschachtelte `Assert.Single(x).Y` → `x.Single().Y`; `Assert.Single(coll, pred)` → `Count(pred) == 1`
+    bzw. `Single(pred)`; vom Migrator vertauschte `Contains(lambda)`-Argumente zurückgedreht.
+  - `Assert.All(coll, ...)` war zu einer einzelnen Assertion ohne Schleife verflacht → `foreach`.
+  - `Assert.Throws<T>`/`ThrowsAsync<T>` sind in xUnit typexakt → `Assert.ThrowsExactly<T>` /
+    `ThrowsExactlyAsync<T>`; `ThrowsAnyAsync` → `Throws<T>()` (Untertypen erlaubt).
+  - Sequenzvergleiche (`Assert.Equal([..], list)`) → `IsEquivalentTo([..], CollectionOrdering.Matching)`,
+    da `IsEqualTo` in TUnit Referenzgleichheit prüft (11 Fehlschläge im ersten Lauf).
+  - `Assert.Equal(a, b, precision: n)` → `.IsEqualTo(a).Within(1e-n)` (5 Stellen; 2 Fehlschläge).
+  - `Record.Exception` → `ThrowsNothing()`; konstante `MovementEpsilon` über lokale Variable geprüft (TUnitAssertions0005).
+  - `IsTypeOf<T>()`/`IsAssignableTo<T>()` liefern `T?` → `(await …)!`.
+- Ressourcen: temporäre Verzeichnisse bleiben in `IDisposable`-Testklassen; TUnit entsorgt die Instanz pro
+  Test auch bei Fehlschlag. Nachweis: Anzahl `dotcov-*`-Verzeichnisse in `$TMPDIR` vor/nach dem Lauf unverändert (14/14; Altbestand).
+- Globale Zustände: `[NotInParallel(ProcessState.Environment)]` auf `AnsiTests` und `CliGitHubSummaryTests`
+  (Schreiber und Leser der Prozessumgebung). Kultur pro Test über `Infrastructure/CultureScope.cs`
+  (Klon der invarianten Kultur mit Komma-Dezimaltrenner, `try/finally`-Wiederherstellung, kein `await` im Scope);
+  die drei bisherigen Helfer in `FormatterCultureTests`, `CrapFormatterTests`, `GateResultTests` ersetzt.
+  Keine Assembly-Policies (`Retry`, `ParallelLimiter`) übernommen.
+- Ergebnis: `dotnet test DotCov.slnx` (MTP): 679 entdeckt, 679 bestanden, 0 fehlgeschlagen — identisch zur
+  Ausgangslage. Zusätzlich unter `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`: 679/679.
+- Nicht umgestellt (gehört zu Checkpoint 8): Coverage-Aufruf in CI/README/`coverlet.runsettings`.
+
+Checkpoint erfüllt.

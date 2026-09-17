@@ -1,54 +1,53 @@
 using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
 public sealed class MarkdownFormatterTests
 {
-    [Fact]
-    public void Format_NoThreshold_OmitsStatusBadge()
+    [Test]
+    public async Task Format_NoThreshold_OmitsStatusBadge()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
-        Assert.StartsWith("## Coverage Report\n", md.ReplaceLineEndings("\n"));
+        await Assert.That(md.ReplaceLineEndings("\n")).StartsWith("## Coverage Report\n");
     }
 
-    [Fact]
-    public void Format_AboveThreshold_RendersPassEmoji()
+    [Test]
+    public async Task Format_AboveThreshold_RendersPassEmoji()
     {
         var md = MarkdownFormatter.Format(Reports.FullyCovered, threshold: 80);
 
-        Assert.Contains("## Coverage Report ✅", md);
+        await Assert.That(md).Contains("## Coverage Report ✅");
     }
 
-    [Fact]
-    public void Format_BelowThreshold_RendersFailEmoji()
+    [Test]
+    public async Task Format_BelowThreshold_RendersFailEmoji()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed, threshold: 90);
 
-        Assert.Contains("## Coverage Report ❌", md);
+        await Assert.That(md).Contains("## Coverage Report ❌");
     }
 
-    [Fact]
-    public void Format_NoBranchData_RendersExplanatoryText()
+    [Test]
+    public async Task Format_NoBranchData_RendersExplanatoryText()
     {
         var md = MarkdownFormatter.Format(Reports.LinesOnly);
 
-        Assert.Contains("_no branch data emitted_", md);
-        Assert.DoesNotContain("Branch coverage:** 100.0%", md);
+        await Assert.That(md).Contains("_no branch data emitted_");
+        await Assert.That(md).DoesNotContain("Branch coverage:** 100.0%");
     }
 
-    [Fact]
-    public void Format_WithBranchData_RendersBranchPercentage()
+    [Test]
+    public async Task Format_WithBranchData_RendersBranchPercentage()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
-        Assert.Contains("Branch coverage:** 50.0%", md);
+        await Assert.That(md).Contains("Branch coverage:** 50.0%");
     }
 
-    [Fact]
-    public void Format_RowsSorted_ByLineRateAscending()
+    [Test]
+    public async Task Format_RowsSorted_ByLineRateAscending()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
@@ -56,11 +55,11 @@ public sealed class MarkdownFormatterTests
         var parserIdx = md.IndexOf("Parser.cs", StringComparison.Ordinal);
         var calcIdx = md.IndexOf("Calculator.cs", StringComparison.Ordinal);
 
-        Assert.True(unusedIdx < parserIdx && parserIdx < calcIdx);
+        await Assert.That(unusedIdx < parserIdx && parserIdx < calcIdx).IsTrue();
     }
 
-    [Fact]
-    public void Format_UnmeasuredFile_RendersFirst_BeforeZeroAndCoveredFiles()
+    [Test]
+    public async Task Format_UnmeasuredFile_RendersFirst_BeforeZeroAndCoveredFiles()
     {
         // Shared worst-first contract with the table formatter: an unmeasured file (null
         // line rate, rendered "-") sorts ahead of even a 0%-covered file.
@@ -72,55 +71,55 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.Format(report);
 
-        Assert.Contains("| `unmeasured.cs` | 0/0 | - | - | - |", md);
+        await Assert.That(md).Contains("| `unmeasured.cs` | 0/0 | - | - | - |");
         var unmeasuredIdx = md.IndexOf("`unmeasured.cs`", StringComparison.Ordinal);
         var zeroIdx = md.IndexOf("`zero.cs`", StringComparison.Ordinal);
         var coveredIdx = md.IndexOf("`covered.cs`", StringComparison.Ordinal);
-        Assert.True(unmeasuredIdx >= 0 && unmeasuredIdx < zeroIdx && zeroIdx < coveredIdx);
+        await Assert.That(unmeasuredIdx >= 0 && unmeasuredIdx < zeroIdx && zeroIdx < coveredIdx).IsTrue();
     }
 
-    [Fact]
-    public void Format_FilesWithNoBranches_RenderDashesForBranchColumns()
+    [Test]
+    public async Task Format_FilesWithNoBranches_RenderDashesForBranchColumns()
     {
         var md = MarkdownFormatter.Format(Reports.LinesOnly);
         var fileRow = md.Split('\n').Single(l => l.Contains("App.cs"));
 
         // " - " appears in branches and branch % columns
-        Assert.Matches(@"\|\s+-\s+\|\s+-\s+\|", fileRow);
+        await Assert.That(fileRow).Matches(@"\|\s+-\s+\|\s+-\s+\|");
     }
 
-    [Fact]
-    public void Format_FileWithBranches_PopulatesBranchColumns()
+    [Test]
+    public async Task Format_FileWithBranches_PopulatesBranchColumns()
     {
         // The populated arm of the branch-column convention: exact row shape, so a file
         // that carries branch data can never regress to the no-data dash.
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
-        Assert.Contains("| `src/Calculator.cs` | 4/4 | 100.0% | 2/2 | 100.0% |", md);
+        await Assert.That(md).Contains("| `src/Calculator.cs` | 4/4 | 100.0% | 2/2 | 100.0% |");
     }
 
-    [Fact]
-    public void Format_RendersValidMarkdownTable()
+    [Test]
+    public async Task Format_RendersValidMarkdownTable()
     {
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
-        Assert.Contains("| File | Lines | Line % | Branches | Branch % |", md);
-        Assert.Contains("|------|------:|-------:|---------:|---------:|", md);
+        await Assert.That(md).Contains("| File | Lines | Line % | Branches | Branch % |");
+        await Assert.That(md).Contains("|------|------:|-------:|---------:|---------:|");
     }
 
-    [Fact]
-    public void FormatDiff_NoChange_RendersRightArrowIcon()
+    [Test]
+    public async Task FormatDiff_NoChange_RendersRightArrowIcon()
     {
         var report = new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0)]);
         var diff = CoverageDiff.Compare(report, report);
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Contains("## Coverage Diff ➡️", md);
+        await Assert.That(md).Contains("## Coverage Diff ➡️");
     }
 
-    [Fact]
-    public void FormatDiff_Improvement_RendersUpChart()
+    [Test]
+    public async Task FormatDiff_Improvement_RendersUpChart()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
@@ -128,12 +127,12 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Contains("## Coverage Diff 📈", md);
-        Assert.Contains("+30.0%", md);
+        await Assert.That(md).Contains("## Coverage Diff 📈");
+        await Assert.That(md).Contains("+30.0%");
     }
 
-    [Fact]
-    public void FormatDiff_Regression_RendersDownChart()
+    [Test]
+    public async Task FormatDiff_Regression_RendersDownChart()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 9, 10, 0, 0)]),
@@ -141,11 +140,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Contains("## Coverage Diff 📉", md);
+        await Assert.That(md).Contains("## Coverage Diff 📉");
     }
 
-    [Fact]
-    public void FormatDiff_AddedFile_BeforeIsDash()
+    [Test]
+    public async Task FormatDiff_AddedFile_BeforeIsDash()
     {
         var diff = CoverageDiff.Compare(
             CoverageReport.Empty,
@@ -153,11 +152,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Matches(@"\|\s+`new\.cs`\s+\|\s+-\s+\|", md);
+        await Assert.That(md).Matches(@"\|\s+`new\.cs`\s+\|\s+-\s+\|");
     }
 
-    [Fact]
-    public void FormatDiff_RemovedFile_AfterIsDash()
+    [Test]
+    public async Task FormatDiff_RemovedFile_AfterIsDash()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]),
@@ -165,11 +164,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Matches(@"\|\s+`gone\.cs`\s+\|\s+80\.0%\s+\|\s+-\s+\|", md);
+        await Assert.That(md).Matches(@"\|\s+`gone\.cs`\s+\|\s+80\.0%\s+\|\s+-\s+\|");
     }
 
-    [Fact]
-    public void FormatDiff_IndirectLineChanges_RenderedAsSeparateSection()
+    [Test]
+    public async Task FormatDiff_IndirectLineChanges_RenderedAsSeparateSection()
     {
         // Same file on both sides; line 10 was hit, now missed → Codecov-style indirect change.
         var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
@@ -183,13 +182,13 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("### Indirect changes (1 line across 1 file)", md);
-        Assert.Contains("1 newly missed", md);
-        Assert.Contains("`a.cs`", md);
+        await Assert.That(md).Contains("### Indirect changes (1 line across 1 file)");
+        await Assert.That(md).Contains("1 newly missed");
+        await Assert.That(md).Contains("`a.cs`");
     }
 
-    [Fact]
-    public void FormatDiff_MultipleLinesAndFiles_HeadingUsesPluralForBoth()
+    [Test]
+    public async Task FormatDiff_MultipleLinesAndFiles_HeadingUsesPluralForBoth()
     {
         var before = new CoverageReport([
             new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1 } },
@@ -202,11 +201,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("### Indirect changes (2 lines across 2 files)", md);
+        await Assert.That(md).Contains("### Indirect changes (2 lines across 2 files)");
     }
 
-    [Fact]
-    public void FormatDiff_NoIndirectChanges_OmitsSection()
+    [Test]
+    public async Task FormatDiff_NoIndirectChanges_OmitsSection()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
@@ -214,11 +213,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.DoesNotContain("Indirect changes", md);
+        await Assert.That(md).DoesNotContain("Indirect changes");
     }
 
-    [Fact]
-    public void FormatDiff_AllLineDeltaVariants_RenderEachFragment()
+    [Test]
+    public async Task FormatDiff_AllLineDeltaVariants_RenderEachFragment()
     {
         // Exercises every fragment-add arm in AppendIndirectChanges: newlyMissed, newlyHit,
         // added, removed. The four-line file flips line 10 (hit→miss), line 20 (miss→hit),
@@ -234,16 +233,16 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
 
-        Assert.Contains("1 newly missed", md);
-        Assert.Contains("1 newly hit", md);
-        Assert.Contains("1 added", md);
-        Assert.Contains("1 removed", md);
+        await Assert.That(md).Contains("1 newly missed");
+        await Assert.That(md).Contains("1 newly hit");
+        await Assert.That(md).Contains("1 added");
+        await Assert.That(md).Contains("1 removed");
     }
 
     // ── Null-rate contract: unmeasured sides render "-", never a bare "%" ──
 
-    [Fact]
-    public void FormatDiff_EmptyBefore_OverallRendersDashForUnmeasuredSides()
+    [Test]
+    public async Task FormatDiff_EmptyBefore_OverallRendersDashForUnmeasuredSides()
     {
         // Diff against an empty report is not a comparison: before and delta are null and
         // must render as "-" (table/JSON convention), not as "% → 58.3% (%)".
@@ -253,11 +252,11 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Contains("**Overall:** - → 58.3% (-)", md);
+        await Assert.That(md).Contains("**Overall:** - → 58.3% (-)");
     }
 
-    [Fact]
-    public void FormatDiff_UnmeasuredFile_DeltaCellIsDashNotBareSign()
+    [Test]
+    public async Task FormatDiff_UnmeasuredFile_DeltaCellIsDashNotBareSign()
     {
         // A zero-line file has null rates on both sides, so its delta is null too — every
         // cell must follow the dash convention (the delta cell used to render "%").
@@ -267,23 +266,23 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        Assert.Contains("| `empty.cs` | - | - | - | Unchanged |", md);
+        await Assert.That(md).Contains("| `empty.cs` | - | - | - | Unchanged |");
     }
 
     // ── Warnings section: additive — silent when empty, structured when populated ──
 
-    [Fact]
-    public void Format_NoWarnings_OmitsWarningsSection()
+    [Test]
+    public async Task Format_NoWarnings_OmitsWarningsSection()
     {
         // Default reports should render identically to pre-warnings output; absence of
         // the `### Warnings` heading is the clean-report signal.
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
-        Assert.DoesNotContain("### Warnings", md);
+        await Assert.That(md).DoesNotContain("### Warnings");
     }
 
-    [Fact]
-    public void Format_WithWarnings_RendersHeadingAndEntries()
+    [Test]
+    public async Task Format_WithWarnings_RendersHeadingAndEntries()
     {
         // Both warning kinds should round-trip with file:line context and the Detail
         // string. Pin the exact bullet shape so consumers parsing the markdown can rely
@@ -301,8 +300,8 @@ public sealed class MarkdownFormatterTests
 
         var md = MarkdownFormatter.Format(report);
 
-        Assert.Contains("### Warnings", md);
-        Assert.Contains("- `src/A.cs:12` — BranchTotalMismatch: Total 5 vs 7 — keeping 7", md);
-        Assert.Contains("- `src/B.cs:30` — MalformedConditionCoverage: condition-coverage='???' could not be parsed", md);
+        await Assert.That(md).Contains("### Warnings");
+        await Assert.That(md).Contains("- `src/A.cs:12` — BranchTotalMismatch: Total 5 vs 7 — keeping 7");
+        await Assert.That(md).Contains("- `src/B.cs:30` — MalformedConditionCoverage: condition-coverage='???' could not be parsed");
     }
 }

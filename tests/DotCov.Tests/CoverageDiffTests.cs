@@ -1,4 +1,4 @@
-using Xunit;
+using TUnit.Assertions.Enums;
 
 namespace DotCov.Tests;
 
@@ -6,84 +6,84 @@ public sealed class CoverageDiffTests
 {
     private static CoverageReport Make(params FileCoverage[] files) => new(files);
 
-    [Fact]
-    public void Compare_IdenticalReports_AllDeltasZero()
+    [Test]
+    public async Task Compare_IdenticalReports_AllDeltasZero()
     {
         var report = Make(new FileCoverage("a.cs", 8, 10, 0, 0));
         var result = CoverageDiff.Compare(report, report);
 
-        Assert.Single(result.Files);
-        Assert.Equal(0.0, result.Files[0].Delta);
-        Assert.Equal(FileChangeKind.Unchanged, result.Files[0].Change);
+        await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(result.Files[0].Delta).IsEqualTo(0.0);
+        await Assert.That(result.Files[0].Change).IsEqualTo(FileChangeKind.Unchanged);
     }
 
-    [Fact]
-    public void Compare_ImprovedCoverage_PositiveDelta()
+    [Test]
+    public async Task Compare_ImprovedCoverage_PositiveDelta()
     {
         var before = Make(new FileCoverage("a.cs", 5, 10, 0, 0));
         var after = Make(new FileCoverage("a.cs", 8, 10, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(0.3, result.Files[0].Delta!.Value, precision: 10);
-        Assert.Equal(FileChangeKind.Modified, result.Files[0].Change);
+        await Assert.That(result.Files[0].Delta!.Value).IsEqualTo(0.3).Within(1e-10);
+        await Assert.That(result.Files[0].Change).IsEqualTo(FileChangeKind.Modified);
     }
 
-    [Fact]
-    public void Compare_RegressionInCoverage_NegativeDelta()
+    [Test]
+    public async Task Compare_RegressionInCoverage_NegativeDelta()
     {
         var before = Make(new FileCoverage("a.cs", 9, 10, 0, 0));
         var after = Make(new FileCoverage("a.cs", 6, 10, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.True(result.Files[0].Delta < 0);
-        Assert.Single(result.Regressions);
+        await Assert.That(result.Files[0].Delta < 0).IsTrue();
+        await Assert.That(result.Regressions).HasSingleItem();
     }
 
-    [Fact]
-    public void Compare_NewFileInAfter_MarkedAsAdded()
+    [Test]
+    public async Task Compare_NewFileInAfter_MarkedAsAdded()
     {
         var before = Make();
         var after = Make(new FileCoverage("new.cs", 5, 10, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Single(result.Files);
-        Assert.Null(result.Files[0].Before);
-        Assert.Equal(FileChangeKind.Added, result.Files[0].Change);
-        Assert.Single(result.Added);
+        await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(result.Files[0].Before).IsNull();
+        await Assert.That(result.Files[0].Change).IsEqualTo(FileChangeKind.Added);
+        await Assert.That(result.Added).HasSingleItem();
     }
 
-    [Fact]
-    public void Compare_RemovedFile_MarkedAsRemoved()
+    [Test]
+    public async Task Compare_RemovedFile_MarkedAsRemoved()
     {
         var before = Make(new FileCoverage("old.cs", 8, 10, 0, 0));
         var after = Make();
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Single(result.Files);
-        Assert.Null(result.Files[0].After);
-        Assert.Equal(FileChangeKind.Removed, result.Files[0].Change);
-        Assert.Single(result.Removed);
+        await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(result.Files[0].After).IsNull();
+        await Assert.That(result.Files[0].Change).IsEqualTo(FileChangeKind.Removed);
+        await Assert.That(result.Removed).HasSingleItem();
     }
 
-    [Fact]
-    public void Compare_Summary_ReportsOverallDelta()
+    [Test]
+    public async Task Compare_Summary_ReportsOverallDelta()
     {
         var before = Make(new FileCoverage("a.cs", 5, 10, 0, 0));
         var after = Make(new FileCoverage("a.cs", 8, 10, 0, 0));
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(0.5, result.BeforeRate);
-        Assert.Equal(0.8, result.AfterRate);
-        Assert.Equal(0.3, result.Delta!.Value, precision: 10);
+        await Assert.That(result.BeforeRate).IsEqualTo(0.5);
+        await Assert.That(result.AfterRate).IsEqualTo(0.8);
+        await Assert.That(result.Delta!.Value).IsEqualTo(0.3).Within(1e-10);
     }
 
-    [Fact]
-    public void Compare_OrdersByDeltaAscending_WorstFirst()
+    [Test]
+    public async Task Compare_OrdersByDeltaAscending_WorstFirst()
     {
         var before = Make(
             new FileCoverage("good.cs", 5, 10, 0, 0),
@@ -94,12 +94,12 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal("bad.cs", result.Files[0].Path);
-        Assert.Equal("good.cs", result.Files[1].Path);
+        await Assert.That(result.Files[0].Path).IsEqualTo("bad.cs");
+        await Assert.That(result.Files[1].Path).IsEqualTo("good.cs");
     }
 
-    [Fact]
-    public void Compare_DirectoryCaseDrift_PairsViaUniqueFileNameFallback()
+    [Test]
+    public async Task Compare_DirectoryCaseDrift_PairsViaUniqueFileNameFallback()
     {
         // Exact path matching is Ordinal (case-differing paths are distinct files on the
         // case-sensitive filesystems Cobertura's native emitters run on). A directory-casing
@@ -111,14 +111,14 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        var d = Assert.Single(result.Files);
-        Assert.NotNull(d.Before);
-        Assert.Equal(FileChangeKind.Modified, d.Change);
-        Assert.Equal("src/App.cs", d.Path);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Before).IsNotNull();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(d.Path).IsEqualTo("src/App.cs");
     }
 
-    [Fact]
-    public void Compare_SingleSameNamedPairUnderEqualRoots_StaysRemovedPlusAdded()
+    [Test]
+    public async Task Compare_SingleSameNamedPairUnderEqualRoots_StaysRemovedPlusAdded()
     {
         // svc-a/Program.cs deleted while svc-b/Program.cs appears: the names collide but the
         // reports carry no evidence of a path-convention change (roots equal — here both
@@ -136,15 +136,15 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(2, result.Files.Count);
-        Assert.Equal("svc-a/Program.cs", Assert.Single(result.Removed).Path);
-        Assert.Equal("svc-b/Program.cs", Assert.Single(result.Added).Path);
-        Assert.DoesNotContain(result.Files, f => f.Change is FileChangeKind.Modified);
-        Assert.All(result.Files, f => Assert.Empty(f.LineChanges));
+        await Assert.That(result.Files.Count).IsEqualTo(2);
+        await Assert.That(result.Removed.Single().Path).IsEqualTo("svc-a/Program.cs");
+        await Assert.That(result.Added.Single().Path).IsEqualTo("svc-b/Program.cs");
+        await Assert.That(result.Files).DoesNotContain(f => f.Change is FileChangeKind.Modified);
+        foreach (var f in result.Files) await Assert.That(f.LineChanges).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_MultiSegmentSuffixAgreement_PairsEvenWithoutDeclaredRoots()
+    [Test]
+    public async Task Compare_MultiSegmentSuffixAgreement_PairsEvenWithoutDeclaredRoots()
     {
         // Hand-built snapshots carry no source roots, so a prefix migration must pair through
         // path evidence alone: two whole trailing segments agree (MyApp/Calculator.cs) —
@@ -154,15 +154,15 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Modified, d.Change);
-        Assert.Equal("/_/src/MyApp/Calculator.cs", d.Path);
-        Assert.Empty(result.Added);
-        Assert.Empty(result.Removed);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(d.Path).IsEqualTo("/_/src/MyApp/Calculator.cs");
+        await Assert.That(result.Added).IsEmpty();
+        await Assert.That(result.Removed).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_CaseDistinctFileNames_StayDistinctAndMatchExactly()
+    [Test]
+    public async Task Compare_CaseDistinctFileNames_StayDistinctAndMatchExactly()
     {
         // xt_TCPMSS.c and xt_tcpmss.c genuinely coexist (linux/net/netfilter). Under the old
         // OrdinalIgnoreCase lookups this diff couldn't even be built — ToDictionary threw on
@@ -177,16 +177,16 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(2, result.Files.Count);
+        await Assert.That(result.Files.Count).IsEqualTo(2);
         var upper = result.Files.Single(f => f.Path == "net/xt_TCPMSS.c");
         var lower = result.Files.Single(f => f.Path == "net/xt_tcpmss.c");
-        Assert.Equal(FileChangeKind.Unchanged, upper.Change);
-        Assert.Equal(FileChangeKind.Modified, lower.Change);
-        Assert.Equal(0.5, lower.Delta);
+        await Assert.That(upper.Change).IsEqualTo(FileChangeKind.Unchanged);
+        await Assert.That(lower.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(lower.Delta).IsEqualTo(0.5);
     }
 
-    [Fact]
-    public void Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements()
+    [Test]
+    public async Task Compare_AddedAndRemovedZeroRateFiles_AreNeitherRegressionsNorImprovements()
     {
         // Zero-delta boundary: an added 0%-file has Delta 0.0 and a removed 0%-file has
         // Delta -0.0 — both sit exactly ON the strict inequalities gating Regressions
@@ -196,14 +196,14 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal("fresh.cs", Assert.Single(result.Added).Path);
-        Assert.Equal("gone.cs", Assert.Single(result.Removed).Path);
-        Assert.Empty(result.Regressions);
-        Assert.Empty(result.Improvements);
+        await Assert.That(result.Added.Single().Path).IsEqualTo("fresh.cs");
+        await Assert.That(result.Removed.Single().Path).IsEqualTo("gone.cs");
+        await Assert.That(result.Regressions).IsEmpty();
+        await Assert.That(result.Improvements).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_LineFlippedFromHitToMiss_SurfacesAsNewlyMissed()
+    [Test]
+    public async Task Compare_LineFlippedFromHitToMiss_SurfacesAsNewlyMissed()
     {
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -215,17 +215,17 @@ public sealed class CoverageDiffTests
         });
 
         var result = CoverageDiff.Compare(before, after);
-        var fileDelta = Assert.Single(result.Files);
-        var lineDelta = Assert.Single(fileDelta.LineChanges);
+        var fileDelta = await Assert.That(result.Files).HasSingleItem();
+        var lineDelta = await Assert.That(fileDelta.LineChanges).HasSingleItem();
 
-        var newlyMissed = Assert.IsType<LineDelta.NewlyMissed>(lineDelta);
-        Assert.Equal(10, newlyMissed.Line);
-        Assert.Equal(3, newlyMissed.BeforeHits);
-        Assert.Equal(0, newlyMissed.AfterHits);
+        var newlyMissed = (await Assert.That(lineDelta).IsTypeOf<LineDelta.NewlyMissed>())!;
+        await Assert.That(newlyMissed.Line).IsEqualTo(10);
+        await Assert.That(newlyMissed.BeforeHits).IsEqualTo(3);
+        await Assert.That(newlyMissed.AfterHits).IsEqualTo(0);
     }
 
-    [Fact]
-    public void Compare_LineFlippedFromMissToHit_SurfacesAsNewlyHit()
+    [Test]
+    public async Task Compare_LineFlippedFromMissToHit_SurfacesAsNewlyHit()
     {
         var before = Make(new FileCoverage("a.cs", 0, 1, 0, 0)
         {
@@ -237,15 +237,15 @@ public sealed class CoverageDiffTests
         });
 
         var result = CoverageDiff.Compare(before, after);
-        var lineDelta = Assert.Single(result.Files[0].LineChanges);
+        var lineDelta = await Assert.That(result.Files[0].LineChanges).HasSingleItem();
 
-        var newlyHit = Assert.IsType<LineDelta.NewlyHit>(lineDelta);
-        Assert.Equal(0, newlyHit.BeforeHits);
-        Assert.Equal(5, newlyHit.AfterHits);
+        var newlyHit = (await Assert.That(lineDelta).IsTypeOf<LineDelta.NewlyHit>())!;
+        await Assert.That(newlyHit.BeforeHits).IsEqualTo(0);
+        await Assert.That(newlyHit.AfterHits).IsEqualTo(5);
     }
 
-    [Fact]
-    public void Compare_AddedAndRemovedLines_AppearWithRespectiveKindsAndPayloads()
+    [Test]
+    public async Task Compare_AddedAndRemovedLines_AppearWithRespectiveKindsAndPayloads()
     {
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -259,17 +259,17 @@ public sealed class CoverageDiffTests
         var result = CoverageDiff.Compare(before, after);
         var changes = result.Files[0].LineChanges;
 
-        Assert.Equal(2, changes.Count);
+        await Assert.That(changes.Count).IsEqualTo(2);
 
-        var removed = Assert.IsType<LineDelta.Removed>(changes.Single(c => c.Line == 20));
-        Assert.Equal(4, removed.BeforeHits);
+        var removed = (await Assert.That(changes.Single(c => c.Line == 20)).IsTypeOf<LineDelta.Removed>())!;
+        await Assert.That(removed.BeforeHits).IsEqualTo(4);
 
-        var added = Assert.IsType<LineDelta.Added>(changes.Single(c => c.Line == 30));
-        Assert.Equal(7, added.AfterHits);
+        var added = (await Assert.That(changes.Single(c => c.Line == 30)).IsTypeOf<LineDelta.Added>())!;
+        await Assert.That(added.AfterHits).IsEqualTo(7);
     }
 
-    [Fact]
-    public void Compare_LineChanges_AreSortedAfterFilteringUnchangedLines()
+    [Test]
+    public async Task Compare_LineChanges_AreSortedAfterFilteringUnchangedLines()
     {
         var before = Make(new FileCoverage("a.cs", 2, 4, 0, 0)
         {
@@ -294,11 +294,11 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal([10, 20, 30, 40], result.Files[0].LineChanges.Select(c => c.Line));
+        await Assert.That(result.Files[0].LineChanges.Select(c => c.Line)).IsEquivalentTo([10, 20, 30, 40], CollectionOrdering.Matching);
     }
 
-    [Fact]
-    public void Compare_UnchangedHitCount_ProducesNoLineChange()
+    [Test]
+    public async Task Compare_UnchangedHitCount_ProducesNoLineChange()
     {
         var both = new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -307,11 +307,11 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(Make(both), Make(both));
 
-        Assert.Empty(result.Files[0].LineChanges);
+        await Assert.That(result.Files[0].LineChanges).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_HitCountChangedButStillHit_ProducesNoLineChange()
+    [Test]
+    public async Task Compare_HitCountChangedButStillHit_ProducesNoLineChange()
     {
         var before = Make(new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -324,11 +324,11 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Empty(result.Files[0].LineChanges);
+        await Assert.That(result.Files[0].LineChanges).IsEmpty();
     }
 
-    [Fact]
-    public void CoverageDiffResult_WithLineChanges_FiltersFilesWithFlippedLines()
+    [Test]
+    public async Task CoverageDiffResult_WithLineChanges_FiltersFilesWithFlippedLines()
     {
         var before = Make(
             new FileCoverage("flipped.cs", 1, 1, 0, 0)
@@ -351,13 +351,13 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        var affected = Assert.Single(result.WithLineChanges);
-        Assert.Equal("flipped.cs", affected.Path);
-        Assert.Equal(1, result.TotalLineChanges);
+        var affected = await Assert.That(result.WithLineChanges).HasSingleItem();
+        await Assert.That(affected.Path).IsEqualTo("flipped.cs");
+        await Assert.That(result.TotalLineChanges).IsEqualTo(1);
     }
 
-    [Fact]
-    public void Compare_AddedOrRemovedFile_HasNoLineChanges()
+    [Test]
+    public async Task Compare_AddedOrRemovedFile_HasNoLineChanges()
     {
         var before = Make(new FileCoverage("gone.cs", 1, 1, 0, 0)
         {
@@ -370,11 +370,11 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.All(result.Files, f => Assert.Empty(f.LineChanges));
+        foreach (var f in result.Files) await Assert.That(f.LineChanges).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_LineMissedOnBothSides_ProducesNoLineChange()
+    [Test]
+    public async Task Compare_LineMissedOnBothSides_ProducesNoLineChange()
     {
         var both = new FileCoverage("a.cs", 0, 1, 0, 0)
         {
@@ -383,11 +383,11 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(Make(both), Make(both));
 
-        Assert.Empty(result.Files[0].LineChanges);
+        await Assert.That(result.Files[0].LineChanges).IsEmpty();
     }
 
-    [Fact]
-    public void LineDelta_Match_RoutesEachVariantToItsOwnArm()
+    [Test]
+    public async Task LineDelta_Match_RoutesEachVariantToItsOwnArm()
     {
         // Match<T> is the value-returning half of the visitor pair; production uses Switch, so
         // nothing else exercises these four copy-paste-shaped overrides — pin that each routes to
@@ -398,14 +398,14 @@ public sealed class CoverageDiffTests
             newlyHit:    _ => "newlyHit",
             newlyMissed: _ => "newlyMissed");
 
-        Assert.Equal("added", Tag(new LineDelta.Added(1, 5)));
-        Assert.Equal("removed", Tag(new LineDelta.Removed(2, 3)));
-        Assert.Equal("newlyHit", Tag(new LineDelta.NewlyHit(3, 0, 4)));
-        Assert.Equal("newlyMissed", Tag(new LineDelta.NewlyMissed(4, 7, 0)));
+        await Assert.That(Tag(new LineDelta.Added(1, 5))).IsEqualTo("added");
+        await Assert.That(Tag(new LineDelta.Removed(2, 3))).IsEqualTo("removed");
+        await Assert.That(Tag(new LineDelta.NewlyHit(3, 0, 4))).IsEqualTo("newlyHit");
+        await Assert.That(Tag(new LineDelta.NewlyMissed(4, 7, 0))).IsEqualTo("newlyMissed");
     }
 
-    [Fact]
-    public void Compare_UnmeasuredOnBothSides_IsUnchangedWithNullDelta()
+    [Test]
+    public async Task Compare_UnmeasuredOnBothSides_IsUnchangedWithNullDelta()
     {
         // A file both reports list but neither measured has no rates to compare: unmeasured
         // on both ends is unchanged, not modified — and the delta is null, not 0.
@@ -414,15 +414,15 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Unchanged, d.Change);
-        Assert.Null(d.Delta);
-        Assert.Empty(result.Regressions);
-        Assert.Empty(result.Improvements);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Unchanged);
+        await Assert.That(d.Delta).IsNull();
+        await Assert.That(result.Regressions).IsEmpty();
+        await Assert.That(result.Improvements).IsEmpty();
     }
 
-    [Fact]
-    public void Compare_SubEpsilonDelta_IsUnchangedEverywhere_ButLineChangesStillSurface()
+    [Test]
+    public async Task Compare_SubEpsilonDelta_IsUnchangedEverywhere_ButLineChangesStillSurface()
     {
         // One line flipping in a 20,000-line file moves the rate by 0.00005 — inside
         // MovementEpsilon. Every movement view must agree it's noise: Change is Unchanged,
@@ -441,20 +441,20 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Unchanged, d.Change);
-        Assert.Empty(result.Regressions);
-        Assert.Empty(result.Improvements);
-        Assert.Single(d.LineChanges);
-        Assert.IsType<LineDelta.NewlyMissed>(d.LineChanges[0]);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Unchanged);
+        await Assert.That(result.Regressions).IsEmpty();
+        await Assert.That(result.Improvements).IsEmpty();
+        await Assert.That(d.LineChanges).HasSingleItem();
+        await Assert.That(d.LineChanges[0]).IsTypeOf<LineDelta.NewlyMissed>();
 
         // The rendered color shares the same epsilon: dim, not red.
         var pen = new DotCov.Formatters.AnsiPen(enabled: true);
-        Assert.StartsWith("\e[2m", pen.Delta("x", d.Delta));
+        await Assert.That(pen.Delta("x", d.Delta)).StartsWith("\e[2m");
     }
 
-    [Fact]
-    public void Regressions_IncludeRemovedFiles_Improvements_IncludeAddedFiles()
+    [Test]
+    public async Task Regressions_IncludeRemovedFiles_Improvements_IncludeAddedFiles()
     {
         // Losing a measured file is a regression of what the report vouches for; a new
         // covered file is an improvement. Deriving from FileChangeKind must not silently
@@ -464,7 +464,7 @@ public sealed class CoverageDiffTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal("gone.cs", Assert.Single(result.Regressions).Path);
-        Assert.Equal("fresh.cs", Assert.Single(result.Improvements).Path);
+        await Assert.That(result.Regressions.Single().Path).IsEqualTo("gone.cs");
+        await Assert.That(result.Improvements.Single().Path).IsEqualTo("fresh.cs");
     }
 }

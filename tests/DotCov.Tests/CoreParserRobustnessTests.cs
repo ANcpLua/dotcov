@@ -1,7 +1,6 @@
 using System.Text;
 using System.Xml;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -13,7 +12,7 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class CoreParserRobustnessTests
 {
-    [Fact]
+    [Test]
     public void Parse_Sync_EnforcesCharacterCap()
     {
         // The async twin is covered in CoberturaParserAsyncTests; the sync overload takes the
@@ -22,20 +21,20 @@ public sealed class CoreParserRobustnessTests
             .AddClass("a.cs", c => c.Line(1, 1))
             .ToStream();
 
-        Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream, maxChars: 50));
+        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream, maxChars: 50));
     }
 
-    [Fact]
+    [Test]
     public void Parse_NonXmlPayload_ThrowsXmlException()
     {
         // Plain text must throw, not come back as a misleading empty CoverageReport that a
         // gate would then read as NoData instead of "your input is broken".
         using var stream = new MemoryStream("this is not xml at all"u8.ToArray());
 
-        Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream));
+        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
-    [Fact]
+    [Test]
     public void Parse_TruncatedDocument_ThrowsXmlException()
     {
         // A stream cut mid-element (interrupted upload, partial CI artifact) is not a smaller
@@ -45,10 +44,10 @@ public sealed class CoreParserRobustnessTests
             .ToBytes();
         using var stream = new MemoryStream(full, 0, full.Length / 2);
 
-        Assert.Throws<XmlException>(() => CoberturaParser.Parse(stream));
+        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
-    [Fact]
+    [Test]
     public void ParseDirectory_OneMalformedFileAmongSeveral_PropagatesXmlException()
     {
         // Current contract, pinned: a malformed file inside the aggregate propagates its
@@ -64,7 +63,7 @@ public sealed class CoreParserRobustnessTests
             File.WriteAllText(Path.Combine(root, "bad", "coverage.cobertura.xml"),
                 "<coverage><packages>");   // truncated
 
-            Assert.Throws<XmlException>(() => CoberturaParser.ParseDirectory(root));
+            Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseDirectory(root));
         }
         finally
         {
@@ -72,14 +71,14 @@ public sealed class CoreParserRobustnessTests
         }
     }
 
-    [Theory]
-    [InlineData("Fixtures/sample.cobertura.xml")]
-    [InlineData("coverage/*.xml")]
-    [InlineData("unit/**/coverage.cobertura.xml")]
-    [InlineData(@"src\coverage.cobertura.xml")]
-    [InlineData("")]
-    [InlineData("**/")]
-    public void ParseDirectory_PatternWithDirectoryComponent_Throws(string pattern)
+    [Test]
+    [Arguments("Fixtures/sample.cobertura.xml")]
+    [Arguments("coverage/*.xml")]
+    [Arguments("unit/**/coverage.cobertura.xml")]
+    [Arguments(@"src\coverage.cobertura.xml")]
+    [Arguments("")]
+    [Arguments("**/")]
+    public async Task ParseDirectory_PatternWithDirectoryComponent_Throws(string pattern)
     {
         // The parameter is not a glob: any directory component used to be silently discarded,
         // so "coverage/*.xml" matched the wrong scope (or nothing) and flowed into Evaluate
@@ -90,8 +89,8 @@ public sealed class CoreParserRobustnessTests
         var root = Directory.CreateTempSubdirectory("dotcov-pattern-").FullName;
         try
         {
-            var ex = Assert.Throws<ArgumentException>(() => CoberturaParser.ParseDirectory(root, pattern));
-            Assert.Equal("pattern", ex.ParamName);
+            var ex = Assert.ThrowsExactly<ArgumentException>(() => CoberturaParser.ParseDirectory(root, pattern));
+            await Assert.That(ex.ParamName).IsEqualTo("pattern");
         }
         finally
         {
@@ -101,8 +100,8 @@ public sealed class CoreParserRobustnessTests
 
     // ── C23: parse errors must name the offending file ──
 
-    [Fact]
-    public void ParseFile_MalformedXml_ExceptionMessageNamesTheFile()
+    [Test]
+    public async Task ParseFile_MalformedXml_ExceptionMessageNamesTheFile()
     {
         // XmlException knows line/column but not which file. The library prefixes the path —
         // still as XmlException, the published contract type — so directory aggregates and
@@ -113,11 +112,11 @@ public sealed class CoreParserRobustnessTests
             var path = Path.Combine(root, "bad.xml");
             File.WriteAllText(path, "<coverage><packa");
 
-            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseFile(path));
+            var ex = Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseFile(path));
 
-            Assert.StartsWith($"{path}: ", ex.Message, StringComparison.Ordinal);
-            var inner = Assert.IsType<XmlException>(ex.InnerException);
-            Assert.DoesNotContain(path, inner.Message);   // prefixed once, not recursively
+            await Assert.That(ex.Message).StartsWith($"{path}: ");
+            var inner = (await Assert.That(ex.InnerException).IsTypeOf<XmlException>())!;
+            await Assert.That(inner.Message).DoesNotContain(path);   // prefixed once, not recursively
         }
         finally
         {
@@ -125,8 +124,8 @@ public sealed class CoreParserRobustnessTests
         }
     }
 
-    [Fact]
-    public void ParseFile_MalformedXml_RethrowKeepsLineAndPositionCoordinates()
+    [Test]
+    public async Task ParseFile_MalformedXml_RethrowKeepsLineAndPositionCoordinates()
     {
         // The path-prefixing rethrow must not cost the structured coordinates 0.0.2-era
         // library consumers read off the exception: LineNumber/LinePosition carry over from
@@ -139,13 +138,13 @@ public sealed class CoreParserRobustnessTests
             var path = Path.Combine(root, "bad.xml");
             File.WriteAllText(path, "<coverage><packa");
 
-            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseFile(path));
+            var ex = Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseFile(path));
 
-            var inner = Assert.IsType<XmlException>(ex.InnerException);
-            Assert.NotEqual(0, inner.LineNumber);
-            Assert.Equal(inner.LineNumber, ex.LineNumber);
-            Assert.Equal(inner.LinePosition, ex.LinePosition);
-            Assert.Equal($"{path}: {inner.Message}", ex.Message);
+            var inner = (await Assert.That(ex.InnerException).IsTypeOf<XmlException>())!;
+            await Assert.That(inner.LineNumber).IsNotEqualTo(0);
+            await Assert.That(ex.LineNumber).IsEqualTo(inner.LineNumber);
+            await Assert.That(ex.LinePosition).IsEqualTo(inner.LinePosition);
+            await Assert.That(ex.Message).IsEqualTo($"{path}: {inner.Message}");
         }
         finally
         {
@@ -153,8 +152,8 @@ public sealed class CoreParserRobustnessTests
         }
     }
 
-    [Fact]
-    public void ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
+    [Test]
+    public async Task ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
     {
         var root = Directory.CreateTempSubdirectory("dotcov-attr-dir-").FullName;
         try
@@ -166,11 +165,11 @@ public sealed class CoreParserRobustnessTests
             var badPath = Path.Combine(root, "bad", "coverage.cobertura.xml");
             File.WriteAllText(badPath, "<coverage><packages>");
 
-            var ex = Assert.Throws<XmlException>(() => CoberturaParser.ParseDirectory(root));
+            var ex = Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseDirectory(root));
 
             // ParseDirectory routes through ParseFile, so the message carries exactly one
             // path prefix — the malformed report, not the healthy one.
-            Assert.StartsWith($"{badPath}: ", ex.Message, StringComparison.Ordinal);
+            await Assert.That(ex.Message).StartsWith($"{badPath}: ");
         }
         finally
         {
@@ -180,8 +179,8 @@ public sealed class CoreParserRobustnessTests
 
     // ── C18: maxChars threading through the path-level entry points ──
 
-    [Fact]
-    public void ParseDirectory_MaxCharsOverload_EnforcesPerFileCap()
+    [Test]
+    public async Task ParseDirectory_MaxCharsOverload_EnforcesPerFileCap()
     {
         var root = Directory.CreateTempSubdirectory("dotcov-maxchars-").FullName;
         try
@@ -189,10 +188,9 @@ public sealed class CoreParserRobustnessTests
             File.WriteAllBytes(Path.Combine(root, "coverage.cobertura.xml"),
                 Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
 
-            Assert.Throws<XmlException>(() =>
+            Assert.ThrowsExactly<XmlException>(() =>
                 CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 50));
-            Assert.Single(
-                CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 1_000_000).Files);
+            await Assert.That(CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml", maxChars: 1_000_000).Files).HasSingleItem();
         }
         finally
         {
@@ -200,8 +198,8 @@ public sealed class CoreParserRobustnessTests
         }
     }
 
-    [Fact]
-    public void ParsePath_MaxCharsOverload_AppliesToBothFileAndDirectoryInputs()
+    [Test]
+    public async Task ParsePath_MaxCharsOverload_AppliesToBothFileAndDirectoryInputs()
     {
         var root = Directory.CreateTempSubdirectory("dotcov-maxchars-path-").FullName;
         try
@@ -209,10 +207,10 @@ public sealed class CoreParserRobustnessTests
             var file = Path.Combine(root, "coverage.cobertura.xml");
             File.WriteAllBytes(file, Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
 
-            Assert.Throws<XmlException>(() => CoberturaParser.ParsePath(file, maxChars: 50));
-            Assert.Throws<XmlException>(() => CoberturaParser.ParsePath(root, maxChars: 50));
-            Assert.Single(CoberturaParser.ParsePath(file, maxChars: 1_000_000).Files);
-            Assert.Single(CoberturaParser.ParsePath(root, maxChars: 1_000_000).Files);
+            Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParsePath(file, maxChars: 50));
+            Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParsePath(root, maxChars: 50));
+            await Assert.That(CoberturaParser.ParsePath(file, maxChars: 1_000_000).Files).HasSingleItem();
+            await Assert.That(CoberturaParser.ParsePath(root, maxChars: 1_000_000).Files).HasSingleItem();
         }
         finally
         {
@@ -220,8 +218,8 @@ public sealed class CoreParserRobustnessTests
         }
     }
 
-    [Fact]
-    public void ParseDirectory_SupportedShapes_StillWork()
+    [Test]
+    public async Task ParseDirectory_SupportedShapes_StillWork()
     {
         // The two documented shapes must keep working after validation: bare filename
         // (top level only) and the recursive '**/' prefix.
@@ -234,8 +232,8 @@ public sealed class CoreParserRobustnessTests
             File.WriteAllBytes(Path.Combine(root, "nested", "coverage.cobertura.xml"),
                 Cobertura.NewDoc().AddClass("deep.cs", c => c.Line(1, 1)).ToBytes());
 
-            Assert.Single(CoberturaParser.ParseDirectory(root, "coverage.cobertura.xml").Files);
-            Assert.Equal(2, CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml").Files.Count);
+            await Assert.That(CoberturaParser.ParseDirectory(root, "coverage.cobertura.xml").Files).HasSingleItem();
+            await Assert.That(CoberturaParser.ParseDirectory(root, "**/coverage.cobertura.xml").Files.Count).IsEqualTo(2);
         }
         finally
         {

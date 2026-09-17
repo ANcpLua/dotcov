@@ -1,5 +1,4 @@
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -29,14 +28,14 @@ public sealed class MergeConditionIdentityTests
         .AddClass("src/Foo.cs", c => c.BranchWithConditions(5, "25% (1/4)", (1, "0%"), (3, "50%")))
         .Parse();
 
-    [Theory]
-    [InlineData("ABC")]
-    [InlineData("ACB")]
-    [InlineData("BAC")]
-    [InlineData("BCA")]
-    [InlineData("CAB")]
-    [InlineData("CBA")]
-    public void Merge_MismatchedIdentityReport_EveryFoldOrderConvergesToTheRawAggregate(string order)
+    [Test]
+    [Arguments("ABC")]
+    [Arguments("ACB")]
+    [Arguments("BAC")]
+    [Arguments("BCA")]
+    [Arguments("CAB")]
+    [Arguments("CBA")]
+    public async Task Merge_MismatchedIdentityReport_EveryFoldOrderConvergesToTheRawAggregate(string order)
     {
         // Pre-fix, directory order A,B,C yielded 2/4 (A∪B overlaid before C's mismatch) while
         // C,A,B yielded 1/4 — the same uploads passed or failed `check --min-branch 50`
@@ -46,15 +45,15 @@ public sealed class MergeConditionIdentityTests
             .Aggregate(CoverageReport.Merge);
 
         var f = merged.Files[0];
-        Assert.Equal(1, f.BranchesHit);
-        Assert.Equal(4, f.BranchesTotal);
-        Assert.Empty(f.ConditionsByLine[5]);   // poisoned sentinel survives the whole fold
-        Assert.Contains(merged.Warnings, static w =>
+        await Assert.That(f.BranchesHit).IsEqualTo(1);
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);
+        await Assert.That(f.ConditionsByLine[5]).IsEmpty();   // poisoned sentinel survives the whole fold
+        await Assert.That(merged.Warnings).Contains(static w =>
             w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 5);
     }
 
-    [Fact]
-    public void Merge_EqualCountPartiallyOverlappingConditionSets_WarnsInsteadOfThrowing()
+    [Test]
+    public async Task Merge_EqualCountPartiallyOverlappingConditionSets_WarnsInsteadOfThrowing()
     {
         // {0,1} vs {1,2}: equal counts, overlapping but different sets. The identity gate must
         // reject this via the full keyset check — a mutant that accepts it (All -> Any) indexes
@@ -69,26 +68,26 @@ public sealed class MergeConditionIdentityTests
         var merged = CoverageReport.Merge(a, b);
         var f = merged.Files[0];
 
-        Assert.Equal(2, f.BranchesHit);        // line-level aggregate kept
-        Assert.Equal(4, f.BranchesTotal);
-        Assert.Empty(f.ConditionsByLine[10]);  // poisoned
-        Assert.Contains(merged.Warnings, static w =>
+        await Assert.That(f.BranchesHit).IsEqualTo(2);        // line-level aggregate kept
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);
+        await Assert.That(f.ConditionsByLine[10]).IsEmpty();  // poisoned
+        await Assert.That(merged.Warnings).Contains(static w =>
             w.Kind is CoverageWarningKind.ConditionIdentityMismatch && w.Line == 10);
     }
 
-    [Fact]
-    public void Merge_PoisonedLine_AbsorbsLaterDetailWithoutReWarning()
+    [Test]
+    public async Task Merge_PoisonedLine_AbsorbsLaterDetailWithoutReWarning()
     {
         // Once poisoned (A+C mismatch, which warns), a later report's detail must neither
         // resurrect per-condition union nor emit a second mismatch warning for the sentinel.
         var poisoned = CoverageReport.Merge(A(), C());
-        Assert.Single(poisoned.Warnings);
+        await Assert.That(poisoned.Warnings).HasSingleItem();
 
         var merged = CoverageReport.Merge(poisoned, B());
 
-        Assert.Single(merged.Warnings);        // only the carried-forward original
-        Assert.Empty(merged.Files[0].ConditionsByLine[5]);
-        Assert.Equal(1, merged.Files[0].BranchesHit);
+        await Assert.That(merged.Warnings).HasSingleItem();        // only the carried-forward original
+        await Assert.That(merged.Files[0].ConditionsByLine[5]).IsEmpty();
+        await Assert.That(merged.Files[0].BranchesHit).IsEqualTo(1);
     }
 
     // ── The one-sided overlay (C4): condition detail proving more than the line aggregate ──
@@ -103,19 +102,19 @@ public sealed class MergeConditionIdentityTests
         .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (2/4)", (0, "0%"), (1, "100%")))
         .Parse();
 
-    [Fact]
-    public void Parse_ConditionUnionAcrossClassBlocks_RaisesThePresentedAggregate()
+    [Test]
+    public async Task Parse_ConditionUnionAcrossClassBlocks_RaisesThePresentedAggregate()
     {
         // The overlay lives in FromLineData, so the derived 4/4 is already visible at parse
         // time — the same split-condition union logic Merge applies across reports.
         var f = DetailProvesFullCoverage().Files[0];
 
-        Assert.Equal((4, 4), f.BranchesByLine[10]);
-        Assert.Equal(4, f.BranchesHit);
+        await Assert.That(f.BranchesByLine[10]).IsEqualTo((4, 4));
+        await Assert.That(f.BranchesHit).IsEqualTo(4);
     }
 
-    [Fact]
-    public void Merge_OneSidedDetail_OverlaysTheAggregateInBothMergeOrders()
+    [Test]
+    public async Task Merge_OneSidedDetail_OverlaysTheAggregateInBothMergeOrders()
     {
         // Merged with a detail-less report whose line-level value is (2/4), the carried
         // condition detail must still prove (4/4) — in BOTH orders. Deleting either one-sided
@@ -127,15 +126,15 @@ public sealed class MergeConditionIdentityTests
         var ab = CoverageReport.Merge(DetailProvesFullCoverage(), b).Files[0];
         var ba = CoverageReport.Merge(b, DetailProvesFullCoverage()).Files[0];
 
-        Assert.Equal((4, 4), ab.BranchesByLine[10]);
-        Assert.Equal((4, 4), ba.BranchesByLine[10]);
-        Assert.Equal(4, ab.BranchesHit);
-        Assert.Equal(ab.BranchesHit, ba.BranchesHit);
-        Assert.Equal(ab.BranchesTotal, ba.BranchesTotal);
+        await Assert.That(ab.BranchesByLine[10]).IsEqualTo((4, 4));
+        await Assert.That(ba.BranchesByLine[10]).IsEqualTo((4, 4));
+        await Assert.That(ab.BranchesHit).IsEqualTo(4);
+        await Assert.That(ba.BranchesHit).IsEqualTo(ab.BranchesHit);
+        await Assert.That(ba.BranchesTotal).IsEqualTo(ab.BranchesTotal);
     }
 
-    [Fact]
-    public void Merge_OneSidedDetail_NeverShrinksAMismatchKeptTotal()
+    [Test]
+    public async Task Merge_OneSidedDetail_NeverShrinksAMismatchKeptTotal()
     {
         // a: line (1/2) with condition {0:1} (derived total 2). b: line (1/4), no detail.
         // The BranchTotalMismatch warning says "keeping 4" — the overlay's Total component
@@ -150,9 +149,9 @@ public sealed class MergeConditionIdentityTests
         var merged = CoverageReport.Merge(a, b);
         var f = merged.Files[0];
 
-        Assert.Equal((1, 4), f.BranchesByLine[10]);
-        Assert.Equal(4, f.BranchesTotal);
-        Assert.Contains(merged.Warnings, static w =>
+        await Assert.That(f.BranchesByLine[10]).IsEqualTo((1, 4));
+        await Assert.That(f.BranchesTotal).IsEqualTo(4);
+        await Assert.That(merged.Warnings).Contains(static w =>
             w.Kind is CoverageWarningKind.BranchTotalMismatch && w.Line == 10 && w.Detail.Contains("keeping 4"));
     }
 }

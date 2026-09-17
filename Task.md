@@ -14,23 +14,23 @@ Die bestehende direkte `dotnet`-Pipeline bleibt erhalten; eine eigene Fallout-Bu
 
 ### Checkpoint 0: Ausgangslage
 
-- [ ] Ausgangscommit auf `main` und bestehende Änderungen erfassen.
-- [ ] Build und Tests als Ausgangslage ausführen; vorhandene Fehler festhalten.
-- [ ] Entdeckte Testfälle, Testdaten, globale Zustände und den bisherigen Coverage-Aufruf erfassen.
+- [x] Ausgangscommit auf `main` und bestehende Änderungen erfassen.
+- [x] Build und Tests als Ausgangslage ausführen; vorhandene Fehler festhalten.
+- [x] Entdeckte Testfälle, Testdaten, globale Zustände und den bisherigen Coverage-Aufruf erfassen.
 
 Checkpoint erfüllt: Änderungen und Ergebnisse sind einer dokumentierten Ausgangslage zuordenbar.
 
 ### Checkpoint 1: Bestehende Tests auf TUnit umstellen
 
-- [ ] `tests/DotCov.Tests/DotCov.Tests.csproj` auf TUnit 1.67.0 und `OutputType=Exe` umstellen; `net10.0` beibehalten.
-- [ ] Zentrale Paketverwaltung anpassen; xUnit, xUnit-Runner, `Microsoft.NET.Test.Sdk` und `coverlet.collector` entfernen.
-- [ ] Microsoft.Testing.Platform für `dotnet test` in `global.json` konfigurieren.
-- [ ] `Fact`/`Theory` und `InlineData` auf `Test` und `Arguments` umstellen; komplexe Fälle über typisierte Datenquellen ausdrücken.
-- [ ] Assertions auf TUnit übertragen und erforderliche Assertions abwarten. Präzision, Reihenfolge, Referenzgleichheit und exakte Exception-Typen prüfen.
-- [ ] Temporäre Verzeichnisse und Streams pro Test verwalten; Aufräumen auch bei Fehlern sicherstellen.
-- [ ] Tests mit Prozess-Umgebungsvariablen einschließlich betroffener Leser koordinieren. Kulturänderungen pro Test kapseln und wiederherstellen; Tests unter invariantem Globalisierungsmodus weiterhin ermöglichen.
-- [ ] Parser- und Vertragstests unabhängig und ohne automatische Retries ausführen; Assembly-Policies aus den Beispielen nicht pauschal übernehmen.
-- [ ] Bestehende Testfälle unter TUnit entdecken und ausführen; Abweichungen zur Ausgangslage erklären, bevor der Parserumbau beginnt.
+- [x] `tests/DotCov.Tests/DotCov.Tests.csproj` auf TUnit 1.67.0 und `OutputType=Exe` umstellen; `net10.0` beibehalten.
+- [x] Zentrale Paketverwaltung anpassen; xUnit, xUnit-Runner, `Microsoft.NET.Test.Sdk` und `coverlet.collector` entfernen.
+- [x] Microsoft.Testing.Platform für `dotnet test` in `global.json` konfigurieren.
+- [x] `Fact`/`Theory` und `InlineData` auf `Test` und `Arguments` umstellen; komplexe Fälle über typisierte Datenquellen ausdrücken.
+- [x] Assertions auf TUnit übertragen und erforderliche Assertions abwarten. Präzision, Reihenfolge, Referenzgleichheit und exakte Exception-Typen prüfen.
+- [x] Temporäre Verzeichnisse und Streams pro Test verwalten; Aufräumen auch bei Fehlern sicherstellen.
+- [x] Tests mit Prozess-Umgebungsvariablen einschließlich betroffener Leser koordinieren. Kulturänderungen pro Test kapseln und wiederherstellen; Tests unter invariantem Globalisierungsmodus weiterhin ermöglichen.
+- [x] Parser- und Vertragstests unabhängig und ohne automatische Retries ausführen; Assembly-Policies aus den Beispielen nicht pauschal übernehmen.
+- [x] Bestehende Testfälle unter TUnit entdecken und ausführen; Abweichungen zur Ausgangslage erklären, bevor der Parserumbau beginnt.
 
 Checkpoint erfüllt: Die bestehende Suite läuft über TUnit; Testentdeckung, Assertions und Ressourcenlebensdauer sind geprüft.
 

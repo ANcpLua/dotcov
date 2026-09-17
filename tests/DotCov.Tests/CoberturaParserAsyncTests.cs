@@ -1,12 +1,11 @@
 using System.Text;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
 public sealed class CoberturaParserAsyncTests
 {
-    [Fact]
+    [Test]
     public async Task ParseAsync_SmallDocument_ReturnsEquivalentReportToSync()
     {
         var doc = Cobertura.NewDoc()
@@ -16,12 +15,12 @@ public sealed class CoberturaParserAsyncTests
         var sync = doc.Parse();
         var async = await CoberturaParser.ParseAsync(doc.ToStream());
 
-        Assert.Equal(sync.TotalLines, async.TotalLines);
-        Assert.Equal(sync.TotalLinesHit, async.TotalLinesHit);
-        Assert.Equal(sync.Files.Count, async.Files.Count);
+        await Assert.That(async.TotalLines).IsEqualTo(sync.TotalLines);
+        await Assert.That(async.TotalLinesHit).IsEqualTo(sync.TotalLinesHit);
+        await Assert.That(async.Files.Count).IsEqualTo(sync.Files.Count);
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_RespectsCancellation()
     {
         using var stream = Cobertura.NewDoc()
@@ -30,11 +29,10 @@ public sealed class CoberturaParserAsyncTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await CoberturaParser.ParseAsync(stream, ct: cts.Token));
+        await Assert.That(async () => await CoberturaParser.ParseAsync(stream, ct: cts.Token)).Throws<OperationCanceledException>();
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_XxeEntityReference_Throws()
     {
         // With DtdProcessing.Ignore the DTD itself is skipped, so the entity reference in
@@ -48,11 +46,10 @@ public sealed class CoberturaParserAsyncTests
                                  """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
 
-        await Assert.ThrowsAsync<System.Xml.XmlException>(
-            async () => await CoberturaParser.ParseAsync(stream));
+        await Assert.ThrowsExactlyAsync<System.Xml.XmlException>(async () => await CoberturaParser.ParseAsync(stream));
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_BenignDoctype_Parses()
     {
         // Reference Cobertura emits a DOCTYPE on every report; skipping it (not dying on it)
@@ -70,22 +67,21 @@ public sealed class CoberturaParserAsyncTests
 
         var report = await CoberturaParser.ParseAsync(stream);
 
-        Assert.Single(report.Files);
-        Assert.Equal(1, report.TotalLinesHit);
+        await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(report.TotalLinesHit).IsEqualTo(1);
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_EnforcesCharacterCap()
     {
         using var stream = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(1, 1))
             .ToStream();
 
-        await Assert.ThrowsAsync<System.Xml.XmlException>(
-            async () => await CoberturaParser.ParseAsync(stream, maxChars: 50));
+        await Assert.ThrowsExactlyAsync<System.Xml.XmlException>(async () => await CoberturaParser.ParseAsync(stream, maxChars: 50));
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_PartialBranch_RecordsBranchDetail()
     {
         using var stream = Cobertura.NewDoc()
@@ -95,28 +91,28 @@ public sealed class CoberturaParserAsyncTests
         var report = await CoberturaParser.ParseAsync(stream);
 
         var partial = report.Files[0].PartialBranches.Single();
-        Assert.Equal(10, partial.Line);
-        Assert.Equal(1, partial.Covered);
-        Assert.Equal(2, partial.Total);
+        await Assert.That(partial.Line).IsEqualTo(10);
+        await Assert.That(partial.Covered).IsEqualTo(1);
+        await Assert.That(partial.Total).IsEqualTo(2);
     }
 
     // A malformed condition string is NOT ignored quietly — the parser emits a
     // MalformedConditionCoverage warning. That contract (including BranchesTotal == 0)
     // is pinned by CoberturaParserTests.Parse_MalformedConditionString_EmitsWarning.
 
-    [Fact]
-    public void Parse_LineWithoutNumber_IsSkipped()
+    [Test]
+    public async Task Parse_LineWithoutNumber_IsSkipped()
     {
         var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
             .Parse();
 
-        Assert.Single(report.Files);
-        Assert.Equal(0, report.Files[0].LinesTotal);
+        await Assert.That(report.Files).HasSingleItem();
+        await Assert.That(report.Files[0].LinesTotal).IsEqualTo(0);
     }
 
-    [Fact]
-    public void Parse_ClassWithoutFilename_IsSkipped()
+    [Test]
+    public async Task Parse_ClassWithoutFilename_IsSkipped()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -128,17 +124,17 @@ public sealed class CoberturaParserAsyncTests
 
         var report = CoberturaParser.Parse(stream);
 
-        Assert.Empty(report.Files);
+        await Assert.That(report.Files).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_NoBranchData_HasBranchDataFalse()
+    [Test]
+    public async Task Parse_NoBranchData_HasBranchDataFalse()
     {
         var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
             .Parse();
 
-        Assert.False(report.HasBranchData);
-        Assert.False(report.Files[0].HasBranchData);
+        await Assert.That(report.HasBranchData).IsFalse();
+        await Assert.That(report.Files[0].HasBranchData).IsFalse();
     }
 }

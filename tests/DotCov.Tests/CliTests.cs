@@ -1,6 +1,5 @@
 using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -51,215 +50,215 @@ public sealed class CliTests : IDisposable
 
     // ── Exit-code matrix ──
 
-    [Fact]
+    [Test]
     public async Task Check_Pass_Exits0()
     {
         var (code, stdout, _) = await Run("check", HalfCovered(), "--min-line", "40");
 
-        Assert.Equal(0, code);
-        Assert.Contains("PASS", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("PASS");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_Fail_Exits1_AndListsOffendingFiles()
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "90");
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL", stderr);
-        Assert.Contains("src/A.cs: 50.0%", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL");
+        await Assert.That(stderr).Contains("src/A.cs: 50.0%");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_BranchBelowThreshold_Exits1()
     {
         var (code, _, stderr) = await Run("check", BranchHalf(), "--min-line", "50", "--min-branch", "90");
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL", stderr);
-        Assert.Contains("branch", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL");
+        await Assert.That(stderr).Contains("branch");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_ZeroThresholds_Disabled_Exits1()
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "0");
 
-        Assert.Equal(1, code);
-        Assert.Contains("DISABLED", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("DISABLED");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_EmptyDirectory_NoData_Exits1()
     {
         var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty")).FullName;
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
-        Assert.Equal(1, code);
-        Assert.Contains("NODATA", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("NODATA");
     }
 
     // ── Unknown command / help ──
 
-    [Fact]
+    [Test]
     public async Task UnknownCommand_PrintsHelp_Exits2()
     {
         var (code, stdout, stderr) = await Run("chek", "whatever.xml", "--min-line", "80");
 
-        Assert.Equal(2, code);
-        Assert.Contains("Unknown command 'chek'", stderr);
-        Assert.Contains("Commands:", stdout);
+        await Assert.That(code).IsEqualTo(2);
+        await Assert.That(stderr).Contains("Unknown command 'chek'");
+        await Assert.That(stdout).Contains("Commands:");
     }
 
-    [Theory]
-    [InlineData("help")]
-    [InlineData("--help")]
-    [InlineData("-h")]
+    [Test]
+    [Arguments("help")]
+    [Arguments("--help")]
+    [Arguments("-h")]
     public async Task ExplicitHelp_Exits0(string arg)
     {
         var (code, stdout, _) = await Run(arg);
 
-        Assert.Equal(0, code);
-        Assert.Contains("Commands:", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("Commands:");
     }
 
-    [Fact]
+    [Test]
     public async Task NoArgs_PrintsHelp_Exits0()
     {
         var (code, stdout, _) = await Run();
 
-        Assert.Equal(0, code);
-        Assert.Contains("Commands:", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("Commands:");
     }
 
-    [Fact]
+    [Test]
     public async Task Version_Exits0()
     {
         var (code, stdout, _) = await Run("version");
 
-        Assert.Equal(0, code);
-        Assert.StartsWith("dotcov ", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).StartsWith("dotcov ");
     }
 
     // ── Usage errors ──
 
-    [Theory]
-    [InlineData("report")]
-    [InlineData("check")]
-    [InlineData("diff")]
-    [InlineData("snapshot")]
+    [Test]
+    [Arguments("report")]
+    [Arguments("check")]
+    [Arguments("diff")]
+    [Arguments("snapshot")]
     public async Task MissingPathArgument_PrintsUsage_Exits1(string command)
     {
         var (code, _, stderr) = await Run(command);
 
-        Assert.Equal(1, code);
-        Assert.Contains("Usage:", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Usage:");
     }
 
     // ── Invalid numeric flags ──
 
-    [Theory]
-    [InlineData("--threshold", "abc")]
-    [InlineData("--threshold", "NaN")]
+    [Test]
+    [Arguments("--threshold", "abc")]
+    [Arguments("--threshold", "NaN")]
     public async Task Report_InvalidThreshold_Exits1(string flag, string value)
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), flag, value);
 
-        Assert.Equal(1, code);
-        Assert.Contains($"Invalid --threshold value: '{value}'", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains($"Invalid --threshold value: '{value}'");
     }
 
-    [Theory]
-    [InlineData("--min-line", "eighty")]
-    [InlineData("--min-line", "NaN")]
-    [InlineData("--min-branch", "5%")]
-    [InlineData("--min-branch", "NaN")]
+    [Test]
+    [Arguments("--min-line", "eighty")]
+    [Arguments("--min-line", "NaN")]
+    [Arguments("--min-branch", "5%")]
+    [Arguments("--min-branch", "NaN")]
     public async Task Check_InvalidThreshold_Exits1_AndNamesValue(string flag, string value)
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), flag, value);
 
-        Assert.Equal(1, code);
-        Assert.Contains($"Invalid {flag} value: '{value}'", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains($"Invalid {flag} value: '{value}'");
     }
 
     // ── --format validation ──
 
-    [Fact]
+    [Test]
     public async Task Report_InvalidFormat_Exits1()
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--format", "yaml");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Invalid --format value: 'yaml'", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Invalid --format value: 'yaml'");
     }
 
-    [Fact]
+    [Test]
     public async Task Diff_InvalidFormat_Exits1()
     {
         var path = HalfCovered();
 
         var (code, _, stderr) = await Run("diff", path, path, "--format", "jsn");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Invalid --format value: 'jsn'", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Invalid --format value: 'jsn'");
     }
 
-    [Theory]
-    [InlineData("table")]
-    [InlineData("json")]
-    [InlineData("markdown")]
-    [InlineData("md")]
+    [Test]
+    [Arguments("table")]
+    [Arguments("json")]
+    [Arguments("markdown")]
+    [Arguments("md")]
     public async Task Report_KnownFormats_Exit0(string format)
     {
         var (code, stdout, _) = await Run("report", HalfCovered(), "--format", format);
 
-        Assert.Equal(0, code);
-        Assert.NotEmpty(stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).IsNotEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task Report_DefaultFormat_IsTable()
     {
         var (code, stdout, _) = await Run("report", HalfCovered());
 
-        Assert.Equal(0, code);
-        Assert.Contains("src/A.cs", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("src/A.cs");
     }
 
     // ── Parse/IO failures: friendly one-liners, never stack traces ──
 
-    private static void AssertFriendlyError(string stderr)
+    private static async Task AssertFriendlyError(string stderr)
     {
-        Assert.StartsWith("error:", stderr);
-        Assert.DoesNotContain("Unhandled exception", stderr);
-        Assert.DoesNotContain("   at ", stderr);
+        await Assert.That(stderr).StartsWith("error:");
+        await Assert.That(stderr).DoesNotContain("Unhandled exception");
+        await Assert.That(stderr).DoesNotContain("   at ");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_MalformedXml_FriendlyError_Exits1()
     {
         var path = WriteFile("truncated.xml", "<coverage><packages><package");
 
         var (code, _, stderr) = await Run("report", path);
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains(path, stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains(path);
     }
 
-    [Fact]
+    [Test]
     public async Task Report_EmptyFile_FriendlyError_Exits1()
     {
         var path = WriteFile("empty.xml", "");
 
         var (code, _, stderr) = await Run("report", path);
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
     }
 
-    [Fact]
+    [Test]
     public async Task Report_DoctypeHeader_ParsesSuccessfully_Exits0()
     {
         // Reference Cobertura always emits a DOCTYPE; the parser ignores the DTD without resolving it.
@@ -268,41 +267,41 @@ public sealed class CliTests : IDisposable
 
         var (code, _, _) = await Run("report", path);
 
-        Assert.Equal(0, code);
+        await Assert.That(code).IsEqualTo(0);
     }
 
-    [Fact]
+    [Test]
     public async Task Report_NonexistentPath_FriendlyError_Exits1()
     {
         var (code, _, stderr) = await Run("report", "/no/such/path.xml");
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains("/no/such/path.xml", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains("/no/such/path.xml");
     }
 
-    [Fact]
+    [Test]
     public async Task Diff_NonexistentSecondPath_FriendlyError_Exits1()
     {
         var (code, _, stderr) = await Run("diff", HalfCovered(), "/no/such/after.xml");
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains("/no/such/after.xml", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains("/no/such/after.xml");
     }
 
-    [Fact]
+    [Test]
     public async Task Snapshot_MalformedXml_FriendlyError_Exits1()
     {
         var path = WriteFile("bad.xml", "<coverage>");
 
         var (code, _, stderr) = await Run("snapshot", path);
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
     }
 
-    [Fact]
+    [Test]
     public async Task DirectoryScan_MalformedFile_ErrorNamesOffendingFile()
     {
         HalfCovered("scan/a/coverage.cobertura.xml");
@@ -310,12 +309,12 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "scan"));
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains(bad, stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains(bad);
     }
 
-    [Fact]
+    [Test]
     public async Task DirectoryScan_AggregatesAllReports()
     {
         HalfCovered("agg/a/coverage.cobertura.xml");
@@ -323,46 +322,46 @@ public sealed class CliTests : IDisposable
 
         var (code, stdout, _) = await Run("report", Path.Combine(_dir.FullName, "agg"));
 
-        Assert.Equal(0, code);
-        Assert.Contains("src/A.cs", stdout);
-        Assert.Contains("src/B.cs", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("src/A.cs");
+        await Assert.That(stdout).Contains("src/B.cs");
     }
 
     // ── Upload failures ──
 
-    [Fact]
+    [Test]
     public async Task Report_UploadMalformedUrl_FriendlyError_Exits1()
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "notaurl");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Upload failed: notaurl", stderr);
-        Assert.DoesNotContain("Unhandled exception", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Upload failed: notaurl");
+        await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
-    [Fact]
+    [Test]
     public async Task Snapshot_UploadConnectionRefused_Exits1_AfterWritingJson()
     {
         var (code, stdout, stderr) = await Run(
             "snapshot", HalfCovered(), "--commit", "abc123", "--upload", "http://127.0.0.1:1/x");
 
-        Assert.Equal(1, code);
-        Assert.Contains("abc123", stdout);
-        Assert.Contains("Upload failed: http://127.0.0.1:1/x", stderr);
-        Assert.DoesNotContain("Unhandled exception", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).Contains("abc123");
+        await Assert.That(stderr).Contains("Upload failed: http://127.0.0.1:1/x");
+        await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_PassingGate_UploadFailure_Exits1()
     {
         var (code, _, stderr) = await Run(
             "check", HalfCovered(), "--min-line", "40", "--upload", "http://127.0.0.1:1/x");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Upload failed", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Upload failed");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_FailingGate_StillAttemptsUpload_Exits1()
     {
         // Failing runs are the ones a dashboard most needs; the upload is attempted and the
@@ -370,79 +369,79 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(
             "check", HalfCovered(), "--min-line", "99", "--upload", "http://127.0.0.1:1/x");
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL", stderr);
-        Assert.Contains("Upload failed", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL");
+        await Assert.That(stderr).Contains("Upload failed");
     }
 
     // ── ParseArgs mapping ──
 
-    [Fact]
-    public void ParseArgs_EmptyArgv_IsHelp()
+    [Test]
+    public async Task ParseArgs_EmptyArgv_IsHelp()
     {
         var (command, options) = DotCovCli.ParseArgs([]);
 
-        Assert.Equal("help", command);
-        Assert.Empty(options);
+        await Assert.That(command).IsEqualTo("help");
+        await Assert.That(options).IsEmpty();
     }
 
-    [Fact]
-    public void ParseArgs_PositionalMapsToFile()
+    [Test]
+    public async Task ParseArgs_PositionalMapsToFile()
     {
         var (command, options) = DotCovCli.ParseArgs(["report", "cov.xml"]);
 
-        Assert.Equal("report", command);
-        Assert.Equal("cov.xml", options["file"]);
+        await Assert.That(command).IsEqualTo("report");
+        await Assert.That(options["file"]).IsEqualTo("cov.xml");
     }
 
-    [Fact]
-    public void ParseArgs_DiffMapsPositionalsToBeforeAfter()
+    [Test]
+    public async Task ParseArgs_DiffMapsPositionalsToBeforeAfter()
     {
         var (_, options) = DotCovCli.ParseArgs(["diff", "a.xml", "b.xml", "extra"]);
 
-        Assert.Equal("a.xml", options["before"]);
-        Assert.Equal("b.xml", options["after"]);
-        Assert.Equal("extra", options["arg2"]);
+        await Assert.That(options["before"]).IsEqualTo("a.xml");
+        await Assert.That(options["after"]).IsEqualTo("b.xml");
+        await Assert.That(options["arg2"]).IsEqualTo("extra");
     }
 
-    [Fact]
-    public void ParseArgs_FlagWithValue_AndValuelessFlags()
+    [Test]
+    public async Task ParseArgs_FlagWithValue_AndValuelessFlags()
     {
         var (_, options) = DotCovCli.ParseArgs(
             ["check", "cov.xml", "--min-line", "80", "--exclude-generated", "--github-summary"]);
 
-        Assert.Equal("cov.xml", options["file"]);
-        Assert.Equal("80", options["min-line"]);
-        Assert.Equal("true", options["exclude-generated"]);
+        await Assert.That(options["file"]).IsEqualTo("cov.xml");
+        await Assert.That(options["min-line"]).IsEqualTo("80");
+        await Assert.That(options["exclude-generated"]).IsEqualTo("true");
         // Trailing flag with no value is recorded as "true", not dropped.
-        Assert.Equal("true", options["github-summary"]);
+        await Assert.That(options["github-summary"]).IsEqualTo("true");
     }
 
-    [Fact]
-    public void ParseArgs_BooleanFlagBeforePositional_DoesNotSwallowPath()
+    [Test]
+    public async Task ParseArgs_BooleanFlagBeforePositional_DoesNotSwallowPath()
     {
         // Standard flag-before-path ordering: a valueless flag must not consume the path.
         var (_, options) = DotCovCli.ParseArgs(
             ["report", "--exclude-generated", "cov.xml", "--github-summary", "--format", "json"]);
 
-        Assert.Equal("cov.xml", options["file"]);
-        Assert.Equal("true", options["exclude-generated"]);
-        Assert.Equal("true", options["github-summary"]);
-        Assert.Equal("json", options["format"]);
+        await Assert.That(options["file"]).IsEqualTo("cov.xml");
+        await Assert.That(options["exclude-generated"]).IsEqualTo("true");
+        await Assert.That(options["github-summary"]).IsEqualTo("true");
+        await Assert.That(options["format"]).IsEqualTo("json");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_BooleanFlagBeforePath_Exits0()
     {
         var (code, stdout, _) = await Run("report", "--exclude-generated", HalfCovered());
 
-        Assert.Equal(0, code);
-        Assert.Contains("src/A.cs", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("src/A.cs");
     }
 
     // ── Directory-scan error attribution ──
 
-    [Fact]
+    [Test]
     public async Task DirectoryScan_MalformedFile_PrefixesPathExactlyOnce()
     {
         // The library's ParseFile prefixes the failing path; the CLI must not prefix again
@@ -451,14 +450,14 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "once"));
 
-        Assert.Equal(1, code);
-        Assert.Contains($"error: {bad}:", stderr);
-        Assert.DoesNotContain($"{bad}: {bad}:", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains($"error: {bad}:");
+        await Assert.That(stderr).DoesNotContain($"{bad}: {bad}:");
     }
 
     // ── --pattern ──
 
-    [Fact]
+    [Test]
     public async Task Report_Pattern_DiscoversNonDefaultFilenames()
     {
         HalfCovered("gcovr/sub/coverage.xml");
@@ -466,15 +465,15 @@ public sealed class CliTests : IDisposable
 
         // Default scan only matches **/coverage.cobertura.xml — the gcovr-named report is invisible.
         var (defaultCode, defaultOut, _) = await Run("report", dir);
-        Assert.Equal(0, defaultCode);
-        Assert.DoesNotContain("src/A.cs", defaultOut);
+        await Assert.That(defaultCode).IsEqualTo(0);
+        await Assert.That(defaultOut).DoesNotContain("src/A.cs");
 
         var (code, stdout, _) = await Run("report", dir, "--pattern", "**/coverage.xml");
-        Assert.Equal(0, code);
-        Assert.Contains("src/A.cs", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("src/A.cs");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_Pattern_TopLevelShape_DoesNotRecurse()
     {
         HalfCovered("toplevel/cobertura.xml");
@@ -483,12 +482,12 @@ public sealed class CliTests : IDisposable
         var (code, stdout, _) = await Run(
             "report", Path.Combine(_dir.FullName, "toplevel"), "--pattern", "cobertura.xml");
 
-        Assert.Equal(0, code);
-        Assert.Contains("src/A.cs", stdout);
-        Assert.DoesNotContain("src/B.cs", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("src/A.cs");
+        await Assert.That(stdout).DoesNotContain("src/B.cs");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_Pattern_GatesNonDefaultFilenames()
     {
         HalfCovered("chk/coverage.xml");
@@ -496,11 +495,11 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(
             "check", Path.Combine(_dir.FullName, "chk"), "--min-line", "90", "--pattern", "**/coverage.xml");
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_InvalidPattern_FriendlyError_Exits1()
     {
         // ParseDirectory's pattern gate throws ArgumentException, which is not in RunAsync's
@@ -509,47 +508,47 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", dir, "--pattern", "sub/coverage.xml");
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains("Unsupported pattern", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains("Unsupported pattern");
     }
 
     // ── --max-chars ──
 
-    [Fact]
+    [Test]
     public async Task Report_MaxChars_BelowDocumentSize_FriendlyError_Exits1()
     {
         var path = HalfCovered();
 
         var (code, _, stderr) = await Run("report", path, "--max-chars", "10");
 
-        Assert.Equal(1, code);
-        AssertFriendlyError(stderr);
-        Assert.Contains(path, stderr);
-        Assert.Contains("MaxCharactersInDocument", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await AssertFriendlyError(stderr);
+        await Assert.That(stderr).Contains(path);
+        await Assert.That(stderr).Contains("MaxCharactersInDocument");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_MaxChars_ZeroDisablesCap_Exits0()
     {
         var (code, _, _) = await Run("report", HalfCovered(), "--max-chars", "0");
 
-        Assert.Equal(0, code);
+        await Assert.That(code).IsEqualTo(0);
     }
 
-    [Theory]
-    [InlineData("abc")]
-    [InlineData("-1")]
-    [InlineData("1.5")]
+    [Test]
+    [Arguments("abc")]
+    [Arguments("-1")]
+    [Arguments("1.5")]
     public async Task Report_InvalidMaxChars_Exits1_AndNamesValue(string value)
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--max-chars", value);
 
-        Assert.Equal(1, code);
-        Assert.Contains($"Invalid --max-chars value: '{value}'", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains($"Invalid --max-chars value: '{value}'");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_MaxChars_CapOverflow_IsErrorNotFail()
     {
         // A size-cap overflow during check is a could-not-measure error ("error:" first token),
@@ -558,24 +557,24 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(
             "check", HalfCovered(), "--min-line", "40", "--max-chars", "10");
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("error:", stderr);
-        Assert.DoesNotContain("FAIL", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("error:");
+        await Assert.That(stderr).DoesNotContain("FAIL");
     }
 
     // ── Offender list scoping and flooring ──
 
-    [Fact]
+    [Test]
     public async Task Check_LineFailure_LabelsOffenderList()
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "90");
 
-        Assert.Equal(1, code);
-        Assert.Contains("files below line threshold:", stderr);
-        Assert.Contains("src/A.cs: 50.0%", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("files below line threshold:");
+        await Assert.That(stderr).Contains("src/A.cs: 50.0%");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_BranchOnlyFailure_PrintsNoLineOffenderList()
     {
         // Line gate passes overall (5/7 ≈ 71.4% ≥ 50) but B.cs sits below min-line; the branch
@@ -587,26 +586,26 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("check", path, "--min-line", "50", "--min-branch", "90");
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL", stderr);
-        Assert.Contains("branch coverage below threshold", stderr);
-        Assert.DoesNotContain("files below line threshold", stderr);
-        Assert.DoesNotContain("src/B.cs", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL");
+        await Assert.That(stderr).Contains("branch coverage below threshold");
+        await Assert.That(stderr).DoesNotContain("files below line threshold");
+        await Assert.That(stderr).DoesNotContain("src/B.cs");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_NoData_PrintsNoOffenderList()
     {
         var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty-nolist")).FullName;
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
-        Assert.Equal(1, code);
-        Assert.Contains("NODATA", stderr);
-        Assert.DoesNotContain("files below line threshold", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("NODATA");
+        await Assert.That(stderr).DoesNotContain("files below line threshold");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_OffenderList_FloorsFailingRate()
     {
         // 1999/2500 = 79.96%: must floor to 79.9%, never F1-round up to the missed minimum.
@@ -614,9 +613,9 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("check", path, "--min-line", "80");
 
-        Assert.Equal(1, code);
-        Assert.Contains("src/F.cs: 79.9%", stderr);
-        Assert.DoesNotContain("80.0%", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("src/F.cs: 79.9%");
+        await Assert.That(stderr).DoesNotContain("80.0%");
     }
 
     internal static Cobertura NearlyEighty() => Cobertura.NewDoc()
@@ -628,62 +627,61 @@ public sealed class CliTests : IDisposable
 
     // ── Unsupported upload scheme ──
 
-    [Fact]
+    [Test]
     public async Task Report_UploadUnsupportedScheme_FriendlyError_Exits1()
     {
         // HttpClient throws NotSupportedException for non-http(s) schemes before any
         // connection is attempted — must be a one-liner, not an unhandled crash.
         var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "ftp://example.invalid/x");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Upload failed: ftp://example.invalid/x", stderr);
-        Assert.DoesNotContain("Unhandled exception", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Upload failed: ftp://example.invalid/x");
+        await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
     // ── Snapshot identity defaults ──
 
-    [Fact]
+    [Test]
     public async Task Snapshot_MissingIdentityFlags_WarnsButExits0()
     {
         var (code, stdout, stderr) = await Run("snapshot", HalfCovered());
 
-        Assert.Equal(0, code);
-        Assert.Contains("unknown", stdout);
-        Assert.Contains(
-            "warning: --commit, --branch, --project not provided; snapshot stamped 'unknown'", stderr);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("unknown");
+        await Assert.That(stderr).Contains("warning: --commit, --branch, --project not provided; snapshot stamped 'unknown'");
     }
 
-    [Fact]
+    [Test]
     public async Task Snapshot_PartialIdentityFlags_WarnsOnlyMissing()
     {
         var (code, _, stderr) = await Run("snapshot", HalfCovered(), "--commit", "abc123");
 
-        Assert.Equal(0, code);
-        Assert.Contains("--branch, --project not provided", stderr);
-        Assert.DoesNotContain("--commit", stderr);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stderr).Contains("--branch, --project not provided");
+        await Assert.That(stderr).DoesNotContain("--commit");
     }
 
-    [Fact]
+    [Test]
     public async Task Snapshot_AllIdentityFlags_NoWarning()
     {
         var (code, _, stderr) = await Run(
             "snapshot", HalfCovered(), "--commit", "abc123", "--branch", "main", "--project", "MyApp");
 
-        Assert.Equal(0, code);
-        Assert.DoesNotContain("warning:", stderr);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stderr).DoesNotContain("warning:");
     }
 
     // ── Documented CLI contract ──
 
-    [Fact]
+    [Test]
     public async Task Help_DocumentsExitCodesAndNewFlags()
     {
         var (code, stdout, _) = await Run("help");
 
-        Assert.Equal(0, code);
-        Assert.Contains("Exit codes:", stdout);
-        Assert.Contains("2  unknown command", stdout);
-        Assert.Contains("--pattern", stdout);
-        Assert.Contains("--max-chars", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("Exit codes:");
+        await Assert.That(stdout).Contains("2  unknown command");
+        await Assert.That(stdout).Contains("--pattern");
+        await Assert.That(stdout).Contains("--max-chars");
     }
 }

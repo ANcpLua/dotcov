@@ -1,6 +1,5 @@
 using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -53,35 +52,35 @@ public sealed class CliCrapTests : IDisposable
 
     // ── Exit-code matrix ──
 
-    [Fact]
+    [Test]
     public async Task Crap_AtThresholdExactly_Exits0()
     {
         var (code, stdout, _) = await Run("crap", AtDefaultThreshold());
 
-        Assert.Equal(0, code);
-        Assert.Contains("PASS: worst CRAP 6.0 (max 6)", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("PASS: worst CRAP 6.0 (max 6)");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_AboveThreshold_Exits1_VerdictOnStderr()
     {
         var (code, stdout, stderr) = await Run("crap", AboveDefaultThreshold());
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("FAIL:", stderr);
-        Assert.Contains("1 of 2 methods above threshold", stderr);
-        Assert.Contains("MyApp.A.Risky", stdout);   // the worst-first table still lands on stdout
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("FAIL:");
+        await Assert.That(stderr).Contains("1 of 2 methods above threshold");
+        await Assert.That(stdout).Contains("MyApp.A.Risky");   // the worst-first table still lands on stdout
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_RaisedThreshold_TurnsSameReportGreen()
     {
         var (code, _, _) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "12");
 
-        Assert.Equal(0, code);   // 12 is at-threshold for the Risky method → passes
+        await Assert.That(code).IsEqualTo(0);   // 12 is at-threshold for the Risky method → passes
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_NoMethodDetail_Nodata_Exits1()
     {
         var noMethods = WriteFile("plain.cobertura.xml", Cobertura.NewDoc()
@@ -90,21 +89,21 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, _, stderr) = await Run("crap", noMethods);
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("NODATA:", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("NODATA:");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_NoComplexitySource_Nodata_MentionsMetricsFlag()
     {
         var (code, _, stderr) = await Run("crap", NoComplexity());
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("NODATA:", stderr);
-        Assert.Contains("--metrics", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("NODATA:");
+        await Assert.That(stderr).Contains("--metrics");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_DirectoryInput_AggregatesLikeReport()
     {
         // The same directory dispatch as report/check: point crap at a TestResults-style
@@ -115,11 +114,11 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, stdout, _) = await Run("crap", _dir.FullName);
 
-        Assert.Equal(0, code);
-        Assert.Contains("MyApp.A.M", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("MyApp.A.M");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits1()
     {
         // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.
@@ -127,54 +126,54 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, _, stderr) = await Run("crap", _dir.FullName, "--pattern", "sub/dir/coverage.xml");
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("error:", stderr);
-        Assert.Contains("Unsupported pattern", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("error:");
+        await Assert.That(stderr).Contains("Unsupported pattern");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_MissingPath_Error_Exits1()
     {
         var (code, _, stderr) = await Run("crap", Path.Combine(_dir.FullName, "nope.xml"));
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("error:", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("error:");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_NoArgs_Usage_Exits1()
     {
         var (code, _, stderr) = await Run("crap");
 
-        Assert.Equal(1, code);
-        Assert.Contains("Usage: dotcov crap", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Usage: dotcov crap");
     }
 
-    [Theory]
-    [InlineData("--max-crap", "abc")]
-    [InlineData("--top", "0")]
-    [InlineData("--top", "-3")]
-    [InlineData("--format", "yaml")]
+    [Test]
+    [Arguments("--max-crap", "abc")]
+    [Arguments("--top", "0")]
+    [Arguments("--top", "-3")]
+    [Arguments("--format", "yaml")]
     public async Task Crap_InvalidFlagValue_Exits1(string flag, string value)
     {
         var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), flag, value);
 
-        Assert.Equal(1, code);
-        Assert.Contains("Invalid", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("Invalid");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_MissingMetricsFile_Error_Exits1()
     {
         var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", "/nonexistent/metrics.xml");
 
-        Assert.Equal(1, code);
-        Assert.StartsWith("error: No metrics file at", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("error: No metrics file at");
     }
 
     // ── --metrics path ──
 
-    [Fact]
+    [Test]
     public async Task Crap_MetricsFile_SuppliesComplexity_GatesOnIt()
     {
         // Coverage carries no complexity; the metrics file supplies comp 5 for the uncovered
@@ -217,47 +216,47 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, stdout, stderr) = await Run("crap", coverage, "--metrics", metricsPath);
 
-        Assert.Equal(1, code);
-        Assert.Contains("FAIL: worst CRAP 30.0", stderr);
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).Contains("FAIL: worst CRAP 30.0");
         // The unmatched metrics member is listed, never silently dropped.
-        Assert.Contains("void B.NeverCovered()", stdout);
+        await Assert.That(stdout).Contains("void B.NeverCovered()");
     }
 
     // ── Output formats ──
 
-    [Fact]
+    [Test]
     public async Task Crap_JsonFormat_EmitsGateAndMethods()
     {
         var (code, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "json");
 
-        Assert.Equal(1, code);
+        await Assert.That(code).IsEqualTo(1);
         var root = System.Text.Json.JsonDocument.Parse(
             stdout[..(stdout.LastIndexOf('}') + 1)]).RootElement;
-        Assert.Equal("fail", root.GetProperty("gate").GetProperty("outcome").GetString());
-        Assert.Equal("MyApp.A.Risky", root.GetProperty("methods")[0].GetProperty("method").GetString());
+        await Assert.That(root.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("fail");
+        await Assert.That(root.GetProperty("methods")[0].GetProperty("method").GetString()).IsEqualTo("MyApp.A.Risky");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_MarkdownFormat_EmitsBadgeAndVerdict()
     {
         var (code, stdout, _) = await Run("crap", AtDefaultThreshold(), "--format", "md");
 
-        Assert.Equal(0, code);
-        Assert.Contains("## CRAP Report ✅", stdout);
-        Assert.Contains("`PASS:", stdout);
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("## CRAP Report ✅");
+        await Assert.That(stdout).Contains("`PASS:");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_Top_TruncatesTable()
     {
         var (_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--top", "1");
 
-        Assert.Contains("MyApp.A.Risky", stdout);
-        Assert.DoesNotContain("MyApp.A.Safe", stdout);
-        Assert.Contains("1 more methods below", stdout);
+        await Assert.That(stdout).Contains("MyApp.A.Risky");
+        await Assert.That(stdout).DoesNotContain("MyApp.A.Safe");
+        await Assert.That(stdout).Contains("1 more methods below");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_ExcludeGenerated_DropsExcludedFilesFromGate()
     {
         // A high-CRAP method in Program.cs (excluded by the WellKnown rules) must not fail the
@@ -270,8 +269,8 @@ public sealed class CliCrapTests : IDisposable
         var (withoutFlag, _, _) = await Run("crap", mixed);
         var (withFlag, stdout, _) = await Run("crap", mixed, "--exclude-generated");
 
-        Assert.Equal(1, withoutFlag);
-        Assert.Equal(0, withFlag);
-        Assert.DoesNotContain("Program", stdout);
+        await Assert.That(withoutFlag).IsEqualTo(1);
+        await Assert.That(withFlag).IsEqualTo(0);
+        await Assert.That(stdout).DoesNotContain("Program");
     }
 }

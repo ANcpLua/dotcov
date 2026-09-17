@@ -1,64 +1,64 @@
+using TUnit.Assertions.Enums;
 using System.Text.Json;
 using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
 public sealed class JsonFormatterTests
 {
-    [Fact]
-    public void Format_ProducesValidJson()
+    [Test]
+    public async Task Format_ProducesValidJson()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
 
         var parsed = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Object, parsed.RootElement.GetProperty("summary").ValueKind);
-        Assert.Equal(JsonValueKind.Array, parsed.RootElement.GetProperty("files").ValueKind);
+        await Assert.That(parsed.RootElement.GetProperty("summary").ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(parsed.RootElement.GetProperty("files").ValueKind).IsEqualTo(JsonValueKind.Array);
     }
 
-    [Fact]
-    public void Format_Summary_RoundsRatesToTwoDecimals()
+    [Test]
+    public async Task Format_Summary_RoundsRatesToTwoDecimals()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
         // 7/12 lines = 58.3333… → rounded to 58.33
-        Assert.Equal(58.33, summary.GetProperty("lineRate").GetDouble());
+        await Assert.That(summary.GetProperty("lineRate").GetDouble()).IsEqualTo(58.33);
     }
 
-    [Fact]
-    public void Format_WithBranchData_SetsHasBranchDataTrue()
+    [Test]
+    public async Task Format_WithBranchData_SetsHasBranchDataTrue()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
-        Assert.True(summary.GetProperty("hasBranchData").GetBoolean());
-        Assert.Equal(JsonValueKind.Number, summary.GetProperty("branchRate").ValueKind);
+        await Assert.That(summary.GetProperty("hasBranchData").GetBoolean()).IsTrue();
+        await Assert.That(summary.GetProperty("branchRate").ValueKind).IsEqualTo(JsonValueKind.Number);
     }
 
-    [Fact]
-    public void Format_NoBranchData_SetsHasBranchDataFalseAndOmitsBranchRate()
+    [Test]
+    public async Task Format_NoBranchData_SetsHasBranchDataFalseAndOmitsBranchRate()
     {
         var json = JsonFormatter.Format(Reports.LinesOnly);
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
-        Assert.False(summary.GetProperty("hasBranchData").GetBoolean());
+        await Assert.That(summary.GetProperty("hasBranchData").GetBoolean()).IsFalse();
         // Null values are omitted (DefaultIgnoreCondition.WhenWritingNull) — that's the contract.
-        Assert.False(summary.TryGetProperty("branchRate", out _));
+        await Assert.That(summary.TryGetProperty("branchRate", out _)).IsFalse();
     }
 
-    [Fact]
-    public void Format_PerFileBranchRate_IsOmittedWhenNoBranches()
+    [Test]
+    public async Task Format_PerFileBranchRate_IsOmittedWhenNoBranches()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
 
         var unused = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Unused.cs");
-        Assert.False(unused.TryGetProperty("branchRate", out _));
+        await Assert.That(unused.TryGetProperty("branchRate", out _)).IsFalse();
     }
 
-    [Fact]
+    [Test]
     public void Format_OmitsUncoveredLines_WhenList_IsEmpty()
     {
         var report = new CoverageReport([
@@ -68,11 +68,11 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.Format(report);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        Assert.Throws<KeyNotFoundException>(() => file.GetProperty("uncoveredLines"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() => file.GetProperty("uncoveredLines"));
     }
 
-    [Fact]
-    public void Format_IncludesUncoveredLines_WhenPopulated()
+    [Test]
+    public async Task Format_IncludesUncoveredLines_WhenPopulated()
     {
         var report = new CoverageReport([
             new FileCoverage("a.cs", 1, 3, 0, 0) { UncoveredLines = [10, 20, 30] }
@@ -82,11 +82,11 @@ public sealed class JsonFormatterTests
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
         var uncovered = file.GetProperty("uncoveredLines").EnumerateArray().Select(e => e.GetInt32()).ToArray();
 
-        Assert.Equal([10, 20, 30], uncovered);
+        await Assert.That(uncovered).IsEquivalentTo([10, 20, 30], CollectionOrdering.Matching);
     }
 
-    [Fact]
-    public void Format_IncludesPartialBranches_WhenPopulated()
+    [Test]
+    public async Task Format_IncludesPartialBranches_WhenPopulated()
     {
         var report = new CoverageReport([
             new FileCoverage("a.cs", 1, 1, 1, 2) { PartialBranches = [new BranchDetail(15, 1, 2)] }
@@ -96,13 +96,13 @@ public sealed class JsonFormatterTests
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
         var partial = file.GetProperty("partialBranches")[0];
 
-        Assert.Equal(15, partial.GetProperty("line").GetInt32());
-        Assert.Equal(1, partial.GetProperty("covered").GetInt32());
-        Assert.Equal(2, partial.GetProperty("total").GetInt32());
+        await Assert.That(partial.GetProperty("line").GetInt32()).IsEqualTo(15);
+        await Assert.That(partial.GetProperty("covered").GetInt32()).IsEqualTo(1);
+        await Assert.That(partial.GetProperty("total").GetInt32()).IsEqualTo(2);
     }
 
-    [Fact]
-    public void Format_Summary_CarriesBranchTotals()
+    [Test]
+    public async Task Format_Summary_CarriesBranchTotals()
     {
         // totalBranches/coveredBranches are part of the wire contract — asserted by value
         // so the writer statements cannot be deleted wholesale. WriteSummary is shared, so
@@ -110,25 +110,25 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.Format(Reports.Mixed);
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
-        Assert.Equal(6, summary.GetProperty("totalBranches").GetInt32());
-        Assert.Equal(3, summary.GetProperty("coveredBranches").GetInt32());
+        await Assert.That(summary.GetProperty("totalBranches").GetInt32()).IsEqualTo(6);
+        await Assert.That(summary.GetProperty("coveredBranches").GetInt32()).IsEqualTo(3);
     }
 
-    [Fact]
-    public void Format_PerFile_CarriesAllFourCountFields()
+    [Test]
+    public async Task Format_PerFile_CarriesAllFourCountFields()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
 
         var parser = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Parser.cs");
-        Assert.Equal(3, parser.GetProperty("linesHit").GetInt32());
-        Assert.Equal(5, parser.GetProperty("linesTotal").GetInt32());
-        Assert.Equal(1, parser.GetProperty("branchesHit").GetInt32());
-        Assert.Equal(4, parser.GetProperty("branchesTotal").GetInt32());
+        await Assert.That(parser.GetProperty("linesHit").GetInt32()).IsEqualTo(3);
+        await Assert.That(parser.GetProperty("linesTotal").GetInt32()).IsEqualTo(5);
+        await Assert.That(parser.GetProperty("branchesHit").GetInt32()).IsEqualTo(1);
+        await Assert.That(parser.GetProperty("branchesTotal").GetInt32()).IsEqualTo(4);
     }
 
-    [Fact]
-    public void Format_EmptyPartialBranches_OmitsKey()
+    [Test]
+    public async Task Format_EmptyPartialBranches_OmitsKey()
     {
         // Absent-key-means-clean: an empty partialBranches list must omit the key entirely,
         // same contract as uncoveredLines/warnings/lineChanges.
@@ -139,11 +139,11 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.Format(report);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        Assert.False(file.TryGetProperty("partialBranches", out _));
+        await Assert.That(file.TryGetProperty("partialBranches", out _)).IsFalse();
     }
 
-    [Fact]
-    public void FormatDiff_ProducesValidJsonWithSummaryAndFiles()
+    [Test]
+    public async Task FormatDiff_ProducesValidJsonWithSummaryAndFiles()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
@@ -152,13 +152,13 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatDiff(diff);
         var root = JsonDocument.Parse(json).RootElement;
 
-        Assert.Equal(50.0, root.GetProperty("summary").GetProperty("before").GetDouble());
-        Assert.Equal(80.0, root.GetProperty("summary").GetProperty("after").GetDouble());
-        Assert.Equal(30.0, root.GetProperty("summary").GetProperty("delta").GetDouble());
+        await Assert.That(root.GetProperty("summary").GetProperty("before").GetDouble()).IsEqualTo(50.0);
+        await Assert.That(root.GetProperty("summary").GetProperty("after").GetDouble()).IsEqualTo(80.0);
+        await Assert.That(root.GetProperty("summary").GetProperty("delta").GetDouble()).IsEqualTo(30.0);
     }
 
-    [Fact]
-    public void FormatDiff_NullBefore_IsOmittedFromOutput()
+    [Test]
+    public async Task FormatDiff_NullBefore_IsOmittedFromOutput()
     {
         var diff = CoverageDiff.Compare(
             CoverageReport.Empty,
@@ -168,12 +168,12 @@ public sealed class JsonFormatterTests
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
         // Same null-omission contract as the report serializer.
-        Assert.False(file.TryGetProperty("before", out _));
-        Assert.Equal("added", file.GetProperty("change").GetString());
+        await Assert.That(file.TryGetProperty("before", out _)).IsFalse();
+        await Assert.That(file.GetProperty("change").GetString()).IsEqualTo("added");
     }
 
-    [Fact]
-    public void FormatDiff_NullAfter_IsOmittedFromOutput()
+    [Test]
+    public async Task FormatDiff_NullAfter_IsOmittedFromOutput()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]),
@@ -182,13 +182,13 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatDiff(diff);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        Assert.False(file.TryGetProperty("after", out _));
-        Assert.Equal(80.0, file.GetProperty("before").GetDouble());
-        Assert.Equal("removed", file.GetProperty("change").GetString());
+        await Assert.That(file.TryGetProperty("after", out _)).IsFalse();
+        await Assert.That(file.GetProperty("before").GetDouble()).IsEqualTo(80.0);
+        await Assert.That(file.GetProperty("change").GetString()).IsEqualTo("removed");
     }
 
-    [Fact]
-    public void FormatDiff_IndirectLineChanges_AppearInJsonPayload()
+    [Test]
+    public async Task FormatDiff_IndirectLineChanges_AppearInJsonPayload()
     {
         var before = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)
         {
@@ -202,17 +202,17 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatDiff(CoverageDiff.Compare(before, after));
         var root = JsonDocument.Parse(json).RootElement;
 
-        Assert.Equal(1, root.GetProperty("summary").GetProperty("indirectLineChanges").GetInt32());
+        await Assert.That(root.GetProperty("summary").GetProperty("indirectLineChanges").GetInt32()).IsEqualTo(1);
 
         var lineChange = root.GetProperty("files")[0].GetProperty("lineChanges")[0];
-        Assert.Equal(10, lineChange.GetProperty("line").GetInt32());
-        Assert.Equal("newlymissed", lineChange.GetProperty("change").GetString());
-        Assert.Equal(5, lineChange.GetProperty("beforeHits").GetInt32());
-        Assert.Equal(0, lineChange.GetProperty("afterHits").GetInt32());
+        await Assert.That(lineChange.GetProperty("line").GetInt32()).IsEqualTo(10);
+        await Assert.That(lineChange.GetProperty("change").GetString()).IsEqualTo("newlymissed");
+        await Assert.That(lineChange.GetProperty("beforeHits").GetInt32()).IsEqualTo(5);
+        await Assert.That(lineChange.GetProperty("afterHits").GetInt32()).IsEqualTo(0);
     }
 
-    [Fact]
-    public void FormatDiff_AddedLine_EmitsAddedChangeWithOnlyAfterHits()
+    [Test]
+    public async Task FormatDiff_AddedLine_EmitsAddedChangeWithOnlyAfterHits()
     {
         // Same file on both sides; line 30 only exists in After → LineDelta.Added variant.
         // Wire format: change="added", beforeHits omitted (null), afterHits populated.
@@ -229,14 +229,14 @@ public sealed class JsonFormatterTests
         var lineChange = JsonDocument.Parse(json).RootElement
             .GetProperty("files")[0].GetProperty("lineChanges")[0];
 
-        Assert.Equal(30, lineChange.GetProperty("line").GetInt32());
-        Assert.Equal("added", lineChange.GetProperty("change").GetString());
-        Assert.Equal(7, lineChange.GetProperty("afterHits").GetInt32());
-        Assert.False(lineChange.TryGetProperty("beforeHits", out _));
+        await Assert.That(lineChange.GetProperty("line").GetInt32()).IsEqualTo(30);
+        await Assert.That(lineChange.GetProperty("change").GetString()).IsEqualTo("added");
+        await Assert.That(lineChange.GetProperty("afterHits").GetInt32()).IsEqualTo(7);
+        await Assert.That(lineChange.TryGetProperty("beforeHits", out _)).IsFalse();
     }
 
-    [Fact]
-    public void FormatDiff_RemovedLine_EmitsRemovedChangeWithOnlyBeforeHits()
+    [Test]
+    public async Task FormatDiff_RemovedLine_EmitsRemovedChangeWithOnlyBeforeHits()
     {
         // Line 20 dropped from After → LineDelta.Removed variant.
         // Wire format: change="removed", beforeHits populated, afterHits omitted (null).
@@ -253,14 +253,14 @@ public sealed class JsonFormatterTests
         var lineChange = JsonDocument.Parse(json).RootElement
             .GetProperty("files")[0].GetProperty("lineChanges")[0];
 
-        Assert.Equal(20, lineChange.GetProperty("line").GetInt32());
-        Assert.Equal("removed", lineChange.GetProperty("change").GetString());
-        Assert.Equal(4, lineChange.GetProperty("beforeHits").GetInt32());
-        Assert.False(lineChange.TryGetProperty("afterHits", out _));
+        await Assert.That(lineChange.GetProperty("line").GetInt32()).IsEqualTo(20);
+        await Assert.That(lineChange.GetProperty("change").GetString()).IsEqualTo("removed");
+        await Assert.That(lineChange.GetProperty("beforeHits").GetInt32()).IsEqualTo(4);
+        await Assert.That(lineChange.TryGetProperty("afterHits", out _)).IsFalse();
     }
 
-    [Fact]
-    public void FormatDiff_NewlyHitLine_EmitsNewlyHitChangeWithBothHits()
+    [Test]
+    public async Task FormatDiff_NewlyHitLine_EmitsNewlyHitChangeWithBothHits()
     {
         // Line 10 missed before, hit now → LineDelta.NewlyHit variant.
         // Wire format: change="newlyhit", both beforeHits (0) and afterHits populated.
@@ -277,14 +277,14 @@ public sealed class JsonFormatterTests
         var lineChange = JsonDocument.Parse(json).RootElement
             .GetProperty("files")[0].GetProperty("lineChanges")[0];
 
-        Assert.Equal(10, lineChange.GetProperty("line").GetInt32());
-        Assert.Equal("newlyhit", lineChange.GetProperty("change").GetString());
-        Assert.Equal(0, lineChange.GetProperty("beforeHits").GetInt32());
-        Assert.Equal(3, lineChange.GetProperty("afterHits").GetInt32());
+        await Assert.That(lineChange.GetProperty("line").GetInt32()).IsEqualTo(10);
+        await Assert.That(lineChange.GetProperty("change").GetString()).IsEqualTo("newlyhit");
+        await Assert.That(lineChange.GetProperty("beforeHits").GetInt32()).IsEqualTo(0);
+        await Assert.That(lineChange.GetProperty("afterHits").GetInt32()).IsEqualTo(3);
     }
 
-    [Fact]
-    public void FormatDiff_NoIndirectChanges_LineChangesAbsent()
+    [Test]
+    public async Task FormatDiff_NoIndirectChanges_LineChangesAbsent()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
@@ -293,11 +293,11 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatDiff(diff);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        Assert.False(file.TryGetProperty("lineChanges", out _));
+        await Assert.That(file.TryGetProperty("lineChanges", out _)).IsFalse();
     }
 
-    [Fact]
-    public void FormatDiff_ModifiedFile_CarriesPathAndAfterByValue()
+    [Test]
+    public async Task FormatDiff_ModifiedFile_CarriesPathAndAfterByValue()
     {
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0)]),
@@ -308,13 +308,13 @@ public sealed class JsonFormatterTests
 
         // path and after asserted by value: existing tests index files positionally and read
         // "before" only, leaving both writer statements deletable.
-        Assert.Equal("a.cs", file.GetProperty("path").GetString());
-        Assert.Equal(80.0, file.GetProperty("after").GetDouble());
-        Assert.Equal("modified", file.GetProperty("change").GetString());
+        await Assert.That(file.GetProperty("path").GetString()).IsEqualTo("a.cs");
+        await Assert.That(file.GetProperty("after").GetDouble()).IsEqualTo(80.0);
+        await Assert.That(file.GetProperty("change").GetString()).IsEqualTo("modified");
     }
 
-    [Fact]
-    public void FormatSnapshot_FilesArray_CarriesPerFileCounts()
+    [Test]
+    public async Task FormatSnapshot_FilesArray_CarriesPerFileCounts()
     {
         // The snapshot's files loop must actually run: an empty "files" array satisfies a
         // ValueKind.Array check, so pin the length and the first file's counts by value.
@@ -325,16 +325,16 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatSnapshot(snapshot);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
 
-        Assert.Equal(3, files.GetArrayLength());
+        await Assert.That(files.GetArrayLength()).IsEqualTo(3);
         var calc = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Calculator.cs");
-        Assert.Equal(4, calc.GetProperty("linesHit").GetInt32());
-        Assert.Equal(4, calc.GetProperty("linesTotal").GetInt32());
-        Assert.Equal(2, calc.GetProperty("branchesHit").GetInt32());
-        Assert.Equal(2, calc.GetProperty("branchesTotal").GetInt32());
+        await Assert.That(calc.GetProperty("linesHit").GetInt32()).IsEqualTo(4);
+        await Assert.That(calc.GetProperty("linesTotal").GetInt32()).IsEqualTo(4);
+        await Assert.That(calc.GetProperty("branchesHit").GetInt32()).IsEqualTo(2);
+        await Assert.That(calc.GetProperty("branchesTotal").GetInt32()).IsEqualTo(2);
     }
 
-    [Fact]
-    public void FormatSnapshot_IncludesAllMetadata()
+    [Test]
+    public async Task FormatSnapshot_IncludesAllMetadata()
     {
         var snapshot = new CoverageSnapshot(
             CommitSha: "abc123",
@@ -347,15 +347,15 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatSnapshot(snapshot);
         var root = JsonDocument.Parse(json).RootElement;
 
-        Assert.Equal("abc123", root.GetProperty("commit").GetString());
-        Assert.Equal("main", root.GetProperty("branch").GetString());
-        Assert.Equal("MyApp", root.GetProperty("project").GetString());
-        Assert.Equal("deadbeef", root.GetProperty("fileHash").GetString());
-        Assert.Equal(JsonValueKind.Object, root.GetProperty("summary").ValueKind);
-        Assert.Equal(JsonValueKind.Array, root.GetProperty("files").ValueKind);
+        await Assert.That(root.GetProperty("commit").GetString()).IsEqualTo("abc123");
+        await Assert.That(root.GetProperty("branch").GetString()).IsEqualTo("main");
+        await Assert.That(root.GetProperty("project").GetString()).IsEqualTo("MyApp");
+        await Assert.That(root.GetProperty("fileHash").GetString()).IsEqualTo("deadbeef");
+        await Assert.That(root.GetProperty("summary").ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(root.GetProperty("files").ValueKind).IsEqualTo(JsonValueKind.Array);
     }
 
-    [Fact]
+    [Test]
     public void FormatSnapshot_NullFileHash_IsOmitted()
     {
         var snapshot = new CoverageSnapshot(
@@ -366,22 +366,22 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatSnapshot(snapshot);
         var root = JsonDocument.Parse(json).RootElement;
 
-        Assert.Throws<KeyNotFoundException>(() => root.GetProperty("fileHash"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() => root.GetProperty("fileHash"));
     }
 
-    [Fact]
-    public void Format_UsesCamelCasePropertyNames()
+    [Test]
+    public async Task Format_UsesCamelCasePropertyNames()
     {
         var json = JsonFormatter.Format(Reports.Mixed);
 
-        Assert.Contains("\"lineRate\"", json);
-        Assert.Contains("\"branchRate\"", json);
-        Assert.Contains("\"totalLines\"", json);
-        Assert.Contains("\"coveredLines\"", json);
+        await Assert.That(json).Contains("\"lineRate\"");
+        await Assert.That(json).Contains("\"branchRate\"");
+        await Assert.That(json).Contains("\"totalLines\"");
+        await Assert.That(json).Contains("\"coveredLines\"");
     }
 
-    [Fact]
-    public void FormatSnapshot_WithWarnings_IncludesWarningsArray()
+    [Test]
+    public async Task FormatSnapshot_WithWarnings_IncludesWarningsArray()
     {
         // The snapshot is the payload built for remote sinks — the anomaly channel must
         // survive the pipeline boundary, with the same shape Format emits.
@@ -396,15 +396,15 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatSnapshot(snapshot);
         var warnings = JsonDocument.Parse(json).RootElement.GetProperty("warnings");
 
-        Assert.Equal(1, warnings.GetArrayLength());
-        Assert.Equal("BranchTotalMismatch", warnings[0].GetProperty("kind").GetString());
-        Assert.Equal("src/A.cs", warnings[0].GetProperty("file").GetString());
-        Assert.Equal(12, warnings[0].GetProperty("line").GetInt32());
-        Assert.Equal("Total 5 vs 7", warnings[0].GetProperty("detail").GetString());
+        await Assert.That(warnings.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(warnings[0].GetProperty("kind").GetString()).IsEqualTo("BranchTotalMismatch");
+        await Assert.That(warnings[0].GetProperty("file").GetString()).IsEqualTo("src/A.cs");
+        await Assert.That(warnings[0].GetProperty("line").GetInt32()).IsEqualTo(12);
+        await Assert.That(warnings[0].GetProperty("detail").GetString()).IsEqualTo("Total 5 vs 7");
     }
 
-    [Fact]
-    public void FormatSnapshot_NoWarnings_OmitsWarningsField()
+    [Test]
+    public async Task FormatSnapshot_NoWarnings_OmitsWarningsField()
     {
         // Absent-key-when-clean contract holds on the snapshot exactly like on Format.
         var snapshot = new CoverageSnapshot(
@@ -413,24 +413,24 @@ public sealed class JsonFormatterTests
 
         var json = JsonFormatter.FormatSnapshot(snapshot);
 
-        Assert.False(JsonDocument.Parse(json).RootElement.TryGetProperty("warnings", out _));
+        await Assert.That(JsonDocument.Parse(json).RootElement.TryGetProperty("warnings", out _)).IsFalse();
     }
 
     // ── Warnings: same null-omission contract as `lineChanges` / `uncoveredLines` ──
 
-    [Fact]
-    public void Format_NoWarnings_OmitsWarningsField()
+    [Test]
+    public async Task Format_NoWarnings_OmitsWarningsField()
     {
         // Empty Warnings → null → field absent. Same contract as `lineChanges` /
         // `uncoveredLines`. Consumers can detect a clean report with TryGetProperty.
         var json = JsonFormatter.Format(Reports.Mixed);
         var root = JsonDocument.Parse(json).RootElement;
 
-        Assert.False(root.TryGetProperty("warnings", out _));
+        await Assert.That(root.TryGetProperty("warnings", out _)).IsFalse();
     }
 
-    [Fact]
-    public void Format_WithWarnings_SerializesArrayWithKindFileLineDetail()
+    [Test]
+    public async Task Format_WithWarnings_SerializesArrayWithKindFileLineDetail()
     {
         // Each warning round-trips with the four-field shape. Pin the camelCased field
         // names so the public JSON contract is asserted explicitly.
@@ -446,11 +446,11 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.Format(report);
         var warnings = JsonDocument.Parse(json).RootElement.GetProperty("warnings").EnumerateArray().ToList();
 
-        Assert.Equal(2, warnings.Count);
-        Assert.Equal("BranchTotalMismatch", warnings[0].GetProperty("kind").GetString());
-        Assert.Equal("src/A.cs", warnings[0].GetProperty("file").GetString());
-        Assert.Equal(12, warnings[0].GetProperty("line").GetInt32());
-        Assert.Equal("Total 5 vs 7", warnings[0].GetProperty("detail").GetString());
-        Assert.Equal("MalformedConditionCoverage", warnings[1].GetProperty("kind").GetString());
+        await Assert.That(warnings.Count).IsEqualTo(2);
+        await Assert.That(warnings[0].GetProperty("kind").GetString()).IsEqualTo("BranchTotalMismatch");
+        await Assert.That(warnings[0].GetProperty("file").GetString()).IsEqualTo("src/A.cs");
+        await Assert.That(warnings[0].GetProperty("line").GetInt32()).IsEqualTo(12);
+        await Assert.That(warnings[0].GetProperty("detail").GetString()).IsEqualTo("Total 5 vs 7");
+        await Assert.That(warnings[1].GetProperty("kind").GetString()).IsEqualTo("MalformedConditionCoverage");
     }
 }

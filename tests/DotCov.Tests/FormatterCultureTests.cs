@@ -1,94 +1,72 @@
-using System.Globalization;
 using System.Text.Json;
 using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
 /// <summary>
 /// Formatter output lands in CI logs, PR summaries, and machine-parsed JSON, so its shape
 /// must not follow the host locale (a de-AT host writes 58,3 for 58.3 under current-culture
-/// formatting). Lives in the serialized <c>EnvCollection</c>: CurrentCulture is thread
-/// state, so these tests must not interleave with parallel tests on shared pool threads.
+/// formatting). CurrentCulture is thread state: each test wraps its synchronous render in a
+/// <see cref="CultureScope"/> and restores the culture before returning.
 /// </summary>
-[Collection(nameof(EnvCollection))]
 public sealed class FormatterCultureTests
 {
-    private static string InCommaDecimalCulture(Func<string> render)
+    [Test]
+    public async Task TableFormat_UnderCommaDecimalCulture_UsesDotDecimals()
     {
-        var original = CultureInfo.CurrentCulture;
-        try
-        {
-            // Clone InvariantCulture instead of loading a real locale so the test also runs
-            // under DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 (same approach as GateResultTests).
-            var commaCulture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
-            commaCulture.NumberFormat.NumberDecimalSeparator = ",";
-            commaCulture.NumberFormat.PercentDecimalSeparator = ",";
-            CultureInfo.CurrentCulture = commaCulture;
-            return render();
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = original;
-        }
+        var output = CultureScope.RenderWithCommaDecimal(() => TableFormatter.Format(Reports.Mixed));
+
+        await Assert.That(output).Contains("58.3%"); // TOTAL: 7/12 lines
+        await Assert.That(output).DoesNotContain("58,3");
     }
 
-    [Fact]
-    public void TableFormat_UnderCommaDecimalCulture_UsesDotDecimals()
-    {
-        var output = InCommaDecimalCulture(() => TableFormatter.Format(Reports.Mixed));
-
-        Assert.Contains("58.3%", output); // TOTAL: 7/12 lines
-        Assert.DoesNotContain("58,3", output);
-    }
-
-    [Fact]
-    public void TableFormatDiff_UnderCommaDecimalCulture_UsesDotDecimals()
+    [Test]
+    public async Task TableFormatDiff_UnderCommaDecimalCulture_UsesDotDecimals()
     {
         var diff = CoverageDiff.Compare(
             Reports.Single("a.cs", hit: 5, total: 10),
             Reports.Single("a.cs", hit: 8, total: 10));
 
-        var output = InCommaDecimalCulture(() => TableFormatter.FormatDiff(diff));
+        var output = CultureScope.RenderWithCommaDecimal(() => TableFormatter.FormatDiff(diff));
 
-        Assert.Contains("50.0%", output);
-        Assert.Contains("80.0%", output);
-        Assert.Contains("30.0%", output); // delta column, invariant-formatted
-        Assert.DoesNotContain(",0", output);
+        await Assert.That(output).Contains("50.0%");
+        await Assert.That(output).Contains("80.0%");
+        await Assert.That(output).Contains("30.0%"); // delta column, invariant-formatted
+        await Assert.That(output).DoesNotContain(",0");
     }
 
-    [Fact]
-    public void MarkdownFormat_UnderCommaDecimalCulture_UsesDotDecimals()
+    [Test]
+    public async Task MarkdownFormat_UnderCommaDecimalCulture_UsesDotDecimals()
     {
-        var md = InCommaDecimalCulture(() => MarkdownFormatter.Format(Reports.Mixed, threshold: 80));
+        var md = CultureScope.RenderWithCommaDecimal(() => MarkdownFormatter.Format(Reports.Mixed, threshold: 80));
 
-        Assert.Contains("**Line coverage:** 58.3% (7/12)", md);
-        Assert.DoesNotContain("58,3", md);
+        await Assert.That(md).Contains("**Line coverage:** 58.3% (7/12)");
+        await Assert.That(md).DoesNotContain("58,3");
     }
 
-    [Fact]
-    public void MarkdownFormatDiff_UnderCommaDecimalCulture_UsesDotDecimals()
+    [Test]
+    public async Task MarkdownFormatDiff_UnderCommaDecimalCulture_UsesDotDecimals()
     {
         var diff = CoverageDiff.Compare(
             Reports.Single("a.cs", hit: 5, total: 10),
             Reports.Single("a.cs", hit: 8, total: 10));
 
-        var md = InCommaDecimalCulture(() => MarkdownFormatter.FormatDiff(diff));
+        var md = CultureScope.RenderWithCommaDecimal(() => MarkdownFormatter.FormatDiff(diff));
 
-        Assert.Contains("**Overall:** 50.0% → 80.0% (+30.0%)", md);
-        Assert.DoesNotContain(",0", md);
+        await Assert.That(md).Contains("**Overall:** 50.0% → 80.0% (+30.0%)");
+        await Assert.That(md).DoesNotContain(",0");
     }
 
-    [Fact]
-    public void JsonFormat_UnderCommaDecimalCulture_ParsesAndKeepsDotDecimals()
+    [Test]
+    public async Task JsonFormat_UnderCommaDecimalCulture_ParsesAndKeepsDotDecimals()
     {
         // Utf8JsonWriter is invariant by construction — this pins the whole path anyway,
         // so a future rewrite through string formatting cannot regress silently.
-        var json = InCommaDecimalCulture(() => JsonFormatter.Format(Reports.Mixed));
+        var json = CultureScope.RenderWithCommaDecimal(() => JsonFormatter.Format(Reports.Mixed));
 
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
-        Assert.Equal(58.33, summary.GetProperty("lineRate").GetDouble());
-        Assert.DoesNotContain("58,33", json);
+        await Assert.That(summary.GetProperty("lineRate").GetDouble()).IsEqualTo(58.33);
+        await Assert.That(json).DoesNotContain("58,33");
     }
 }

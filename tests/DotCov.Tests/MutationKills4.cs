@@ -1,5 +1,4 @@
 using System.Text;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -17,8 +16,8 @@ public sealed class MutationKills4
 
     private static CoverageReport Make(params FileCoverage[] files) => new(files);
 
-    [Fact]
-    public void Parse_BareDriveRootRespellings_DedupToOneRootWithoutAmbiguityWarning()
+    [Test]
+    public async Task Parse_BareDriveRootRespellings_DedupToOneRootWithoutAmbiguityWarning()
     {
         // Kills PathIdentity.cs:33 (`root.Length >= 3` -> `> 3`). The drive-letter uppercase
         // rule needs exactly three characters for a BARE drive root ("c:/"), the shortest
@@ -35,13 +34,13 @@ public sealed class MutationKills4
             </classes></package></packages></coverage>
             """);
 
-        Assert.Equal("C:", Assert.Single(report.SourceRoots));
-        Assert.Empty(report.Warnings);
-        Assert.Equal("C:/app/main.py", Assert.Single(report.Files).Path);
+        await Assert.That(report.SourceRoots.Single()).IsEqualTo("C:");
+        await Assert.That(report.Warnings).IsEmpty();
+        await Assert.That(report.Files.Single().Path).IsEqualTo("C:/app/main.py");
     }
 
-    [Fact]
-    public void Compare_ExactlyTwoSegmentSuffixAgreement_IsAlreadyPairingEvidence()
+    [Test]
+    public async Task Compare_ExactlyTwoSegmentSuffixAgreement_IsAlreadyPairingEvidence()
     {
         // Kills CoverageDiff.cs:303 (`agree >= 2` -> `agree > 2`). Two whole trailing
         // segments are the documented minimum for the equal-roots pairing fallback: the
@@ -60,10 +59,10 @@ public sealed class MutationKills4
 
         var result = CoverageDiff.Compare(before, after);
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Modified, d.Change);
-        Assert.Equal("new/src/App.cs", d.Path);
-        Assert.Empty(result.Added);
-        Assert.Empty(result.Removed);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(d.Path).IsEqualTo("new/src/App.cs");
+        await Assert.That(result.Added).IsEmpty();
+        await Assert.That(result.Removed).IsEmpty();
     }
 }

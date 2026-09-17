@@ -5,8 +5,9 @@ namespace DotCov.Tests.Infrastructure;
 /// value on dispose. Lets <see cref="DotCov.Formatters.Ansi"/> tests exercise the
 /// real env-var precedence cascade without mocking the runtime.
 ///
-/// Tests using this MUST live in <c>EnvCollection</c> so xUnit serialises them —
-/// the process-global env table is shared across the test runner.
+/// The env table is process-global, so every test class that sets OR reads one of these
+/// variables carries <c>[NotInParallel(ProcessState.Environment)]</c>; the shared key
+/// serializes writers and readers against each other while the rest of the suite stays parallel.
 /// </summary>
 public sealed class EnvScope : IDisposable
 {
@@ -31,5 +32,9 @@ public sealed class EnvScope : IDisposable
     }
 }
 
-[Xunit.CollectionDefinition(nameof(EnvCollection), DisableParallelization = true)]
-public sealed class EnvCollection;
+/// <summary>Keys for <c>[NotInParallel]</c> constraints over process-wide state.</summary>
+public static class ProcessState
+{
+    /// <summary>Process environment variables (<c>GITHUB_STEP_SUMMARY</c>, the ANSI color cascade).</summary>
+    public const string Environment = "process-environment";
+}

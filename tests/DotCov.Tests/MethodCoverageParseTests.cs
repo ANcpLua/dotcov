@@ -1,5 +1,4 @@
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -16,38 +15,38 @@ public sealed class MethodCoverageParseTests
 
     // ── Real emitter files ────────────────────────────────────────────────────
 
-    [Fact]
-    public void ReportGenerator_TwoMethods_StayPerMethodDistinct()
+    [Test]
+    public async Task ReportGenerator_TwoMethods_StayPerMethodDistinct()
     {
         // The real coverlet/ReportGenerator shape: Add (lines 10,11 both hit, complexity 1) and
         // Div (lines 20,21,22 hit + 24 missed, complexity 2) under one class. The class-level
         // parse fuses all six lines into one file; THIS parse must keep two distinct entries.
         var methods = CoberturaParser.ParseMethodsFile($"{Corpus}/reportgenerator/Cobertura.xml");
 
-        Assert.Equal(2, methods.Count);
+        await Assert.That(methods.Count).IsEqualTo(2);
 
         var add = methods.Single(m => m.MethodName == "Add");
-        Assert.Equal("MyApp.Calculator", add.ClassName);
-        Assert.Equal("(System.Int32,System.Int32)", add.Signature);
-        Assert.Equal("/home/runner/work/app/src/MyApp/Calculator.cs", add.File);   // <source> root applied
-        Assert.Equal(10, add.StartLine);
-        Assert.Equal(11, add.EndLine);
-        Assert.Equal(2, add.LinesHit);
-        Assert.Equal(2, add.LinesTotal);
-        Assert.Equal(1, add.Complexity);
-        Assert.Equal(1.0, add.LineRate);
+        await Assert.That(add.ClassName).IsEqualTo("MyApp.Calculator");
+        await Assert.That(add.Signature).IsEqualTo("(System.Int32,System.Int32)");
+        await Assert.That(add.File).IsEqualTo("/home/runner/work/app/src/MyApp/Calculator.cs");   // <source> root applied
+        await Assert.That(add.StartLine).IsEqualTo(10);
+        await Assert.That(add.EndLine).IsEqualTo(11);
+        await Assert.That(add.LinesHit).IsEqualTo(2);
+        await Assert.That(add.LinesTotal).IsEqualTo(2);
+        await Assert.That(add.Complexity).IsEqualTo(1);
+        await Assert.That(add.LineRate).IsEqualTo(1.0);
 
         var div = methods.Single(m => m.MethodName == "Div");
-        Assert.Equal(20, div.StartLine);
-        Assert.Equal(24, div.EndLine);
-        Assert.Equal(3, div.LinesHit);
-        Assert.Equal(4, div.LinesTotal);
-        Assert.Equal(2, div.Complexity);
-        Assert.Equal(0, div.LineHits[24]);
+        await Assert.That(div.StartLine).IsEqualTo(20);
+        await Assert.That(div.EndLine).IsEqualTo(24);
+        await Assert.That(div.LinesHit).IsEqualTo(3);
+        await Assert.That(div.LinesTotal).IsEqualTo(4);
+        await Assert.That(div.Complexity).IsEqualTo(2);
+        await Assert.That(div.LineHits[24]).IsEqualTo(0);
     }
 
-    [Fact]
-    public void CoverletShape_MethodFileKey_MatchesClassLevelPath()
+    [Test]
+    public async Task CoverletShape_MethodFileKey_MatchesClassLevelPath()
     {
         // pathidentity/job-a: <source>/</source> + relative filename — the method entry's File
         // must resolve through the same root arithmetic as the class-level FileCoverage.Path,
@@ -55,47 +54,47 @@ public sealed class MethodCoverageParseTests
         var methods = CoberturaParser.ParseMethodsFile($"{Corpus}/pathidentity/job-a/coverage.cobertura.xml");
         var report = CoberturaParser.ParseFile($"{Corpus}/pathidentity/job-a/coverage.cobertura.xml");
 
-        var add = Assert.Single(methods);
-        Assert.Equal("Add", add.MethodName);
-        Assert.Equal(2, add.Complexity);           // coverlet's real per-method complexity
-        Assert.Equal(2, add.LinesHit);             // lines 10,11 hit; 12 missed
-        Assert.Equal(3, add.LinesTotal);
-        Assert.Equal(Assert.Single(report.Files).Path, add.File);
+        var add = await Assert.That(methods).HasSingleItem();
+        await Assert.That(add.MethodName).IsEqualTo("Add");
+        await Assert.That(add.Complexity).IsEqualTo(2);           // coverlet's real per-method complexity
+        await Assert.That(add.LinesHit).IsEqualTo(2);             // lines 10,11 hit; 12 missed
+        await Assert.That(add.LinesTotal).IsEqualTo(3);
+        await Assert.That(add.File).IsEqualTo(report.Files.Single().Path);
     }
 
-    [Fact]
-    public void Gcovr_PlaceholderComplexityZero_IsNotMeasured()
+    [Test]
+    public async Task Gcovr_PlaceholderComplexityZero_IsNotMeasured()
     {
         // gcovr writes complexity="0.0" on every method — a placeholder, not a measurement
         // (cyclomatic complexity is >= 1 by construction). It must surface as null, or every
         // C/C++ method would CRAP-score 0 and the gate would wave through anything.
         var methods = CoberturaParser.ParseMethodsFile($"{Corpus}/gcovr/coverage.xml");
 
-        Assert.NotEmpty(methods);
-        Assert.All(methods, m => Assert.Null(m.Complexity));
+        await Assert.That(methods).IsNotEmpty();
+        await Assert.That(methods).All(m => m.Complexity == null);
     }
 
-    [Fact]
-    public void ReferenceDtdExample_NoComplexityAttribute_IsNull()
+    [Test]
+    public async Task ReferenceDtdExample_NoComplexityAttribute_IsNull()
     {
         var methods = CoberturaParser.ParseMethodsFile($"{Corpus}/reference/cobertura-dtd-example.xml");
 
-        Assert.NotEmpty(methods);
-        Assert.All(methods, m => Assert.Null(m.Complexity));
+        await Assert.That(methods).IsNotEmpty();
+        await Assert.That(methods).All(m => m.Complexity == null);
     }
 
-    [Fact]
-    public void SampleWithoutMethodsElement_ReturnsEmpty_NotThrow()
+    [Test]
+    public async Task SampleWithoutMethodsElement_ReturnsEmpty_NotThrow()
     {
         var methods = CoberturaParser.ParseMethodsFile("Fixtures/sample.cobertura.xml");
 
-        Assert.Empty(methods);
+        await Assert.That(methods).IsEmpty();
     }
 
     // ── Builder-driven semantics ──────────────────────────────────────────────
 
-    [Fact]
-    public void ClassLevelLinesSummary_DoesNotLeakIntoMethods()
+    [Test]
+    public async Task ClassLevelLinesSummary_DoesNotLeakIntoMethods()
     {
         // The trailing class-level <lines> repeats every method line; folding it in would
         // double-attribute lines to whichever method the cursor last visited.
@@ -106,13 +105,13 @@ public sealed class MethodCoverageParseTests
                 .Line(50, hits: 0))
             .ParseMethods();
 
-        var m = Assert.Single(methods);
-        Assert.Equal(1, m.LinesTotal);
-        Assert.False(m.LineHits.ContainsKey(50));
+        var m = await Assert.That(methods).HasSingleItem();
+        await Assert.That(m.LinesTotal).IsEqualTo(1);
+        await Assert.That(m.LineHits.ContainsKey(50)).IsFalse();
     }
 
-    [Fact]
-    public void SameMethodAcrossClassBlocks_MergesPerLineWithMax()
+    [Test]
+    public async Task SameMethodAcrossClassBlocks_MergesPerLineWithMax()
     {
         // Partial classes / re-emitted blocks: same (file, class, method, signature) key must
         // union per line with Math.Max, mirroring the class-level parse.
@@ -121,15 +120,15 @@ public sealed class MethodCoverageParseTests
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 5)))
             .ParseMethods();
 
-        var m = Assert.Single(methods);
-        Assert.Equal(5, m.LineHits[1]);
-        Assert.Equal(3, m.LineHits[2]);
-        Assert.Equal(2, m.LinesHit);
-        Assert.Equal(2, m.Complexity);
+        var m = await Assert.That(methods).HasSingleItem();
+        await Assert.That(m.LineHits[1]).IsEqualTo(5);
+        await Assert.That(m.LineHits[2]).IsEqualTo(3);
+        await Assert.That(m.LinesHit).IsEqualTo(2);
+        await Assert.That(m.Complexity).IsEqualTo(2);
     }
 
-    [Fact]
-    public void DifferentSignatures_StayDistinctEntries()
+    [Test]
+    public async Task DifferentSignatures_StayDistinctEntries()
     {
         var methods = Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c
@@ -137,12 +136,12 @@ public sealed class MethodCoverageParseTests
                 .Method("M", "(System.Int32,System.Int32)", "3", m => m.Line(5, hits: 0)))
             .ParseMethods();
 
-        Assert.Equal(2, methods.Count);
-        Assert.Equal(2, methods.Select(m => m.Signature).Distinct().Count());
+        await Assert.That(methods.Count).IsEqualTo(2);
+        await Assert.That(methods.Select(m => m.Signature).Distinct().Count()).IsEqualTo(2);
     }
 
-    [Fact]
-    public void MalformedComplexity_NaNOrText_IsNull()
+    [Test]
+    public async Task MalformedComplexity_NaNOrText_IsNull()
     {
         var methods = Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c
@@ -150,11 +149,11 @@ public sealed class MethodCoverageParseTests
                 .Method("T", "()", "abc", m => m.Line(2, hits: 1)))
             .ParseMethods();
 
-        Assert.All(methods, m => Assert.Null(m.Complexity));
+        await Assert.That(methods).All(m => m.Complexity == null);
     }
 
-    [Fact]
-    public void MalformedMethodLine_NumberSkipped_HitsDegradeToZero()
+    [Test]
+    public async Task MalformedMethodLine_NumberSkipped_HitsDegradeToZero()
     {
         // Same policy as the class-level parse: an unparseable line number cannot be recorded
         // at all; an unparseable hits value degrades to 0 rather than dropping the line.
@@ -166,28 +165,28 @@ public sealed class MethodCoverageParseTests
                     .MalformedLine("7", "many")))
             .ParseMethods();
 
-        var m = Assert.Single(methods);
-        Assert.Equal(2, m.LinesTotal);   // line "abc" is unrepresentable; line 7 survives
-        Assert.Equal(3, m.LineHits[1]);
-        Assert.Equal(0, m.LineHits[7]);  // "many" degrades to 0, the line itself is kept
+        var m = await Assert.That(methods).HasSingleItem();
+        await Assert.That(m.LinesTotal).IsEqualTo(2);   // line "abc" is unrepresentable; line 7 survives
+        await Assert.That(m.LineHits[1]).IsEqualTo(3);
+        await Assert.That(m.LineHits[7]).IsEqualTo(0);  // "many" degrades to 0, the line itself is kept
     }
 
-    [Fact]
-    public void MethodWithoutLines_HasZeroRangeAndNullRate()
+    [Test]
+    public async Task MethodWithoutLines_HasZeroRangeAndNullRate()
     {
         var methods = Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("Empty", "()", "1", _ => { }))
             .ParseMethods();
 
-        var m = Assert.Single(methods);
-        Assert.Equal(0, m.StartLine);
-        Assert.Equal(0, m.EndLine);
-        Assert.Equal(0, m.LinesTotal);
-        Assert.Null(m.LineRate);
+        var m = await Assert.That(methods).HasSingleItem();
+        await Assert.That(m.StartLine).IsEqualTo(0);
+        await Assert.That(m.EndLine).IsEqualTo(0);
+        await Assert.That(m.LinesTotal).IsEqualTo(0);
+        await Assert.That(m.LineRate).IsNull();
     }
 
-    [Fact]
-    public void ParseMethodsDirectory_MergesSameMethodAcrossFiles()
+    [Test]
+    public async Task ParseMethodsDirectory_MergesSameMethodAcrossFiles()
     {
         var dir = Directory.CreateTempSubdirectory("dotcov-methods-dir-");
         try
@@ -201,10 +200,10 @@ public sealed class MethodCoverageParseTests
 
             var methods = CoberturaParser.ParseMethodsDirectory(dir.FullName, "*.cobertura.xml");
 
-            var m = Assert.Single(methods);
-            Assert.Equal(2, m.LinesHit);   // union-with-max: both lines covered across the two runs
-            Assert.Equal(1, m.LineHits[1]);
-            Assert.Equal(4, m.LineHits[2]);
+            var m = await Assert.That(methods).HasSingleItem();
+            await Assert.That(m.LinesHit).IsEqualTo(2);   // union-with-max: both lines covered across the two runs
+            await Assert.That(m.LineHits[1]).IsEqualTo(1);
+            await Assert.That(m.LineHits[2]).IsEqualTo(4);
         }
         finally
         {
@@ -212,14 +211,14 @@ public sealed class MethodCoverageParseTests
         }
     }
 
-    [Fact]
+    [Test]
     public void ParseMethodsDirectory_UnsupportedPattern_Throws()
     {
         var dir = Directory.CreateTempSubdirectory("dotcov-methods-pattern-");
         try
         {
             // Shares ParseDirectory's single pattern gate — same rejection, same message shape.
-            Assert.Throws<ArgumentException>(() =>
+            Assert.ThrowsExactly<ArgumentException>(() =>
                 CoberturaParser.ParseMethodsDirectory(dir.FullName, "sub/dir/coverage.xml"));
         }
         finally
@@ -228,15 +227,15 @@ public sealed class MethodCoverageParseTests
         }
     }
 
-    [Fact]
+    [Test]
     public void ParseMethodsPath_MissingPath_ThrowsFileNotFound()
     {
-        Assert.Throws<FileNotFoundException>(() =>
+        Assert.ThrowsExactly<FileNotFoundException>(() =>
             CoberturaParser.ParseMethodsPath("/nonexistent/nowhere.xml"));
     }
 
-    [Fact]
-    public void ParseMethodsPath_DispatchesToFileAndDirectory()
+    [Test]
+    public async Task ParseMethodsPath_DispatchesToFileAndDirectory()
     {
         // Same file-or-directory dispatch as ParsePath: both arms must land on the same parse.
         var dir = Directory.CreateTempSubdirectory("dotcov-methods-path-");
@@ -250,8 +249,8 @@ public sealed class MethodCoverageParseTests
             var viaFile = CoberturaParser.ParseMethodsPath(file);
             var viaDirectory = CoberturaParser.ParseMethodsPath(dir.FullName);
 
-            Assert.Equal("M", Assert.Single(viaFile).MethodName);
-            Assert.Equal("M", Assert.Single(viaDirectory).MethodName);
+            await Assert.That(viaFile.Single().MethodName).IsEqualTo("M");
+            await Assert.That(viaDirectory.Single().MethodName).IsEqualTo("M");
         }
         finally
         {
@@ -259,8 +258,8 @@ public sealed class MethodCoverageParseTests
         }
     }
 
-    [Fact]
-    public void ParseMethodsFile_MalformedXml_RethrowsWithPathPrefixed()
+    [Test]
+    public async Task ParseMethodsFile_MalformedXml_RethrowsWithPathPrefixed()
     {
         // Same path-prefixing rethrow contract as ParseFile, so directory aggregates name the
         // malformed report.
@@ -270,8 +269,8 @@ public sealed class MethodCoverageParseTests
             var path = Path.Combine(dir.FullName, "bad.cobertura.xml");
             File.WriteAllText(path, "<coverage><unclosed>");
 
-            var ex = Assert.Throws<System.Xml.XmlException>(() => CoberturaParser.ParseMethodsFile(path));
-            Assert.StartsWith(path, ex.Message);
+            var ex = Assert.ThrowsExactly<System.Xml.XmlException>(() => CoberturaParser.ParseMethodsFile(path));
+            await Assert.That(ex.Message).StartsWith(path);
         }
         finally
         {
@@ -279,8 +278,8 @@ public sealed class MethodCoverageParseTests
         }
     }
 
-    [Fact]
-    public void ParseMethodsDirectory_MalformedFileInDirectory_RethrowsWithPathPrefixed()
+    [Test]
+    public async Task ParseMethodsDirectory_MalformedFileInDirectory_RethrowsWithPathPrefixed()
     {
         var dir = Directory.CreateTempSubdirectory("dotcov-methods-dir-bad-");
         try
@@ -292,9 +291,9 @@ public sealed class MethodCoverageParseTests
             var bad = Path.Combine(dir.FullName, "b.cobertura.xml");
             File.WriteAllText(bad, "<coverage><packages>");
 
-            var ex = Assert.Throws<System.Xml.XmlException>(() =>
+            var ex = Assert.ThrowsExactly<System.Xml.XmlException>(() =>
                 CoberturaParser.ParseMethodsDirectory(dir.FullName, "*.cobertura.xml"));
-            Assert.StartsWith(bad, ex.Message);
+            await Assert.That(ex.Message).StartsWith(bad);
         }
         finally
         {

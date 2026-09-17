@@ -1,6 +1,6 @@
+using TUnit.Assertions.Enums;
 using System.Text;
 using DotCov.Tests.Infrastructure;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -36,72 +36,71 @@ public sealed class CorePathIdentityTests
 
     // ── <source>-root resolution (C1 / #15) ──
 
-    [Fact]
-    public void Parse_RelativeFilename_ResolvesAgainstSourceRoot()
+    [Test]
+    public async Task Parse_RelativeFilename_ResolvesAgainstSourceRoot()
     {
         var report = ParseXml(Doc(["/home/runner/work/mono/mono/services/svc-a"], "app/main.py"));
 
-        Assert.Equal("/home/runner/work/mono/mono/services/svc-a/app/main.py",
-            Assert.Single(report.Files).Path);
-        Assert.Equal("/home/runner/work/mono/mono/services/svc-a", Assert.Single(report.SourceRoots));
-        Assert.Empty(report.Warnings);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/home/runner/work/mono/mono/services/svc-a/app/main.py");
+        await Assert.That(report.SourceRoots.Single()).IsEqualTo("/home/runner/work/mono/mono/services/svc-a");
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_TrailingSlashRoot_JoinsWithoutDoubleSlash()
+    [Test]
+    public async Task Parse_TrailingSlashRoot_JoinsWithoutDoubleSlash()
     {
         // DeterministicSourcePaths emits <source>/_/</source> with repo-relative filenames.
         var report = ParseXml(Doc(["/_/"], "src/MyApp/Calculator.cs"));
 
-        Assert.Equal("/_/src/MyApp/Calculator.cs", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/_/src/MyApp/Calculator.cs");
     }
 
-    [Fact]
-    public void Parse_RelativeRoot_IsPrependedToo()
+    [Test]
+    public async Task Parse_RelativeRoot_IsPrependedToo()
     {
         // cover2cover emits relative roots like src/main/java with package-relative filenames;
         // the joined key is what distinguishes two modules' com/example/Foo.java from each other.
         var report = ParseXml(Doc(["src/main/java"], "com/example/Foo.java"));
 
-        Assert.Equal("src/main/java/com/example/Foo.java", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("src/main/java/com/example/Foo.java");
     }
 
-    [Theory]
-    [InlineData("/abs/path/F.cs", "/abs/path/F.cs")]
-    [InlineData("C:/proj/src/F.cs", "C:/proj/src/F.cs")]
-    public void Parse_AlreadyRootedFilename_IsNotPrefixed(string filename, string expected)
+    [Test]
+    [Arguments("/abs/path/F.cs", "/abs/path/F.cs")]
+    [Arguments("C:/proj/src/F.cs", "C:/proj/src/F.cs")]
+    public async Task Parse_AlreadyRootedFilename_IsNotPrefixed(string filename, string expected)
     {
         // The rooted check is manual (leading '/' or drive-letter prefix): Path.IsPathRooted
         // says "C:/x" is NOT rooted on Linux, and reports cross machines — a Windows-emitted
         // report analyzed in a Linux CI job must not get a root prepended onto C:/.
         var report = ParseXml(Doc(["/some/root"], filename));
 
-        Assert.Equal(expected, Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo(expected);
     }
 
-    [Theory]
-    [InlineData(".")]
-    [InlineData("./")]
-    public void Parse_DotSourceRoot_IsANoOp(string root)
+    [Test]
+    [Arguments(".")]
+    [Arguments("./")]
+    public async Task Parse_DotSourceRoot_IsANoOp(string root)
     {
         // grcov emits <source>.</source>; prepending "." would change every key while adding
         // no identity information.
         var report = ParseXml(Doc([root], "src/main.rs"));
 
-        Assert.Equal("src/main.rs", Assert.Single(report.Files).Path);
-        Assert.Empty(report.SourceRoots);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("src/main.rs");
+        await Assert.That(report.SourceRoots).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_BackslashSourceRoot_IsSeparatorNormalizedBeforeJoining()
+    [Test]
+    public async Task Parse_BackslashSourceRoot_IsSeparatorNormalizedBeforeJoining()
     {
         var report = ParseXml(Doc([@"C:\proj"], @"src\A.cs"));
 
-        Assert.Equal("C:/proj/src/A.cs", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("C:/proj/src/A.cs");
     }
 
-    [Fact]
-    public void Parse_NoOpRootAlongsideRealRoot_FirstDeclaredStillWins_AndWarns()
+    [Test]
+    public async Task Parse_NoOpRootAlongsideRealRoot_FirstDeclaredStillWins_AndWarns()
     {
         // coverage.py shape: <source>.</source> (the project dir) alongside a site-packages
         // root. The no-op is still the FIRST declared root, so relative filenames stay
@@ -112,79 +111,79 @@ public sealed class CorePathIdentityTests
         // this report apart from one that declared only the real root.
         var report = ParseXml(Doc([".", "/usr/lib/python3/dist-packages"], "app/main.py"));
 
-        Assert.Equal("app/main.py", Assert.Single(report.Files).Path);
-        Assert.Equal(["", "/usr/lib/python3/dist-packages"], report.SourceRoots);
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Contains("unprefixed", w.Detail);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("app/main.py");
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["", "/usr/lib/python3/dist-packages"], CollectionOrdering.Matching);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("unprefixed");
     }
 
-    [Fact]
-    public void Parse_RealRootThenNoOpRoot_ResolvesAgainstTheRealFirst_AndWarns()
+    [Test]
+    public async Task Parse_RealRootThenNoOpRoot_ResolvesAgainstTheRealFirst_AndWarns()
     {
         // Declaration order decides: with the real root first, relative filenames prefix
         // against it; the trailing no-op still counts as a second convention and warns.
         var report = ParseXml(Doc(["/repo", "."], "app/main.py"));
 
-        Assert.Equal("/repo/app/main.py", Assert.Single(report.Files).Path);
-        Assert.Equal(["/repo", ""], report.SourceRoots);
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Contains("'/repo'", w.Detail);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/app/main.py");
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["/repo", ""], CollectionOrdering.Matching);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("'/repo'");
     }
 
-    [Fact]
-    public void Parse_RepeatedNoOpRoots_AreOneEffectiveRoot_NoWarning()
+    [Test]
+    public async Task Parse_RepeatedNoOpRoots_AreOneEffectiveRoot_NoWarning()
     {
         // "." and "./" spell the same no-op; both resolve identically, so there is no
         // identity ambiguity to warn about — and the report still declares no roots,
         // byte-identical to the lone-"." behavior.
         var report = ParseXml(Doc([".", "./"], "src/main.rs"));
 
-        Assert.Equal("src/main.rs", Assert.Single(report.Files).Path);
-        Assert.Empty(report.SourceRoots);
-        Assert.Empty(report.Warnings);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("src/main.rs");
+        await Assert.That(report.SourceRoots).IsEmpty();
+        await Assert.That(report.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_DuplicateIdenticalRoots_DeduplicateWithoutWarning()
+    [Test]
+    public async Task Parse_DuplicateIdenticalRoots_DeduplicateWithoutWarning()
     {
         // ReportGenerator's merged output repeats the same <source> once per input report:
         // one distinct root, no multi-root ambiguity — and the deduplicated list keeps the
         // merge fast path against a single-root sibling.
         var report = ParseXml(Doc(["/repo", "/repo"], "src/A.cs"));
 
-        Assert.Equal("/repo/src/A.cs", Assert.Single(report.Files).Path);
-        Assert.Equal(["/repo"], report.SourceRoots);
-        Assert.Empty(report.Warnings);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/src/A.cs");
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["/repo"], CollectionOrdering.Matching);
+        await Assert.That(report.Warnings).IsEmpty();
 
         var sibling = ParseXml(Doc(["/repo"], "src/B.cs"));
-        Assert.Empty(CoverageReport.Merge(report, sibling).Warnings);
+        await Assert.That(CoverageReport.Merge(report, sibling).Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Parse_MultipleSourceRoots_FirstWinsDeterministically_AndWarns()
+    [Test]
+    public async Task Parse_MultipleSourceRoots_FirstWinsDeterministically_AndWarns()
     {
         // The analyzing machine cannot probe the disk the report came from, so with several
         // roots the first is chosen deterministically and the ambiguity is surfaced.
         var report = ParseXml(Doc(["/first", "/second"], "app/f.cs"));
 
-        Assert.Equal("/first/app/f.cs", Assert.Single(report.Files).Path);
-        Assert.Equal(["/first", "/second"], report.SourceRoots);
-        var w = Assert.Single(report.Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Contains("/first", w.Detail);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/first/app/f.cs");
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["/first", "/second"], CollectionOrdering.Matching);
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("/first");
     }
 
-    [Fact]
+    [Test]
     public async Task ParseAsync_ResolvesSourceRoots_LikeSync()
     {
         using var stream = new MemoryStream(
             Encoding.UTF8.GetBytes(Doc(["/repo/svc-a"], "app/main.py")));
         var report = await CoberturaParser.ParseAsync(stream);
 
-        Assert.Equal("/repo/svc-a/app/main.py", Assert.Single(report.Files).Path);
-        Assert.Equal(["/repo/svc-a"], report.SourceRoots);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/svc-a/app/main.py");
+        await Assert.That(report.SourceRoots).IsEquivalentTo(["/repo/svc-a"], CollectionOrdering.Matching);
     }
 
     // ── The monorepo fusion bug (#15): distinct files sharing a relative name ──
@@ -201,8 +200,8 @@ public sealed class CorePathIdentityTests
         return sb.ToString();
     }
 
-    [Fact]
-    public void Merge_SameRelativeNameUnderDifferentRoots_StaysTwoDistinctFiles()
+    [Test]
+    public async Task Merge_SameRelativeNameUnderDifferentRoots_StaysTwoDistinctFiles()
     {
         // Two DIFFERENT coverage.py files, both named app/main.py, under svc-a and svc-b.
         // Pre-fix these fused into one entry via Math.Max: 8/10 = 80% reported, svc-b's four
@@ -212,14 +211,14 @@ public sealed class CorePathIdentityTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(2, merged.Files.Count);
-        Assert.Equal(16, merged.TotalLines);
-        Assert.Equal(10, merged.TotalLinesHit);
-        Assert.Equal(0.625, merged.LineRate);
-        Assert.Equal(GateOutcome.Fail, merged.Evaluate(70).Outcome);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);
+        await Assert.That(merged.TotalLines).IsEqualTo(16);
+        await Assert.That(merged.TotalLinesHit).IsEqualTo(10);
+        await Assert.That(merged.LineRate).IsEqualTo(0.625);
+        await Assert.That(merged.Evaluate(70).Outcome).IsEqualTo(GateOutcome.Fail);
 
         // Roots union onto the merged report so a later fold still compares conventions.
-        Assert.Equal(2, merged.SourceRoots.Count);
+        await Assert.That(merged.SourceRoots.Count).IsEqualTo(2);
     }
 
     // ── The two-convention double-count (#14): same file, different path conventions ──
@@ -232,8 +231,8 @@ public sealed class CorePathIdentityTests
         Doc(["/_/"], "src/MyApp/Calculator.cs",
             """<line number="10" hits="1" branch="false" /><line number="11" hits="1" branch="false" /><line number="12" hits="0" branch="false" />""");
 
-    [Fact]
-    public void Merge_SameFileUnderTwoPathConventions_KeepsBothEntries_ButWarnsAmbiguousIdentity()
+    [Test]
+    public async Task Merge_SameFileUnderTwoPathConventions_KeepsBothEntries_ButWarnsAmbiguousIdentity()
     {
         // Coverlet default (<source>/</source> + machine-absolute filename) vs
         // DeterministicSourcePaths (<source>/_/</source> + repo-relative filename) for the
@@ -242,15 +241,15 @@ public sealed class CorePathIdentityTests
         // have, so the double-count stays — but it must be OBSERVABLE, not silent.
         var merged = CoverageReport.Merge(ParseXml(CoverletDefaultDoc()), ParseXml(DeterministicDoc()));
 
-        Assert.Equal(2, merged.Files.Count);   // honest: still double-counted
-        var w = Assert.Single(merged.Warnings);
-        Assert.Equal(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
-        Assert.Contains("/home/runner/work/app/app/src/MyApp/Calculator.cs", w.Detail);
-        Assert.Contains("/_/src/MyApp/Calculator.cs", w.Detail);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);   // honest: still double-counted
+        var w = await Assert.That(merged.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("/home/runner/work/app/app/src/MyApp/Calculator.cs");
+        await Assert.That(w.Detail).Contains("/_/src/MyApp/Calculator.cs");
     }
 
-    [Fact]
-    public void Merge_SameRootsOnBothSides_NeverScansForAmbiguity()
+    [Test]
+    public async Task Merge_SameRootsOnBothSides_NeverScansForAmbiguity()
     {
         // Partitioned test runs from the same pipeline (same roots) routinely cover disjoint
         // same-named files — that is not ambiguity, and must produce zero warning noise.
@@ -259,21 +258,21 @@ public sealed class CorePathIdentityTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(2, merged.Files.Count);
-        Assert.Empty(merged.Warnings);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);
+        await Assert.That(merged.Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Merge_HandBuiltReportsWithoutRoots_NeverScansForAmbiguity()
+    [Test]
+    public async Task Merge_HandBuiltReportsWithoutRoots_NeverScansForAmbiguity()
     {
         var a = new CoverageReport([new FileCoverage("x/Program.cs", 1, 2, 0, 0)]);
         var b = new CoverageReport([new FileCoverage("y/Program.cs", 2, 2, 0, 0)]);
 
-        Assert.Empty(CoverageReport.Merge(a, b).Warnings);
+        await Assert.That(CoverageReport.Merge(a, b).Warnings).IsEmpty();
     }
 
-    [Fact]
-    public void Merge_RootSpellingVariants_TakeTheSameRootsFastPath()
+    [Test]
+    public async Task Merge_RootSpellingVariants_TakeTheSameRootsFastPath()
     {
         // Drive-letter case and a trailing slash are spellings, not identities: partitioned
         // Windows CI jobs (c:\agent\work\repo vs C:/agent/work/repo/) key their files under
@@ -284,13 +283,13 @@ public sealed class CorePathIdentityTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(2, merged.Files.Count);
-        Assert.Empty(merged.Warnings);
-        Assert.Equal(["C:/agent/work/repo"], merged.SourceRoots);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);
+        await Assert.That(merged.Warnings).IsEmpty();
+        await Assert.That(merged.SourceRoots).IsEquivalentTo(["C:/agent/work/repo"], CollectionOrdering.Matching);
     }
 
-    [Fact]
-    public void Merge_HandBuiltRootSpellingVariants_CompareByNormalizedIdentity()
+    [Test]
+    public async Task Merge_HandBuiltRootSpellingVariants_CompareByNormalizedIdentity()
     {
         // Programmatically constructed reports never pass through the parser's root
         // normalization; the merge-side comparison must normalize for itself rather than
@@ -298,28 +297,28 @@ public sealed class CorePathIdentityTests
         var a = new CoverageReport([new FileCoverage("x/Util.cs", 1, 2, 0, 0)]) { SourceRoots = [@"c:\repo"] };
         var b = new CoverageReport([new FileCoverage("y/Util.cs", 2, 2, 0, 0)]) { SourceRoots = ["C:/repo/"] };
 
-        Assert.Empty(CoverageReport.Merge(a, b).Warnings);
+        await Assert.That(CoverageReport.Merge(a, b).Warnings).IsEmpty();
     }
 
     // ── Diff: unique-file-name pairing fallback (C1) and the migration effect ──
 
-    [Fact]
-    public void Diff_SameFileUnderTwoPathConventions_ReadsUnchanged_NotRemovedPlusAdded()
+    [Test]
+    public async Task Diff_SameFileUnderTwoPathConventions_ReadsUnchanged_NotRemovedPlusAdded()
     {
         // before = Coverlet default convention, after = DeterministicSourcePaths. Identical
         // coverage of the same file must diff as Unchanged via the unique-file-name pairing,
         // not as a -66.67 removal plus a +66.67 addition.
         var result = CoverageDiff.Compare(ParseXml(CoverletDefaultDoc()), ParseXml(DeterministicDoc()));
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Unchanged, d.Change);
-        Assert.Equal("/_/src/MyApp/Calculator.cs", d.Path);   // reported under the After identity
-        Assert.Empty(result.Added);
-        Assert.Empty(result.Removed);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Unchanged);
+        await Assert.That(d.Path).IsEqualTo("/_/src/MyApp/Calculator.cs");   // reported under the After identity
+        await Assert.That(result.Added).IsEmpty();
+        await Assert.That(result.Removed).IsEmpty();
     }
 
-    [Fact]
-    public void Diff_PreSourceRootSnapshotAgainstResolvedReport_PairsAsTheSameFile()
+    [Test]
+    public async Task Diff_PreSourceRootSnapshotAgainstResolvedReport_PairsAsTheSameFile()
     {
         // The migration effect of source-root resolution: FileCoverage.Path values change
         // (e.g. 'src/MyApp/Calculator.cs' → '/_/src/MyApp/Calculator.cs'), so a snapshot
@@ -331,18 +330,18 @@ public sealed class CorePathIdentityTests
 
         var result = CoverageDiff.Compare(preFixSnapshot, postFix);
 
-        var d = Assert.Single(result.Files);
-        Assert.Equal(FileChangeKind.Modified, d.Change);
-        Assert.NotNull(d.Before);
-        Assert.NotNull(d.After);
-        Assert.Equal(1.0 / 3, d.Before!.Value, precision: 10);
-        Assert.Equal(2.0 / 3, d.After!.Value, precision: 10);
-        Assert.Empty(result.Added);
-        Assert.Empty(result.Removed);
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(d.Before).IsNotNull();
+        await Assert.That(d.After).IsNotNull();
+        await Assert.That(d.Before!.Value).IsEqualTo(1.0 / 3).Within(1e-10);
+        await Assert.That(d.After!.Value).IsEqualTo(2.0 / 3).Within(1e-10);
+        await Assert.That(result.Added).IsEmpty();
+        await Assert.That(result.Removed).IsEmpty();
     }
 
-    [Fact]
-    public void Diff_AmbiguousFileNameTail_StaysRemovedPlusAdded()
+    [Test]
+    public async Task Diff_AmbiguousFileNameTail_StaysRemovedPlusAdded()
     {
         // Two leftover Before files share the name main.py: pairing either with the single
         // leftover After file would be a guess (and would re-fuse the monorepo shape), so
@@ -355,12 +354,12 @@ public sealed class CorePathIdentityTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Equal(2, result.Removed.Count());
-        Assert.Single(result.Added);
+        await Assert.That(result.Removed.Count()).IsEqualTo(2);
+        await Assert.That(result.Added).HasSingleItem();
     }
 
-    [Fact]
-    public void Diff_FileNameTailMatchesOnWholeSegmentsOnly()
+    [Test]
+    public async Task Diff_FileNameTailMatchesOnWholeSegmentsOnly()
     {
         // 'MyCalculator.cs' ends with the raw string "Calculator.cs" but is a different file
         // name — the fallback compares whole final path segments, so no pairing happens.
@@ -369,14 +368,14 @@ public sealed class CorePathIdentityTests
 
         var result = CoverageDiff.Compare(before, after);
 
-        Assert.Single(result.Removed);
-        Assert.Single(result.Added);
+        await Assert.That(result.Removed).HasSingleItem();
+        await Assert.That(result.Added).HasSingleItem();
     }
 
     // ── Ordinal keying with normalized keys (C2) ──
 
-    [Fact]
-    public void Merge_CaseDistinctFilenames_StayDistinctAcrossReports()
+    [Test]
+    public async Task Merge_CaseDistinctFilenames_StayDistinctAcrossReports()
     {
         // gcovr shape: xt_TCPMSS.c (fully hit) and xt_tcpmss.c (untouched) coexist in
         // linux/net/netfilter. Cross-report merge must not fuse them either.
@@ -389,46 +388,46 @@ public sealed class CorePathIdentityTests
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal(2, merged.Files.Count);
-        Assert.Equal(0.5, merged.LineRate);
+        await Assert.That(merged.Files.Count).IsEqualTo(2);
+        await Assert.That(merged.LineRate).IsEqualTo(0.5);
     }
 
-    [Fact]
-    public void Parse_LowercaseDriveLetter_NormalizesToUppercaseKey()
+    [Test]
+    public async Task Parse_LowercaseDriveLetter_NormalizesToUppercaseKey()
     {
         // Windows toolchains disagree on drive-letter casing; Ordinal keying gets its
         // Windows cross-report stability from normalizing the KEY, not from a
         // case-insensitive comparer (a Dictionary has one comparer for every key).
         var report = ParseXml(Doc([], "c:/proj/src/A.cs"));
 
-        Assert.Equal("C:/proj/src/A.cs", Assert.Single(report.Files).Path);
+        await Assert.That(report.Files.Single().Path).IsEqualTo("C:/proj/src/A.cs");
     }
 
-    [Fact]
-    public void Merge_DriveLetterCaseAndSeparatorVariants_UnionAsOneFile()
+    [Test]
+    public async Task Merge_DriveLetterCaseAndSeparatorVariants_UnionAsOneFile()
     {
         var a = ParseXml(Doc([], @"c:\proj\src\A.cs"));
         var b = ParseXml(Doc([], "C:/proj/src/A.cs"));
 
         var merged = CoverageReport.Merge(a, b);
 
-        Assert.Equal("C:/proj/src/A.cs", Assert.Single(merged.Files).Path);
+        await Assert.That(merged.Files.Single().Path).IsEqualTo("C:/proj/src/A.cs");
     }
 
-    [Fact]
-    public void Exclude_PreservesSourceRoots()
+    [Test]
+    public async Task Exclude_PreservesSourceRoots()
     {
         var report = ParseXml(Doc(["/repo"], "src/A.cs"));
 
         var filtered = report.Exclude(["nothing-matches"]);
 
-        Assert.Equal(["/repo"], filtered.SourceRoots);
+        await Assert.That(filtered.SourceRoots).IsEquivalentTo(["/repo"], CollectionOrdering.Matching);
     }
 
     // ── run-004 regression pins ──
 
-    [Fact]
-    public void Merge_HandBuiltUnnormalizedRoots_DedupesByNormalizedIdentity()
+    [Test]
+    public async Task Merge_HandBuiltUnnormalizedRoots_DedupesByNormalizedIdentity()
     {
         // Parser-path roots are already normalized; hand-built reports are not. A raw-spelling
         // union kept both c:\repo and C:/repo/, so every later merge saw "different" roots
@@ -438,9 +437,9 @@ public sealed class CorePathIdentityTests
 
         var once = CoverageReport.Merge(a, b);
 
-        Assert.Single(once.SourceRoots);
+        await Assert.That(once.SourceRoots).HasSingleItem();
 
         var again = CoverageReport.Merge(once, b);
-        Assert.Single(again.SourceRoots);
+        await Assert.That(again.SourceRoots).HasSingleItem();
     }
 }

@@ -1,5 +1,4 @@
 using DotCov.Formatters;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -12,24 +11,25 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class FormatterPenBoundaryTests
 {
-    [Fact]
-    public void MovementEpsilon_MatchesTheLiteralUsedByTheBoundaryTheory()
+    [Test]
+    public async Task MovementEpsilon_MatchesTheLiteralUsedByTheBoundaryTheory()
     {
         // InlineData needs compile-time constants, so the theory below uses literals; this
         // pin makes a change to the constant fail loudly here instead of silently defusing
         // the boundary cases.
-        Assert.Equal(0.0001, CoverageDiff.MovementEpsilon);
+        var epsilon = CoverageDiff.MovementEpsilon;
+        await Assert.That(epsilon).IsEqualTo(0.0001);
     }
 
-    [Theory]
-    [InlineData(0.0001, "\e[32m")]    // exactly +epsilon → movement → green
-    [InlineData(-0.0001, "\e[31m")]   // exactly -epsilon → movement → red
-    [InlineData(0.00005, "\e[2m")]    // inside the noise band → dim
-    [InlineData(-0.00005, "\e[2m")]
-    public void Delta_AtMovementEpsilonBoundary_AgreesWithDiffClassification(double delta, string expectedPrefix)
+    [Test]
+    [Arguments(0.0001, "\e[32m")]    // exactly +epsilon → movement → green
+    [Arguments(-0.0001, "\e[31m")]   // exactly -epsilon → movement → red
+    [Arguments(0.00005, "\e[2m")]    // inside the noise band → dim
+    [Arguments(-0.00005, "\e[2m")]
+    public async Task Delta_AtMovementEpsilonBoundary_AgreesWithDiffClassification(double delta, string expectedPrefix)
     {
         var pen = new AnsiPen(enabled: true);
 
-        Assert.StartsWith(expectedPrefix, pen.Delta("X", delta));
+        await Assert.That(pen.Delta("X", delta)).StartsWith(expectedPrefix);
     }
 }

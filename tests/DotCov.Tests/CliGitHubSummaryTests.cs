@@ -1,6 +1,5 @@
 using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
-using Xunit;
 
 namespace DotCov.Tests;
 
@@ -8,9 +7,9 @@ namespace DotCov.Tests;
 /// Pins --github-summary behavior: the badge must derive from the same GateResult as the exit
 /// code (a branch-gate failure once exited 1 while the summary showed ✅), the summary is
 /// written on pass AND fail, and a bad GITHUB_STEP_SUMMARY path degrades to a warning instead
-/// of aborting the command. Env-var dependent, so serialized via <see cref="EnvCollection"/>.
+/// of aborting the command. Env-var dependent, so serialized under <see cref="ProcessState.Environment"/>.
 /// </summary>
-[Collection(nameof(EnvCollection))]
+[NotInParallel(ProcessState.Environment)]
 public sealed class CliGitHubSummaryTests : IDisposable
 {
     private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("dotcov-cli-summary-");
@@ -41,7 +40,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
     private string HalfCovered() => WriteFixture("half.cobertura.xml", Cobertura.NewDoc()
         .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0)));
 
-    [Fact]
+    [Test]
     public async Task Check_BranchGateFailure_SummaryShowsFailBadge()
     {
         // The false-green regression: exit 1 for a branch-gate failure must not pair with a ✅
@@ -51,16 +50,16 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var (code, _, _) = await Run(
             "check", BranchHalf(), "--min-line", "50", "--min-branch", "90", "--github-summary");
 
-        Assert.Equal(1, code);
+        await Assert.That(code).IsEqualTo(1);
         var summary = File.ReadAllText(SummaryPath);
-        Assert.Contains("## Coverage Report ❌", summary);
+        await Assert.That(summary).Contains("## Coverage Report ❌");
         // Verdict line comes from MarkdownFormatter.Format(report, gate) — backticked and
         // built from the same GateResult as the exit code.
-        Assert.Contains("`FAIL:", summary);
-        Assert.Contains("branch coverage below threshold", summary);
+        await Assert.That(summary).Contains("`FAIL:");
+        await Assert.That(summary).Contains("branch coverage below threshold");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_PassingGate_StillWritesSummary()
     {
         // Green builds keep their coverage summary — previously the pass path returned before
@@ -69,13 +68,13 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("check", HalfCovered(), "--min-line", "40", "--github-summary");
 
-        Assert.Equal(0, code);
+        await Assert.That(code).IsEqualTo(0);
         var summary = File.ReadAllText(SummaryPath);
-        Assert.Contains("## Coverage Report ✅", summary);
-        Assert.Contains("`PASS:", summary);
+        await Assert.That(summary).Contains("## Coverage Report ✅");
+        await Assert.That(summary).Contains("`PASS:");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_NoData_SummaryShowsWarningBadge()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
@@ -83,11 +82,11 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("check", empty, "--min-line", "80", "--github-summary");
 
-        Assert.Equal(1, code);
-        Assert.Contains("## Coverage Report ⚠️", File.ReadAllText(SummaryPath));
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(File.ReadAllText(SummaryPath)).Contains("## Coverage Report ⚠️");
     }
 
-    [Fact]
+    [Test]
     public async Task Check_FailingRate_SummaryFloorsBodyToMatchVerdict()
     {
         // 1999/2500 = 79.96% under min-line 80: the verdict line floors to 79.9%, and the
@@ -98,17 +97,17 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("check", path, "--min-line", "80", "--github-summary");
 
-        Assert.Equal(1, code);
+        await Assert.That(code).IsEqualTo(1);
         var summary = File.ReadAllText(SummaryPath);
-        Assert.Contains("## Coverage Report ❌", summary);
-        Assert.Contains("FAIL", summary);
-        Assert.Contains("**Line coverage:** 79.9% (1999/2500)", summary);
-        Assert.Contains("| `src/F.cs` | 1999/2500 | 79.9% |", summary);
-        Assert.Contains("**Threshold:** line 80%, branch 0%", summary);
-        Assert.DoesNotContain("80.0%", summary);
+        await Assert.That(summary).Contains("## Coverage Report ❌");
+        await Assert.That(summary).Contains("FAIL");
+        await Assert.That(summary).Contains("**Line coverage:** 79.9% (1999/2500)");
+        await Assert.That(summary).Contains("| `src/F.cs` | 1999/2500 | 79.9% |");
+        await Assert.That(summary).Contains("**Threshold:** line 80%, branch 0%");
+        await Assert.That(summary).DoesNotContain("80.0%");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_FailingGate_SummaryShowsFailBadgeAndVerdict()
     {
         // Same no-false-green contract as check: the badge and the backticked verdict derive
@@ -119,13 +118,13 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("crap", path, "--github-summary");
 
-        Assert.Equal(1, code);
+        await Assert.That(code).IsEqualTo(1);
         var summary = File.ReadAllText(SummaryPath);
-        Assert.Contains("## CRAP Report ❌", summary);
-        Assert.Contains("`FAIL: worst CRAP 12.0 (max 6)", summary);
+        await Assert.That(summary).Contains("## CRAP Report ❌");
+        await Assert.That(summary).Contains("`FAIL: worst CRAP 12.0 (max 6)");
     }
 
-    [Fact]
+    [Test]
     public async Task Crap_PassingGate_StillWritesSummary()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
@@ -134,49 +133,49 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("crap", path, "--github-summary");
 
-        Assert.Equal(0, code);
+        await Assert.That(code).IsEqualTo(0);
         var summary = File.ReadAllText(SummaryPath);
-        Assert.Contains("## CRAP Report ✅", summary);
-        Assert.Contains("`PASS:", summary);
+        await Assert.That(summary).Contains("## CRAP Report ✅");
+        await Assert.That(summary).Contains("`PASS:");
     }
 
-    [Fact]
+    [Test]
     public async Task Report_WritesSummary()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
 
         var (code, _, _) = await Run("report", HalfCovered(), "--github-summary");
 
-        Assert.Equal(0, code);
-        Assert.Contains("## Coverage Report", File.ReadAllText(SummaryPath));
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(File.ReadAllText(SummaryPath)).Contains("## Coverage Report");
     }
 
-    [Fact]
+    [Test]
     public async Task InvalidSummaryPath_WarnsAndPreservesExitCode()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", "/nonexistent-dir-dotcov-tests/sum.md"));
 
         var (reportCode, _, reportErr) = await Run("report", HalfCovered(), "--github-summary");
-        Assert.Equal(0, reportCode);
-        Assert.Contains("warning: could not write GITHUB_STEP_SUMMARY", reportErr);
+        await Assert.That(reportCode).IsEqualTo(0);
+        await Assert.That(reportErr).Contains("warning: could not write GITHUB_STEP_SUMMARY");
 
         // The check failure path must keep its clean exit 1, not abort before returning it.
         var (checkCode, _, checkErr) = await Run(
             "check", HalfCovered(), "--min-line", "90", "--github-summary");
-        Assert.Equal(1, checkCode);
-        Assert.Contains("FAIL", checkErr);
-        Assert.Contains("warning: could not write GITHUB_STEP_SUMMARY", checkErr);
-        Assert.DoesNotContain("Unhandled exception", checkErr);
+        await Assert.That(checkCode).IsEqualTo(1);
+        await Assert.That(checkErr).Contains("FAIL");
+        await Assert.That(checkErr).Contains("warning: could not write GITHUB_STEP_SUMMARY");
+        await Assert.That(checkErr).DoesNotContain("Unhandled exception");
     }
 
-    [Fact]
+    [Test]
     public async Task EnvVarUnset_FlagIsNoOp()
     {
         using var env = EnvScope.Clear("GITHUB_STEP_SUMMARY");
 
         var (code, _, _) = await Run("report", HalfCovered(), "--github-summary");
 
-        Assert.Equal(0, code);
-        Assert.False(File.Exists(SummaryPath));
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(File.Exists(SummaryPath)).IsFalse();
     }
 }
