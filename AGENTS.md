@@ -10,6 +10,9 @@ For requested code reviews, load
 [$behavioral-review](.agents/skills/behavioral-review/SKILL.md).
 Keep project commands here, not in the reusable skill.
 
+For workflow edits, use [$dotcov-ci-workflows](.agents/skills/dotcov-ci-workflows/SKILL.md).
+For release preparation or publication, use [$dotcov-release](.agents/skills/dotcov-release/SKILL.md).
+
 ## Code Review Rules
 
 - Flag successful gates without a measured pass. Missing inputs, `NoData`, and
