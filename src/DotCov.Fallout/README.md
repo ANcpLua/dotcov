@@ -6,6 +6,19 @@
 Coverage reporting and threshold gating for [Fallout](https://fallout.build) builds — one
 interface, no target wiring.
 
+## Migrating from DotCov.Nuke
+
+Version 1.0 replaces `DotCov.Nuke` with this package; it is not a NUKE compatibility
+shim. First migrate your build with the
+[Fallout migration guide](https://github.com/Fallout-build/Fallout/blob/develop/docs/Migration/from-nuke.md),
+then replace the `DotCov.Nuke` package reference with `DotCov.Fallout` version
+`1.0.0` and change `using DotCov.Nuke;` to `using DotCov.Fallout;`.
+Keep `ICoverageReport` on your `FalloutBuild`. Existing `DotCov.Nuke` 0.x packages
+remain separate and do not automatically redirect to this package.
+
+See the [1.0 migration notes](https://github.com/ANcpLua/dotcov/blob/main/docs/releases/1.0.0.md)
+for the accompanying parser API changes.
+
 ## Getting started
 
 ```bash
@@ -62,7 +75,7 @@ does not fail an otherwise passing gate. Percentages are invariant-formatted, so
 `62.0%` on every host, never `62,0%`.
 
 Parsing comes from [DotCov](https://www.nuget.org/packages/DotCov/): streaming `XmlReader`,
-no full-DOM load, DTDs ignored and never resolved, bounded memory.
+no full-DOM load, DTDs prohibited and external resolution disabled, bounded memory.
 
 ## Also in this family
 

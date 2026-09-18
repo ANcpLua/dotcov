@@ -20,6 +20,9 @@ dotcov check TestResults/ --min-line 80
 | [![DotCov](https://img.shields.io/nuget/v/DotCov?style=flat-square&label=DotCov&color=0891B2)](https://www.nuget.org/packages/DotCov/) | Your own code. Zero package references, AOT-clean | `dotnet add package DotCov` |
 | [![DotCov.Fallout](https://img.shields.io/nuget/v/DotCov.Fallout?style=flat-square&label=DotCov.Fallout&color=0891B2)](https://www.nuget.org/packages/DotCov.Fallout/) | Fallout builds | `fallout :add-package DotCov.Fallout` |
 
+Upgrading from 0.x? See the [1.0 migration notes](docs/releases/1.0.0.md) for
+the `DotCov.Nuke` → `DotCov.Fallout` replacement and parser API changes.
+
 ---
 
 ## Fail the build under 80%
