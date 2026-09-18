@@ -1,0 +1,17 @@
+--coverlet
+--coverlet-output-format
+cobertura
+--coverlet-file-prefix
+dotcov
+--coverlet-include
+[DotCov]*
+--coverlet-include
+[DotCov.Tool]*
+--coverlet-include
+[DotCov.Fallout]*
+--coverlet-exclude-by-attribute
+System.Runtime.CompilerServices.CompilerGeneratedAttribute
+--coverlet-exclude-by-attribute
+System.CodeDom.Compiler.GeneratedCodeAttribute
+--coverlet-exclude-by-file
+**/obj/**/*.cs

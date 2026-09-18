@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <FalloutRootDirectory>..</FalloutRootDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Fallout.Common" />
+    <ProjectReference Include="../src/DotCov.Tool/DotCov.Tool.csproj" />
+  </ItemGroup>
+</Project>

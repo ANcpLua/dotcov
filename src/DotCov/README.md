@@ -31,7 +31,7 @@ if (!gate.IsPass)
 ```
 
 `ReportResolver.Resolve` takes a file or a directory; a directory is searched for
-`**/coverage.cobertura.xml` (pass a `ReportPattern` to change that) and `Parse` merges every
+`**/*cobertura*.xml` (pass a `ReportPattern` to change that) and `Parse` merges every
 match, so a sharded test matrix needs no merge step. An existing directory with no match yields
 no inputs and therefore an empty report; a missing path throws.
 

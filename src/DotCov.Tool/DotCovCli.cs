@@ -307,7 +307,7 @@ public static class DotCovCli
 
     static int Help(TextWriter stdout)
     {
-        stdout.WriteLine("""
+        stdout.WriteLine($$"""
             dotcov - Cobertura coverage toolkit
 
             Commands:
@@ -329,12 +329,12 @@ public static class DotCovCli
                                         (e.g. --keep Program.cs to measure a CLI tool's entry point)
               --pattern <glob>          Report filename to scan directories for: 'filename'
                                         (top level only) or '**/filename' (recursive)
-                                        (default **/coverage.cobertura.xml)
+                                        (default {{ReportPattern.DefaultText}})
               --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
               --upload <url>            POST JSON payload to any endpoint
               --github-summary          Write markdown to $GITHUB_STEP_SUMMARY
 
-            <path> can be a file or directory. Directories are scanned for **/coverage.cobertura.xml;
+            <path> can be a file or directory. Directories are scanned for {{ReportPattern.DefaultText}};
             override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
 
             Exit codes:

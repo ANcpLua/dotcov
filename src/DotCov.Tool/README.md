@@ -15,17 +15,17 @@ dotnet tool install -g DotCov.Tool
 
 ```bash
 dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
-dotcov check TestResults/ --pattern "**/coverage.cobertura.*.xml" --min-line 80 --min-branch 60 --exclude-generated
+dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
 ```
 
 ```
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file: `dotcov` globs `**/coverage.cobertura.xml` beneath it (hidden
+Pass the directory, not a file: `dotcov` globs `**/*cobertura*.xml` beneath it (hidden
 directories included) and merges every match, so a sharded test matrix needs no merge step.
-coverlet.MTP timestamps its file name (`coverage.cobertura.<timestamp>.xml`), gcovr and coverage.py
-name theirs `coverage.xml` — point at them with `--pattern`.
+Timestamped coverlet.MTP files match the default. For generic names such as gcovr's
+`coverage.xml`, select the filename explicitly with `--pattern`.
 
 ## Commands
 
@@ -84,7 +84,7 @@ write none, pass `--metrics` from `dotnet msbuild /t:Metrics`
 |---|---|
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, state machines, `Program.cs` |
 | `--keep <subs>` | Comma-separated substrings exempt from the above |
-| `--pattern <glob>` | Filename to scan for. Default `**/coverage.cobertura.xml` |
+| `--pattern <glob>` | Filename to scan for. Default `**/*cobertura*.xml`, including timestamped MTP reports |
 | `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
 | `--format` | `table`, `json`, `md` |
 | `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY` |

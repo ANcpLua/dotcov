@@ -48,9 +48,9 @@ public sealed class ReportPatternTests
     }
 
     [Test]
-    public async Task Default_IsTheRecursiveCoverletName()
+    public async Task Default_IsARecursiveCoberturaPattern()
     {
-        await Assert.That(ReportPattern.Default.FileName).IsEqualTo("coverage.cobertura.xml");
+        await Assert.That(ReportPattern.Default.FileName).IsEqualTo("*cobertura*.xml");
         await Assert.That(ReportPattern.Default.Recursive).IsTrue();
         await Assert.That(ReportPattern.Default.ToString()).IsEqualTo(ReportPattern.DefaultText);
         await Assert.That(ReportPattern.Parse(ReportPattern.DefaultText)).IsEqualTo(ReportPattern.Default);

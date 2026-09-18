@@ -1,0 +1,6 @@
+interface:
+  display_name: "Behavioral Code Review"
+  short_description: "Review behavior and the tests protecting its contract"
+  default_prompt: "Use $behavioral-review to review the requested changes against this project's contracts and report actionable findings with evidence."
+policy:
+  allow_implicit_invocation: true

@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/build/">
+    <Project Path="build/DotCov.Build.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/DotCov.Fallout/DotCov.Fallout.csproj" />
     <Project Path="src/DotCov.Tool/DotCov.Tool.csproj" />

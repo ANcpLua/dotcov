@@ -26,17 +26,17 @@ dotcov check TestResults/ --min-line 80
 
 ```yaml
 - run: dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
-- run: dotcov check TestResults/ --pattern "**/coverage.cobertura.*.xml" --min-line 80 --min-branch 60 --exclude-generated
+- run: dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
 ```
 
 ```console
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file — dotcov globs `**/coverage.cobertura.xml` beneath it (hidden
+Pass the directory, not a file — dotcov globs `**/*cobertura*.xml` beneath it (hidden
 directories included) and merges every match, so a sharded test matrix needs no merge step.
-coverlet.MTP timestamps its file name, hence the `--pattern` above; `coverlet.collector` output
-matches the default. Below threshold it prints the
+Both timestamped coverlet.MTP files and classic `coverage.cobertura.xml` files match the
+default. Below threshold it prints the
 offending files and exits `1`.
 
 **Fails closed.** A run that measured *nothing* also exits `1` (`NODATA:`), as does a run where
@@ -169,7 +169,7 @@ Globs `RootDirectory / "TestResults"`, merges, renders, writes the step summary,
 threshold. Attaches to `ICompile` through `TryDependsOn`, so inheriting it is optional.
 Parameters: `--coverage-min-line` (80), `--coverage-min-branch` (0), `--coverage-format`
 (`table`), `--coverage-exclude-generated-param` (false), `--coverage-pattern`
-(`**/coverage.cobertura.xml`), `--coverage-max-chars-param` (50000000). Every value is validated
+(`**/*cobertura*.xml`), `--coverage-max-chars-param` (50000000). Every value is validated
 once, up front. Override `CoverageSearchDirectory` to point elsewhere.
 
 ## Build it into your own tool
@@ -212,7 +212,7 @@ every public type is documented there.
 |---|---|
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, state machines, `Program.cs` |
 | `--keep <subs>` | Comma-separated substrings exempt from the above (`--keep Program.cs`) |
-| `--pattern <glob>` | Filename to scan for: `name` or `**/name`. Default `**/coverage.cobertura.xml` (gcovr and coverage.py write `coverage.xml`) |
+| `--pattern <glob>` | Filename to scan for: `name` or `**/name`. Default `**/*cobertura*.xml`, including timestamped MTP reports (use `**/coverage.xml` for generic gcovr/coverage.py names) |
 | `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
 | `--format` | `table` · `json` · `md` |
 | `--threshold <n>` | `report` only: highlight files below n% |

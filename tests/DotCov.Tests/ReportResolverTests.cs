@@ -51,6 +51,21 @@ public sealed class ReportResolverTests : IDisposable
     // ── Directories ───────────────────────────────────────────────────────────
 
     [Test]
+    [Arguments("coverage.cobertura.xml")]
+    [Arguments("coverage.cobertura.170926234734218.xml")]
+    [Arguments("dotcov.coverage.cobertura.170926234734218.xml")]
+    [Arguments("test-run.cobertura.xml")]
+    public async Task Resolve_DefaultPattern_FindsClassicAndTimestampedReports(string name)
+    {
+        var report = _ws.Write($"run/{name}", Doc("a.cs"));
+        _ws.Write("run/coverage.json", "{}");
+        _ws.Write("run/test-results.xml", "<results />");
+
+        await Assert.That(Names(ReportResolver.Resolve(_ws.Root)))
+            .IsEquivalentTo([report], CollectionOrdering.Matching);
+    }
+
+    [Test]
     public async Task Resolve_DirectoryWithoutMatches_YieldsEmptySet()
     {
         _ws.Write("notes.txt", "not a report");

@@ -70,7 +70,7 @@ jobs:
         with:
           global-json-file: global.json
       # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP: the same Coverlet
-      # instrumentation as before, configured explicitly here instead of via runsettings.
+      # instrumentation as before, configured in tests/coverage.rsp instead of via runsettings.
       # Compiler-generated async/iterator scaffolding and obj/ source-generator output are
       # excluded so phantom branches cannot cap coverage; the include filters keep Fallout's
       # own (pdb-shipping) assemblies out of the measurement. The file lands in TestResults as
@@ -78,12 +78,7 @@ jobs:
       - name: Test
         run: >-
           dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
-          --results-directory TestResults
-          --coverlet --coverlet-output-format cobertura --coverlet-file-prefix dotcov
-          --coverlet-include "[DotCov]*" --coverlet-include "[DotCov.Tool]*" --coverlet-include "[DotCov.Fallout]*"
-          --coverlet-exclude-by-attribute System.Runtime.CompilerServices.CompilerGeneratedAttribute
-          --coverlet-exclude-by-attribute System.CodeDom.Compiler.GeneratedCodeAttribute
-          --coverlet-exclude-by-file "**/obj/**/*.cs"
+          --results-directory TestResults "@tests/coverage.rsp"
         env:
           CI: true
       # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written

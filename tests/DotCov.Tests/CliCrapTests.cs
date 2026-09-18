@@ -99,7 +99,7 @@ public sealed class CliCrapTests : IDisposable
     public async Task Crap_DirectoryInput_AggregatesLikeReport()
     {
         // The same directory dispatch as report/check: point crap at a TestResults-style
-        // directory and the default **/coverage.cobertura.xml pattern finds nested reports.
+        // directory and the default recursive Cobertura pattern finds nested reports.
         _ws.Write("run-1/coverage.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
             .ToBytes());

@@ -60,9 +60,11 @@ public sealed class FalloutBuildTests : IDisposable
     // ── Gate policy ───────────────────────────────────────────────────────────
 
     [Test]
-    public async Task Pass_ExitsZero_AndLogsTheVerdict(CancellationToken cancellationToken)
+    [Arguments("coverage.cobertura.xml")]
+    [Arguments("dotcov.coverage.cobertura.170926234734218.xml")]
+    public async Task Pass_ExitsZero_AndLogsTheVerdict(string reportName, CancellationToken cancellationToken)
     {
-        WriteHalfCovered();
+        WriteHalfCovered($"TestResults/run/{reportName}");
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
 

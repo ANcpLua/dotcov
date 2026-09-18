@@ -23,7 +23,7 @@ fallout ReportCoverage --coverage-min-line 80 --coverage-exclude-generated-param
 ```
 
 That is the whole setup. `ReportCoverage` searches `RootDirectory / "TestResults"` for
-`**/coverage.cobertura.xml` (hidden directories included), merges everything it finds, renders
+`**/*cobertura*.xml` (including timestamped MTP reports and hidden directories), merges everything it finds, renders
 the chosen format, appends a markdown block to `$GITHUB_STEP_SUMMARY` when that variable is
 set, and fails the build when line or branch coverage is below threshold.
 
@@ -38,7 +38,7 @@ build without requiring you to implement `ICompile`.
 | `--coverage-min-branch` | `0` | Minimum branch coverage percentage |
 | `--coverage-format` | `table` | `table`, `json`, `markdown`, or `md` |
 | `--coverage-exclude-generated-param` | `false` | `true`/`false`: apply `ExclusionRules.WellKnown` before gating |
-| `--coverage-pattern` | `**/coverage.cobertura.xml` | `filename` (top level) or `**/filename` (recursive) |
+| `--coverage-pattern` | `**/*cobertura*.xml` | `filename` (top level) or `**/filename` (recursive) |
 | `--coverage-max-chars-param` | `50000000` | Per-file XML character cap; `0` disables it |
 
 Every value is validated once, before any report is read; an invalid value fails the target

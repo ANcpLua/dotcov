@@ -46,6 +46,17 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
+    public async Task Check_MtpDirectoryWithoutPattern_FindsTimestampedReport()
+    {
+        HalfCovered("run/dotcov.coverage.cobertura.170926234734218.xml");
+
+        var (code, stdout, stderr) = await Run("check", _ws.Root, "--min-line", "40");
+
+        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        await Assert.That(stdout).Contains("PASS: line 50.0%");
+    }
+
+    [Test]
     public async Task Check_Fail_Exits1_AndListsOffendingFiles()
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "90");
@@ -449,7 +460,7 @@ public sealed class CliTests : IDisposable
         HalfCovered("gcovr/sub/coverage.xml");
         var dir = _ws.PathOf("gcovr");
 
-        // Default scan only matches **/coverage.cobertura.xml — the gcovr-named report is invisible.
+        // The default Cobertura-name pattern excludes gcovr's generic coverage.xml.
         var (defaultCode, defaultOut, _) = await Run("report", dir);
         await Assert.That(defaultCode).IsEqualTo(0);
         await Assert.That(defaultOut).DoesNotContain("src/A.cs");

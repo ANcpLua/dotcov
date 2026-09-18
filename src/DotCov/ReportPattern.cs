@@ -10,7 +10,7 @@ public sealed class ReportPattern : IEquatable<ReportPattern>
 {
     private const string RecursivePrefix = "**/";
 
-    public const string DefaultText = "**/coverage.cobertura.xml";
+    public const string DefaultText = "**/*cobertura*.xml";
 
     public static ReportPattern Default { get; } = Parse(DefaultText);
 

@@ -234,13 +234,13 @@ public sealed class CorpusTests
     // ── Edge: non-default file names need --pattern ───────────────────────────
 
     [Test]
-    public async Task NamedDir_DefaultPattern_MatchesNothing()
+    public async Task NamedDir_DefaultPattern_SelectsCoberturaButNotGenericCoverageXml()
     {
-        // gcovr writes coverage.xml, `coverage xml` writes what you tell it: neither matches
-        // the default `**/coverage.cobertura.xml` glob — the reason the pattern is settable.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/edge/gcovr-named-dir"));
 
-        await Assert.That(report.Files).IsEmpty();
+        await Assert.That(report.TotalLines).IsEqualTo(8);
+        await Assert.That(report.TotalLinesHit).IsEqualTo(6);
+        await Assert.That(report.TotalBranches).IsEqualTo(4);
     }
 
     [Test]

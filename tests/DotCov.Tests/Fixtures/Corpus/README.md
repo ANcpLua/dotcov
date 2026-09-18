@@ -18,7 +18,7 @@ the formats actually seen in the wild — not just against our own builder.
 | `monorepo/svc-{a,b}/coverage.cobertura.xml` | coverage.py per-service CI uploads | monorepo pattern: two genuinely different `app/main.py` files under different `<source>` roots must stay two rooted entries (10/16 lines = 62.5%), never fuse on the relative name |
 | `edge/empty-packages.xml` | gcovr 8.3 | `<packages/>` with zero classes — "nothing measured", not "100%" |
 | `edge/gcovr-case-sensitive.xml` | gcovr 8.3 on a Linux tree | real kernel-style pair `xt_TCPMSS.c` / `xt_tcpmss.c` (`linux/net/netfilter`): case-differing names are distinct files under Ordinal keying |
-| `edge/gcovr-named-dir/{coverage,cobertura}.xml` | gcovr 8.3 + coverage.py | non-default file names the default `**/coverage.cobertura.xml` pattern must NOT match — the reason `--pattern` exists |
+| `edge/gcovr-named-dir/{coverage,cobertura}.xml` | gcovr 8.3 + coverage.py | the default `**/*cobertura*.xml` selects `cobertura.xml`; generic `coverage.xml` needs an explicit `--pattern` |
 
 Keep samples byte-stable: tests assert exact line/branch totals computed by
 hand from each file's content.
