@@ -96,17 +96,8 @@ class Build : FalloutBuild
 
     private void RunTests(bool coverage)
     {
-        if (coverage)
-        {
-            var settings = $"@{RootDirectory / "tests" / "coverage.rsp"}";
-            DotNet($"test --project {TestProject} -c {Configuration} --results-directory {ResultsDirectory} {settings} --treenode-filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
-                workingDirectory: RootDirectory);
-        }
-        else
-        {
-            DotNet($"test --project {TestProject} -c {Configuration} --results-directory {ResultsDirectory} --treenode-filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
-                workingDirectory: RootDirectory);
-        }
+        DotNet($"test --project {TestProject} -c {Configuration} -p:Coverage={(coverage ? "true" : "false")} --results-directory {ResultsDirectory} --treenode-filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
+            workingDirectory: RootDirectory);
         Log.Information("Test results: {Path}", ResultsDirectory);
     }
 

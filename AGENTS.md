@@ -3,6 +3,8 @@
 Before verification, read the [Fallout commands](src/DotCov.Fallout/AGENTS.md).
 Use those targets for routine tests and coverage; use direct runner commands for
 diagnostics the targets do not expose.
+For test isolation, measurement, or runner diagnostics, read the
+[test guide](tests/CLAUDE.md).
 
 For requested code reviews, load
 [$behavioral-review](.agents/skills/behavioral-review/SKILL.md).

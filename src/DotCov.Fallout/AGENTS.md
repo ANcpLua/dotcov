@@ -22,7 +22,8 @@ accepts `--min-line` and `--min-branch`; `Crap` accepts `--max-crap` and optiona
 artifact path; it does not upload.
 
 The wrapper is [build/Build.cs](../../build/Build.cs); measurement settings live
-only in [tests/coverage.rsp](../../tests/coverage.rsp).
+only in [DotCov.Tests.csproj](../../tests/DotCov.Tests/DotCov.Tests.csproj), switched on
+by `-p:Coverage=true`.
 
 ## Code Review Rules
 

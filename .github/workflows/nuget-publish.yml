@@ -69,16 +69,14 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
-      # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP: the same Coverlet
-      # instrumentation as before, configured in tests/coverage.rsp instead of via runsettings.
-      # Compiler-generated async/iterator scaffolding and obj/ source-generator output are
-      # excluded so phantom branches cannot cap coverage; the include filters keep Fallout's
-      # own (pdb-shipping) assemblies out of the measurement. The file lands in TestResults as
-      # dotcov.coverage.cobertura.<timestamp>.xml, which the badge step selects by pattern.
+      # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP. -p:Coverage=true
+      # switches on the coverlet arguments defined in tests/DotCov.Tests/DotCov.Tests.csproj.
+      # The file lands in TestResults as dotcov.coverage.cobertura.<timestamp>.xml, which the
+      # badge step selects by pattern.
       - name: Test
         run: >-
-          dotnet test DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
-          --results-directory TestResults "@tests/coverage.rsp"
+          dotnet test --solution DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
+          -p:Coverage=true --results-directory TestResults
         env:
           CI: true
       # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written
