@@ -167,11 +167,10 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    [Arguments("--min-line", "eighty")]
-    [Arguments("--min-line", "NaN")]
-    [Arguments("--min-branch", "5%")]
-    [Arguments("--min-branch", "NaN")]
-    public async Task Check_InvalidThreshold_Exits1_AndNamesValue(string flag, string value)
+    [MatrixDataSource]
+    public async Task Check_InvalidThreshold_Exits1_AndNamesValue(
+        [Matrix("--min-line", "--min-branch")] string flag,
+        [Matrix("eighty", "NaN", "5%")] string value)
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), flag, value);
 

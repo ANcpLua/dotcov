@@ -37,6 +37,7 @@ public static partial class CoberturaParser
     public static async Task<CoverageReport> ParseAsync(
         Stream stream, long maxChars = DefaultMaxChars, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         using var reader = CreateReader(stream, maxChars, async: true);
         var document = new DocumentContext();
         var files = new FileCollector();
@@ -44,9 +45,10 @@ public static partial class CoberturaParser
         while (await reader.ReadAsync())
         {
             ct.ThrowIfCancellationRequested();
-            Visit(reader, document, files, methods: null);
+            await VisitAsync(reader, document, files, ct);
         }
 
+        ct.ThrowIfCancellationRequested();
         return files.Materialize(document);
     }
 
@@ -133,6 +135,34 @@ public static partial class CoberturaParser
         }
     }
 
+    private static async ValueTask VisitAsync(
+        XmlReader reader, DocumentContext document, FileCollector files, CancellationToken ct)
+    {
+        if (reader.NodeType is not XmlNodeType.Element) return;
+
+        switch (reader.LocalName)
+        {
+            case "source":
+                if (reader.IsEmptyElement) return;
+                if (!await reader.ReadAsync() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
+                RecordSource(await reader.GetValueAsync(), document);
+                ct.ThrowIfCancellationRequested();
+                break;
+            case "class":
+                if (CreateClassContext(reader, document, files, methods: null) is not { } context) return;
+                if (reader.IsEmptyElement) return;
+                var depth = reader.Depth;
+                // Disposing an unfinished subtree reader drains it synchronously, including on cancellation.
+                while (await reader.ReadAsync())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (reader.NodeType is XmlNodeType.EndElement && reader.Depth == depth) break;
+                    context.Visit(reader);
+                }
+                break;
+        }
+    }
+
     /// <summary>
     /// Capture one <c>&lt;source&gt;</c> root. No-op spellings (".", "./") collapse to the ""
     /// sentinel, which <see cref="ResolveFileKey"/> reads as "leave relative filenames
@@ -146,7 +176,12 @@ public static partial class CoberturaParser
         if (reader.IsEmptyElement) return;
         if (!reader.Read() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
 
-        var root = PathIdentity.NormalizeRoot(reader.Value);
+        RecordSource(reader.Value, document);
+    }
+
+    private static void RecordSource(string value, DocumentContext document)
+    {
+        var root = PathIdentity.NormalizeRoot(value);
         if (document.SourceRoots.Contains(root)) return;   // List.Contains is Ordinal for strings
 
         document.SourceRoots.Add(root);
@@ -169,34 +204,43 @@ public static partial class CoberturaParser
     /// </summary>
     private static void ConsumeClass(XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods)
     {
-        if (DecodeFileName(reader, document) is not { } file) return;
-
-        var className = reader.GetAttribute("name") ?? "";
-        var fileAcc = files?.For(file);
-        MethodCollector.Entry? methodAcc = null;
-
+        if (CreateClassContext(reader, document, files, methods) is not { } context) return;
         using var sub = reader.ReadSubtree();
-        sub.MoveToContent();
 
         while (sub.Read())
+            context.Visit(sub);
+    }
+
+    private static ClassContext? CreateClassContext(
+        XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods) =>
+        DecodeFileName(reader, document) is { } file
+            ? new ClassContext(file, reader.GetAttribute("name") ?? "", document, files?.For(file), methods)
+            : null;
+
+    private sealed class ClassContext(
+        string file, string className, DocumentContext document, LineAccumulator? fileAcc, MethodCollector? methods)
+    {
+        private MethodCollector.Entry? _methodAcc;
+
+        public void Visit(XmlReader sub)
         {
             switch (sub.NodeType, sub.LocalName)
             {
                 case (XmlNodeType.Element, "method"):
-                    methodAcc = methods?.For(
+                    _methodAcc = methods?.For(
                         new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
                         DecodeComplexity(sub.GetAttribute("complexity")));
-                    if (sub.IsEmptyElement) methodAcc = null;
+                    if (sub.IsEmptyElement) _methodAcc = null;
                     break;
 
                 case (XmlNodeType.EndElement, "method"):
-                    methodAcc = null;
+                    _methodAcc = null;
                     break;
 
                 case (XmlNodeType.Element, "line"):
                     if (!TryDecodeLine(sub, file, document, out var line)) break;
                     fileAcc?.AddLine(sub, line, file, document);
-                    methodAcc?.AddLine(line);
+                    _methodAcc?.AddLine(line);
                     break;
 
                 case (XmlNodeType.Element, "condition"):

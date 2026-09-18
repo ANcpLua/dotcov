@@ -51,18 +51,24 @@ public sealed class ReportResolverTests : IDisposable
     // ── Directories ───────────────────────────────────────────────────────────
 
     [Test]
-    [Arguments("coverage.cobertura.xml")]
-    [Arguments("coverage.cobertura.170926234734218.xml")]
-    [Arguments("dotcov.coverage.cobertura.170926234734218.xml")]
-    [Arguments("test-run.cobertura.xml")]
-    public async Task Resolve_DefaultPattern_FindsClassicAndTimestampedReports(string name)
+    [MatrixDataSource]
+    public async Task Resolve_DefaultPattern_FindsReportNamesAcrossDirectoryLayouts(
+        [Matrix("coverage.cobertura.xml", "coverage.cobertura.170926234734218.xml",
+            "dotcov.coverage.cobertura.170926234734218.xml", "test-run.cobertura.xml")] string name,
+        [Matrix("", "run", ".hidden")] string relativeDirectory)
     {
-        var report = _ws.Write($"run/{name}", Doc("a.cs"));
-        _ws.Write("run/coverage.json", "{}");
-        _ws.Write("run/test-results.xml", "<results />");
+        var report = _ws.Write(Path.Combine(relativeDirectory, name), Doc("a.cs"));
+        _ws.Write(Path.Combine(relativeDirectory, "coverage.json"), "{}");
+        _ws.Write(Path.Combine(relativeDirectory, "test-results.xml"), "<results />");
 
-        await Assert.That(Names(ReportResolver.Resolve(_ws.Root)))
-            .IsEquivalentTo([report], CollectionOrdering.Matching);
+        if (OperatingSystem.IsWindows() && relativeDirectory.StartsWith('.'))
+        {
+            var directory = _ws.PathOf(relativeDirectory);
+            File.SetAttributes(directory, File.GetAttributes(directory) | FileAttributes.Hidden);
+        }
+
+        var input = await Assert.That(ReportResolver.Resolve(_ws.Root)).HasSingleItem();
+        await Assert.That(input.SourceName).IsEqualTo(report);
     }
 
     [Test]
