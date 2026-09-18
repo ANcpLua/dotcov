@@ -55,22 +55,13 @@ public sealed class CoreParserRobustnessTests
         // Current contract, pinned: a malformed file inside the aggregate propagates its
         // XmlException out of ParseDirectory rather than being skipped — a broken artifact
         // must not silently shrink the merged report.
-        var root = Directory.CreateTempSubdirectory("dotcov-robust-").FullName;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "good"));
-            Directory.CreateDirectory(Path.Combine(root, "bad"));
-            File.WriteAllBytes(Path.Combine(root, "good", "coverage.cobertura.xml"),
-                Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
-            File.WriteAllText(Path.Combine(root, "bad", "coverage.cobertura.xml"),
-                "<coverage><packages>");   // truncated
+        using var temp = TempWorkspace.Create("dotcov-robust-");
+        File.WriteAllBytes(temp.PrepareFile("good/coverage.cobertura.xml"),
+            Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+        File.WriteAllText(temp.PrepareFile("bad/coverage.cobertura.xml"),
+            "<coverage><packages>");   // truncated
 
-            Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Default)));
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
     }
 
     // ── C23: parse errors must name the offending file ──
@@ -81,22 +72,15 @@ public sealed class CoreParserRobustnessTests
         // XmlException knows line/column but not which file. The library wraps it in a
         // ReportParseException carrying the source name as data, so directory aggregates and
         // build adapters get attribution without re-discovering the file.
-        var root = Directory.CreateTempSubdirectory("dotcov-attr-").FullName;
-        try
-        {
-            var path = Path.Combine(root, "bad.xml");
-            File.WriteAllText(path, "<coverage><packa");
+        using var temp = TempWorkspace.Create("dotcov-attr-");
+        var path = temp.PrepareFile("bad.xml");
+        await File.WriteAllTextAsync(path, "<coverage><packa");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
+        var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
 
-            await Assert.That(ex.SourceName).IsEqualTo(path);
-            await Assert.That(ex.Message).DoesNotContain(path);   // the message is the reader's, unmodified
-            await Assert.That(ex.InnerException.Message).IsEqualTo(ex.Message);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        await Assert.That(ex.SourceName).IsEqualTo(path);
+        await Assert.That(ex.Message).DoesNotContain(path);   // the message is the reader's, unmodified
+        await Assert.That(ex.InnerException.Message).IsEqualTo(ex.Message);
     }
 
     [Test]
@@ -104,46 +88,30 @@ public sealed class CoreParserRobustnessTests
     {
         // The wrapper must not cost the structured coordinates consumers read off the
         // exception: LineNumber/LinePosition carry over from the inner XmlException.
-        var root = Directory.CreateTempSubdirectory("dotcov-coords-").FullName;
-        try
-        {
-            var path = Path.Combine(root, "bad.xml");
-            File.WriteAllText(path, "<coverage><packa");
+        using var temp = TempWorkspace.Create("dotcov-coords-");
+        var path = temp.PrepareFile("bad.xml");
+        await File.WriteAllTextAsync(path, "<coverage><packa");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
+        var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
 
-            var inner = ex.InnerException;
-            await Assert.That(inner.LineNumber).IsNotEqualTo(0);
-            await Assert.That(ex.LineNumber).IsEqualTo(inner.LineNumber);
-            await Assert.That(ex.LinePosition).IsEqualTo(inner.LinePosition);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        var inner = ex.InnerException;
+        await Assert.That(inner.LineNumber).IsNotEqualTo(0);
+        await Assert.That(ex.LineNumber).IsEqualTo(inner.LineNumber);
+        await Assert.That(ex.LinePosition).IsEqualTo(inner.LinePosition);
     }
 
     [Test]
     public async Task ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
     {
-        var root = Directory.CreateTempSubdirectory("dotcov-attr-dir-").FullName;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "good"));
-            Directory.CreateDirectory(Path.Combine(root, "bad"));
-            File.WriteAllBytes(Path.Combine(root, "good", "coverage.cobertura.xml"),
-                Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
-            var badPath = Path.Combine(root, "bad", "coverage.cobertura.xml");
-            File.WriteAllText(badPath, "<coverage><packages>");
+        using var temp = TempWorkspace.Create("dotcov-attr-dir-");
+        await File.WriteAllBytesAsync(temp.PrepareFile("good/coverage.cobertura.xml"),
+            Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+        var badPath = temp.PrepareFile("bad/coverage.cobertura.xml");
+        await File.WriteAllTextAsync(badPath, "<coverage><packages>");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(root, ReportPattern.Default)));
+        var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
 
-            // The exception names the malformed report, not the healthy one.
-            await Assert.That(ex.SourceName).IsEqualTo(badPath);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        // The exception names the malformed report, not the healthy one.
+        await Assert.That(ex.SourceName).IsEqualTo(badPath);
     }
 }

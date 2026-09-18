@@ -13,7 +13,7 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class CorpusTests
 {
-    private const string Corpus = "Fixtures/Corpus";
+    private static readonly string Corpus = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Corpus");
 
     // ── gcovr (C/C++) ─────────────────────────────────────────────────────────
 
@@ -262,15 +262,22 @@ public sealed class CorpusTests
     // ── Whole-corpus sweep ────────────────────────────────────────────────────
 
     [Test]
-    public async Task EveryCorpusSample_ParsesWithoutThrowing()
+    public async Task Corpus_ContainsAllFourteenSamples()
     {
-        var samples = Directory.GetFiles(Corpus, "*.xml", SearchOption.AllDirectories);
-
-        await Assert.That(samples.Length).IsEqualTo(14);
-        foreach (var sample in samples)
-        {
-            var report = CoberturaParser.Parse(ReportInput.FromFile(sample));
-            await Assert.That(report).IsNotNull();
-        }
+        await Assert.That(Samples().Count()).IsEqualTo(14);
     }
+
+    [Test]
+    [MethodDataSource(nameof(Samples))]
+    public async Task Sample_ParsesWithoutThrowing(string relativePath)
+    {
+        var report = CoberturaParser.Parse(ReportInput.FromFile(Path.Combine(Corpus, relativePath)));
+
+        await Assert.That(report).IsNotNull();
+    }
+
+    public static IEnumerable<string> Samples() =>
+        Directory.EnumerateFiles(Corpus, "*.xml", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(Corpus, path).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal);
 }

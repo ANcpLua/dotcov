@@ -269,4 +269,23 @@ public sealed class GateResultTests
         await Assert.That(filtered.Files).HasSingleItem();
         await Assert.That(filtered.Files[0].Path).IsEqualTo("/repo/src/Product.cs");
     }
+
+    [Test]
+    public async Task Evaluate_RateExactlyOnEpsilonBoundary_Passes()
+    {
+        // Both sides compare as exactly 25.0 in IEEE 754, so equality must pass.
+        var gate = Reports.Single("a.cs", hit: 25, total: 100).Evaluate(25.0 + 1e-9);
+
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Pass);
+        await Assert.That(gate.IsPass).IsTrue();
+    }
+
+    [Test]
+    public async Task BranchBelowThreshold_UnarmedGate_NeverReportsBelow()
+    {
+        // A disabled branch gate cannot fail, even when supplied an out-of-range rate.
+        var gate = new GateResult(GateOutcome.Pass, 1.0, -0.5, 80, 0, "unarmed");
+
+        await Assert.That(gate.BranchBelowThreshold).IsFalse();
+    }
 }

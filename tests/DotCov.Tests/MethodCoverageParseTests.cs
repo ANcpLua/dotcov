@@ -189,27 +189,20 @@ public sealed class MethodCoverageParseTests
     [Test]
     public async Task ParseMethodsDirectory_MergesSameMethodAcrossFiles()
     {
-        var dir = Directory.CreateTempSubdirectory("dotcov-methods-dir-");
-        try
-        {
-            File.WriteAllBytes(Path.Combine(dir.FullName, "a.cobertura.xml"), Cobertura.NewDoc()
-                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1).Line(2, hits: 0)))
-                .ToBytes());
-            File.WriteAllBytes(Path.Combine(dir.FullName, "b.cobertura.xml"), Cobertura.NewDoc()
-                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0).Line(2, hits: 4)))
-                .ToBytes());
+        using var temp = TempWorkspace.Create("dotcov-methods-dir-");
+        await File.WriteAllBytesAsync(temp.PrepareFile("a.cobertura.xml"), Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1).Line(2, hits: 0)))
+            .ToBytes());
+        await File.WriteAllBytesAsync(temp.PrepareFile("b.cobertura.xml"), Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0).Line(2, hits: 4)))
+            .ToBytes());
 
-            var methods = CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(dir.FullName, ReportPattern.Parse("*.cobertura.xml"))).Methods;
+        var methods = CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Parse("*.cobertura.xml"))).Methods;
 
-            var m = await Assert.That(methods).HasSingleItem();
-            await Assert.That(m.LinesHit).IsEqualTo(2);   // union-with-max: both lines covered across the two runs
-            await Assert.That(m.LineHits[1]).IsEqualTo(1);
-            await Assert.That(m.LineHits[2]).IsEqualTo(4);
-        }
-        finally
-        {
-            dir.Delete(recursive: true);
-        }
+        var m = await Assert.That(methods).HasSingleItem();
+        await Assert.That(m.LinesHit).IsEqualTo(2);   // union-with-max: both lines covered across the two runs
+        await Assert.That(m.LineHits[1]).IsEqualTo(1);
+        await Assert.That(m.LineHits[2]).IsEqualTo(4);
     }
 
     // ── MethodCoverageReport: identity, roots, diagnostics ────────────────────
@@ -283,41 +276,27 @@ public sealed class MethodCoverageParseTests
     {
         // Same structured error contract as the file-level parse, so directory aggregates
         // name the malformed report.
-        var dir = Directory.CreateTempSubdirectory("dotcov-methods-bad-");
-        try
-        {
-            var path = Path.Combine(dir.FullName, "bad.cobertura.xml");
-            File.WriteAllText(path, "<coverage><unclosed>");
+        using var temp = TempWorkspace.Create("dotcov-methods-bad-");
+        var path = temp.PrepareFile("bad.cobertura.xml");
+        await File.WriteAllTextAsync(path, "<coverage><unclosed>");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseMethods(ReportInput.FromFile(path)));
-            await Assert.That(ex.SourceName).IsEqualTo(path);
-        }
-        finally
-        {
-            dir.Delete(recursive: true);
-        }
+        var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseMethods(ReportInput.FromFile(path)));
+        await Assert.That(ex.SourceName).IsEqualTo(path);
     }
 
     [Test]
     public async Task ParseMethodsDirectory_MalformedFileInDirectory_NamesTheMalformedFile()
     {
-        var dir = Directory.CreateTempSubdirectory("dotcov-methods-dir-bad-");
-        try
-        {
-            var good = Path.Combine(dir.FullName, "a.cobertura.xml");
-            File.WriteAllBytes(good, Cobertura.NewDoc()
-                .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)))
-                .ToBytes());
-            var bad = Path.Combine(dir.FullName, "b.cobertura.xml");
-            File.WriteAllText(bad, "<coverage><packages>");
+        using var temp = TempWorkspace.Create("dotcov-methods-dir-bad-");
+        var good = temp.PrepareFile("a.cobertura.xml");
+        await File.WriteAllBytesAsync(good, Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)))
+            .ToBytes());
+        var bad = temp.PrepareFile("b.cobertura.xml");
+        await File.WriteAllTextAsync(bad, "<coverage><packages>");
 
-            var ex = Assert.ThrowsExactly<ReportParseException>(() =>
-                CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(dir.FullName, ReportPattern.Parse("*.cobertura.xml"))));
-            await Assert.That(ex.SourceName).IsEqualTo(bad);
-        }
-        finally
-        {
-            dir.Delete(recursive: true);
-        }
+        var ex = Assert.ThrowsExactly<ReportParseException>(() =>
+            CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Parse("*.cobertura.xml"))));
+        await Assert.That(ex.SourceName).IsEqualTo(bad);
     }
 }

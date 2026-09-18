@@ -154,4 +154,24 @@ public sealed class MergeConditionIdentityTests
         await Assert.That(merged.Warnings).Contains(static w =>
             w.Kind is CoverageWarningKind.BranchTotalMismatch && w.Line == 10 && w.Detail.Contains("keeping 4"));
     }
+
+    [Test]
+    public async Task Merge_ConditionIdentityMismatch_DetailNamesBothNumberSetsAscending()
+    {
+        // The warning must expose both divergent condition-number sets in ascending order.
+        var a = Cobertura.NewDoc()
+            .AddClass("x.cs", c => c.BranchWithConditions(5, "50% (2/4)", (1, "50%"), (3, "50%")))
+            .Parse();
+        var b = Cobertura.NewDoc()
+            .AddClass("x.cs", c => c.BranchWithConditions(5, "50% (2/4)", (2, "100%"), (4, "0%")))
+            .Parse();
+
+        var merged = CoverageReport.Merge(a, b);
+
+        var w = await Assert.That(merged.Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.ConditionIdentityMismatch);
+        await Assert.That(w.File).IsEqualTo("x.cs");
+        await Assert.That(w.Line).IsEqualTo(5);
+        await Assert.That(w.Detail).IsEqualTo("condition numbers [1,3] vs [2,4] - using the line aggregate");
+    }
 }

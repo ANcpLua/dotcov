@@ -13,7 +13,8 @@ public sealed class CoberturaParserAsyncTests
             .AddClass("src/B.cs", c => c.Line(5, hits: 1));
 
         var sync = doc.Parse();
-        var async = await CoberturaParser.ParseAsync(doc.ToStream());
+        using var stream = doc.ToStream();
+        var async = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(async.TotalLines).IsEqualTo(sync.TotalLines);
         await Assert.That(async.TotalLinesHit).IsEqualTo(sync.TotalLinesHit);
@@ -101,18 +102,20 @@ public sealed class CoberturaParserAsyncTests
     // is pinned by CoberturaParserTests.Parse_MalformedConditionString_EmitsWarning.
 
     [Test]
-    public async Task Parse_LineWithoutNumber_IsSkipped()
+    public async Task ParseAsync_LineWithoutNumber_IsSkipped()
     {
-        var report = Cobertura.NewDoc()
+        using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
-            .Parse();
+            .ToStream();
+
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Files).HasSingleItem();
         await Assert.That(report.Files[0].LinesTotal).IsEqualTo(0);
     }
 
     [Test]
-    public async Task Parse_ClassWithoutFilename_IsSkipped()
+    public async Task ParseAsync_ClassWithoutFilename_IsSkipped()
     {
         const string xml = """
                            <?xml version="1.0"?>
@@ -122,17 +125,19 @@ public sealed class CoberturaParserAsyncTests
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
 
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Files).IsEmpty();
     }
 
     [Test]
-    public async Task Parse_NoBranchData_HasBranchDataFalse()
+    public async Task ParseAsync_NoBranchData_HasBranchDataFalse()
     {
-        var report = Cobertura.NewDoc()
+        using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
-            .Parse();
+            .ToStream();
+
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.HasBranchData).IsFalse();
         await Assert.That(report.Files[0].HasBranchData).IsFalse();

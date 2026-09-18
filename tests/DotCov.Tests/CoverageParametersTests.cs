@@ -1,3 +1,4 @@
+using DotCov.Tests.Infrastructure;
 using DotCov.Fallout;
 
 namespace DotCov.Tests;
@@ -142,12 +143,9 @@ public sealed class CoverageParametersTests
 
 public sealed class GitHubStepSummaryTests : IDisposable
 {
-    private readonly string _root = Directory.CreateTempSubdirectory("dotcov-summary-").FullName;
+    private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-summary-");
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
-    }
+    public void Dispose() => _ws.Dispose();
 
     [Test]
     public async Task TryAppend_NullOrEmptyPath_ReturnsFalse()
@@ -159,19 +157,19 @@ public sealed class GitHubStepSummaryTests : IDisposable
     [Test]
     public async Task TryAppend_WritablePath_Appends()
     {
-        var path = Path.Combine(_root, "summary.md");
+        var path = _ws.PathOf("summary.md");
 
         await Assert.That(GitHubStepSummary.TryAppend(path, "one")).IsTrue();
         await Assert.That(GitHubStepSummary.TryAppend(path, "two")).IsTrue();
 
-        await Assert.That(File.ReadAllText(path)).IsEqualTo("onetwo");
+        await Assert.That(await File.ReadAllTextAsync(path)).IsEqualTo("onetwo");
     }
 
     [Test]
     public async Task TryAppend_PathIsDirectory_ReturnsFalseWithoutThrowing() =>
-        await Assert.That(GitHubStepSummary.TryAppend(_root, "# md")).IsFalse();
+        await Assert.That(GitHubStepSummary.TryAppend(_ws.Root, "# md")).IsFalse();
 
     [Test]
     public async Task TryAppend_MissingParentDirectory_ReturnsFalseWithoutThrowing() =>
-        await Assert.That(GitHubStepSummary.TryAppend(Path.Combine(_root, "no-such-dir", "summary.md"), "# md")).IsFalse();
+        await Assert.That(GitHubStepSummary.TryAppend(_ws.PathOf("no-such-dir/summary.md"), "# md")).IsFalse();
 }

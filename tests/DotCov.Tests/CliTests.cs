@@ -10,9 +10,9 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class CliTests : IDisposable
 {
-    private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("dotcov-cli-tests-");
+    private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-tests-");
 
-    public void Dispose() => _dir.Delete(recursive: true);
+    public void Dispose() => _ws.Dispose();
 
     private static async Task<(int Code, string StdOut, string StdErr)> Run(params string[] args)
     {
@@ -22,29 +22,15 @@ public sealed class CliTests : IDisposable
         return (code, stdout.ToString(), stderr.ToString());
     }
 
-    private string WriteFile(string relative, byte[] bytes)
-    {
-        var path = Path.Combine(_dir.FullName, relative);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, bytes);
-        // GetFullPath flips the relative argument's forward slashes to the native separator,
-        // so Windows assertions compare against the same spelling the CLI's directory
-        // enumeration produces (Path.Combine alone keeps the mixed separators).
-        return Path.GetFullPath(path);
-    }
-
-    private string WriteFile(string relative, string text) =>
-        WriteFile(relative, System.Text.Encoding.UTF8.GetBytes(text));
-
     /// <summary>50% line coverage, no branch data.</summary>
     private string HalfCovered(string relative = "coverage.cobertura.xml") =>
-        WriteFile(relative, Cobertura.NewDoc()
+        _ws.Write(relative, Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
             .ToBytes());
 
     /// <summary>100% line coverage, 50% branch coverage (1/2).</summary>
     private string BranchHalf(string relative = "branch.cobertura.xml") =>
-        WriteFile(relative, Cobertura.NewDoc()
+        _ws.Write(relative, Cobertura.NewDoc()
             .AddClass("src/B.cs", c => c.Line(1, hits: 1).Branch(2, "50% (1/2)"))
             .ToBytes());
 
@@ -91,7 +77,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Check_EmptyDirectory_NoData_Exits1()
     {
-        var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty")).FullName;
+        var empty = _ws.CreateDirectory("empty");
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
@@ -238,7 +224,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Report_MalformedXml_FriendlyError_Exits1()
     {
-        var path = WriteFile("truncated.xml", "<coverage><packages><package");
+        var path = _ws.Write("truncated.xml", "<coverage><packages><package");
 
         var (code, _, stderr) = await Run("report", path);
 
@@ -250,7 +236,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Report_EmptyFile_FriendlyError_Exits1()
     {
-        var path = WriteFile("empty.xml", "");
+        var path = _ws.Write("empty.xml", "");
 
         var (code, _, stderr) = await Run("report", path);
 
@@ -262,7 +248,7 @@ public sealed class CliTests : IDisposable
     public async Task Report_DoctypeHeader_ParsesSuccessfully_Exits0()
     {
         // Reference Cobertura always emits a DOCTYPE; the parser ignores the DTD without resolving it.
-        var path = WriteFile("dtd.xml",
+        var path = _ws.Write("dtd.xml",
             """<?xml version="1.0"?><!DOCTYPE coverage [<!ENTITY x "y">]><coverage></coverage>""");
 
         var (code, _, _) = await Run("report", path);
@@ -293,7 +279,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Snapshot_MalformedXml_FriendlyError_Exits1()
     {
-        var path = WriteFile("bad.xml", "<coverage>");
+        var path = _ws.Write("bad.xml", "<coverage>");
 
         var (code, _, stderr) = await Run("snapshot", path);
 
@@ -305,9 +291,9 @@ public sealed class CliTests : IDisposable
     public async Task DirectoryScan_MalformedFile_ErrorNamesOffendingFile()
     {
         HalfCovered("scan/a/coverage.cobertura.xml");
-        var bad = WriteFile("scan/b/coverage.cobertura.xml", "<coverage><packa");
+        var bad = _ws.Write("scan/b/coverage.cobertura.xml", "<coverage><packa");
 
-        var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "scan"));
+        var (code, _, stderr) = await Run("report", _ws.PathOf("scan"));
 
         await Assert.That(code).IsEqualTo(1);
         await AssertFriendlyError(stderr);
@@ -320,7 +306,7 @@ public sealed class CliTests : IDisposable
         HalfCovered("agg/a/coverage.cobertura.xml");
         BranchHalf("agg/b/coverage.cobertura.xml");
 
-        var (code, stdout, _) = await Run("report", Path.Combine(_dir.FullName, "agg"));
+        var (code, stdout, _) = await Run("report", _ws.PathOf("agg"));
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).Contains("src/A.cs");
@@ -446,9 +432,9 @@ public sealed class CliTests : IDisposable
     {
         // ReportParseException carries the failing path once; the CLI renders it once
         // ("error: {path}: ..."), never "error: {path}: {path}: ...".
-        var bad = WriteFile("once/coverage.cobertura.xml", "<coverage><packa");
+        var bad = _ws.Write("once/coverage.cobertura.xml", "<coverage><packa");
 
-        var (code, _, stderr) = await Run("report", Path.Combine(_dir.FullName, "once"));
+        var (code, _, stderr) = await Run("report", _ws.PathOf("once"));
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).Contains($"error: {bad}:");
@@ -461,7 +447,7 @@ public sealed class CliTests : IDisposable
     public async Task Report_Pattern_DiscoversNonDefaultFilenames()
     {
         HalfCovered("gcovr/sub/coverage.xml");
-        var dir = Path.Combine(_dir.FullName, "gcovr");
+        var dir = _ws.PathOf("gcovr");
 
         // Default scan only matches **/coverage.cobertura.xml — the gcovr-named report is invisible.
         var (defaultCode, defaultOut, _) = await Run("report", dir);
@@ -480,7 +466,7 @@ public sealed class CliTests : IDisposable
         BranchHalf("toplevel/nested/cobertura.xml");
 
         var (code, stdout, _) = await Run(
-            "report", Path.Combine(_dir.FullName, "toplevel"), "--pattern", "cobertura.xml");
+            "report", _ws.PathOf("toplevel"), "--pattern", "cobertura.xml");
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).Contains("src/A.cs");
@@ -493,7 +479,7 @@ public sealed class CliTests : IDisposable
         HalfCovered("chk/coverage.xml");
 
         var (code, _, stderr) = await Run(
-            "check", Path.Combine(_dir.FullName, "chk"), "--min-line", "90", "--pattern", "**/coverage.xml");
+            "check", _ws.PathOf("chk"), "--min-line", "90", "--pattern", "**/coverage.xml");
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).Contains("FAIL");
@@ -504,7 +490,7 @@ public sealed class CliTests : IDisposable
     {
         // An invalid --pattern is rejected at the option boundary as a one-line CLI error,
         // never a stack trace.
-        var dir = Directory.CreateDirectory(Path.Combine(_dir.FullName, "pat")).FullName;
+        var dir = _ws.CreateDirectory("pat");
 
         var (code, _, stderr) = await Run("report", dir, "--pattern", "sub/coverage.xml");
 
@@ -579,7 +565,7 @@ public sealed class CliTests : IDisposable
     {
         // Line gate passes overall (5/7 ≈ 71.4% ≥ 50) but B.cs sits below min-line; the branch
         // gate fails. B.cs has zero failing branches and must not be blamed for the failure.
-        var path = WriteFile("mixed.cobertura.xml", Cobertura.NewDoc()
+        var path = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 1).Line(3, hits: 1).Branch(4, "50% (1/2)"))
             .AddClass("src/B.cs", c => c.Line(1, hits: 1).Line(2, hits: 0).Line(3, hits: 0))
             .ToBytes());
@@ -596,7 +582,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Check_NoData_PrintsNoOffenderList()
     {
-        var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty-nolist")).FullName;
+        var empty = _ws.CreateDirectory("empty-nolist");
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
@@ -609,7 +595,7 @@ public sealed class CliTests : IDisposable
     public async Task Check_OffenderList_FloorsFailingRate()
     {
         // 1999/2500 = 79.96%: must floor to 79.9%, never F1-round up to the missed minimum.
-        var path = WriteFile("floor.cobertura.xml", NearlyEighty().ToBytes());
+        var path = _ws.Write("floor.cobertura.xml", CoberturaSamples.JustBelowEightyPercent().ToBytes());
 
         var (code, _, stderr) = await Run("check", path, "--min-line", "80");
 
@@ -617,13 +603,6 @@ public sealed class CliTests : IDisposable
         await Assert.That(stderr).Contains("src/F.cs: 79.9%");
         await Assert.That(stderr).DoesNotContain("80.0%");
     }
-
-    internal static Cobertura NearlyEighty() => Cobertura.NewDoc()
-        .AddClass("src/F.cs", c =>
-        {
-            for (var i = 1; i <= 1999; i++) c.Line(i, hits: 1);
-            for (var i = 2000; i <= 2500; i++) c.Line(i, hits: 0);
-        });
 
     // ── Unsupported upload scheme ──
 

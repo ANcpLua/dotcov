@@ -12,11 +12,11 @@ namespace DotCov.Tests;
 [NotInParallel(ProcessState.Environment)]
 public sealed class CliGitHubSummaryTests : IDisposable
 {
-    private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("dotcov-cli-summary-");
+    private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-summary-");
 
-    public void Dispose() => _dir.Delete(recursive: true);
+    public void Dispose() => _ws.Dispose();
 
-    private string SummaryPath => Path.Combine(_dir.FullName, "step-summary.md");
+    private string SummaryPath => _ws.PathOf("step-summary.md");
 
     private static async Task<(int Code, string StdOut, string StdErr)> Run(params string[] args)
     {
@@ -26,18 +26,11 @@ public sealed class CliGitHubSummaryTests : IDisposable
         return (code, stdout.ToString(), stderr.ToString());
     }
 
-    private string WriteFixture(string name, Cobertura doc)
-    {
-        var path = Path.Combine(_dir.FullName, name);
-        File.WriteAllBytes(path, doc.ToBytes());
-        return path;
-    }
-
     /// <summary>100% line coverage, 50% branch coverage — passes any line gate, fails a 90% branch gate.</summary>
-    private string BranchHalf() => WriteFixture("branch.cobertura.xml", Cobertura.NewDoc()
+    private string BranchHalf() => _ws.Write("branch.cobertura.xml", Cobertura.NewDoc()
         .AddClass("src/B.cs", c => c.Line(1, hits: 1).Branch(2, "50% (1/2)")));
 
-    private string HalfCovered() => WriteFixture("half.cobertura.xml", Cobertura.NewDoc()
+    private string HalfCovered() => _ws.Write("half.cobertura.xml", Cobertura.NewDoc()
         .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0)));
 
     [Test]
@@ -51,7 +44,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
             "check", BranchHalf(), "--min-line", "50", "--min-branch", "90", "--github-summary");
 
         await Assert.That(code).IsEqualTo(1);
-        var summary = File.ReadAllText(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## Coverage Report ❌");
         // Verdict line comes from MarkdownFormatter.Format(report, gate) — backticked and
         // built from the same GateResult as the exit code.
@@ -69,7 +62,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var (code, _, _) = await Run("check", HalfCovered(), "--min-line", "40", "--github-summary");
 
         await Assert.That(code).IsEqualTo(0);
-        var summary = File.ReadAllText(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## Coverage Report ✅");
         await Assert.That(summary).Contains("`PASS:");
     }
@@ -78,12 +71,12 @@ public sealed class CliGitHubSummaryTests : IDisposable
     public async Task Check_NoData_SummaryShowsWarningBadge()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
-        var empty = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty")).FullName;
+        var empty = _ws.CreateDirectory("empty");
 
         var (code, _, _) = await Run("check", empty, "--min-line", "80", "--github-summary");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(File.ReadAllText(SummaryPath)).Contains("## Coverage Report ⚠️");
+        await Assert.That(await File.ReadAllTextAsync(SummaryPath)).Contains("## Coverage Report ⚠️");
     }
 
     [Test]
@@ -93,12 +86,12 @@ public sealed class CliGitHubSummaryTests : IDisposable
         // markdown body (headline AND the offender file's table row) must floor with it —
         // never F1-round up to a self-contradictory 80.0% three lines below a FAIL.
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
-        var path = WriteFixture("nearly80.cobertura.xml", CliTests.NearlyEighty());
+        var path = _ws.Write("nearly80.cobertura.xml", CoberturaSamples.JustBelowEightyPercent());
 
         var (code, _, _) = await Run("check", path, "--min-line", "80", "--github-summary");
 
         await Assert.That(code).IsEqualTo(1);
-        var summary = File.ReadAllText(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## Coverage Report ❌");
         await Assert.That(summary).Contains("FAIL");
         await Assert.That(summary).Contains("**Line coverage:** 79.9% (1999/2500)");
@@ -113,13 +106,13 @@ public sealed class CliGitHubSummaryTests : IDisposable
         // Same no-false-green contract as check: the badge and the backticked verdict derive
         // from the same CrapGateResult as the exit code, written on fail too.
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
-        var path = WriteFixture("crap.cobertura.xml", Cobertura.NewDoc()
+        var path = _ws.Write("crap.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/R.cs", "MyApp.R", c => c.Method("Risky", "()", "3", m => m.Line(1, hits: 0))));
 
         var (code, _, _) = await Run("crap", path, "--github-summary");
 
         await Assert.That(code).IsEqualTo(1);
-        var summary = File.ReadAllText(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## CRAP Report ❌");
         await Assert.That(summary).Contains("`FAIL: worst CRAP 12.0 (max 6)");
     }
@@ -128,13 +121,13 @@ public sealed class CliGitHubSummaryTests : IDisposable
     public async Task Crap_PassingGate_StillWritesSummary()
     {
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
-        var path = WriteFixture("crap-pass.cobertura.xml", Cobertura.NewDoc()
+        var path = _ws.Write("crap-pass.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/S.cs", "MyApp.S", c => c.Method("Safe", "()", "1", m => m.Line(1, hits: 1))));
 
         var (code, _, _) = await Run("crap", path, "--github-summary");
 
         await Assert.That(code).IsEqualTo(0);
-        var summary = File.ReadAllText(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## CRAP Report ✅");
         await Assert.That(summary).Contains("`PASS:");
     }
@@ -147,7 +140,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var (code, _, _) = await Run("report", HalfCovered(), "--github-summary");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(File.ReadAllText(SummaryPath)).Contains("## Coverage Report");
+        await Assert.That(await File.ReadAllTextAsync(SummaryPath)).Contains("## Coverage Report");
     }
 
     [Test]

@@ -162,7 +162,7 @@ public sealed class CoberturaParserTests
                                  """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         var file = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(file.LinesTotal).IsEqualTo(2);
@@ -179,7 +179,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Files).IsEmpty();
         await Assert.That(report.LineRate).IsNull();
@@ -224,7 +224,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
         var file = await Assert.That(report.Files).HasSingleItem();
 
         await Assert.That(file.LinesTotal).IsEqualTo(4);
@@ -251,7 +251,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = await Assert.That(CoberturaParser.Parse(stream).Files).HasSingleItem();
+        var file = await Assert.That((await CoberturaParser.ParseAsync(stream)).Files).HasSingleItem();
 
         await Assert.That(file.BranchesByLine.Count).IsEqualTo(2);
         await Assert.That(file.BranchesByLine[10]).IsEqualTo((1, 2));
@@ -279,7 +279,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
         var file = await Assert.That(report.Files).HasSingleItem();
 
         await Assert.That(file.LinesTotal).IsEqualTo(1);
@@ -308,7 +308,7 @@ public sealed class CoberturaParserTests
                    """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
         var file = await Assert.That(report.Files).HasSingleItem();
 
         await Assert.That(file.LinesTotal).IsEqualTo(1);
@@ -340,7 +340,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
         var file = await Assert.That(report.Files).HasSingleItem();
 
         await Assert.That(file.LinesTotal).IsEqualTo(2);
@@ -368,7 +368,7 @@ public sealed class CoberturaParserTests
                    """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.TotalBranches).IsEqualTo(2);
         await Assert.That(report.TotalBranchesHit).IsEqualTo(1);
@@ -386,7 +386,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Files).HasSingleItem();
         await Assert.That(report.Files[0].LinesTotal).IsEqualTo(0);
@@ -659,7 +659,7 @@ public sealed class CoberturaParserTests
             </coverage>
             """;
 
-        var f = CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml))).Files[0];
+        var f = (await CoberturaParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)))).Files[0];
 
         await Assert.That(f.BranchesHit).IsEqualTo(2);     // line-level aggregate (2/4) preserved
         await Assert.That(f.BranchesTotal).IsEqualTo(4);
@@ -681,7 +681,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Warnings).IsEmpty();
     }
@@ -701,7 +701,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(report.Files[0].BranchesTotal).IsEqualTo(0);
         var w = await Assert.That(report.Warnings).HasSingleItem();
@@ -728,7 +728,7 @@ public sealed class CoberturaParserTests
                    """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         // The overflowing branch entry is dropped (not silently zeroed INTO the totals)...
         await Assert.That(report.Files[0].BranchesTotal).IsEqualTo(0);
@@ -784,7 +784,7 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = CoberturaParser.Parse(stream).Files.Single();
+        var file = (await CoberturaParser.ParseAsync(stream)).Files.Single();
 
         await Assert.That(file.Path).IsEqualTo("src/Dto.cs");
         await Assert.That(file.LinesTotal).IsEqualTo(3);

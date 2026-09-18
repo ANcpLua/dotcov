@@ -1,7 +1,7 @@
 namespace DotCov.Tests.Infrastructure;
 
 /// <summary>
-/// A per-test temporary directory, deleted on dispose whatever the test outcome. Paths are
+/// A per-test temporary directory, deleted on disposal. Paths are
 /// returned through <see cref="Path.GetFullPath(string)"/> so assertions compare against the
 /// same spelling the resolver's enumeration produces (relevant on Windows, where a relative
 /// segment with '/' would otherwise keep mixed separators).
@@ -17,10 +17,16 @@ public sealed class TempWorkspace : IDisposable
 
     public string PathOf(string relative) => Path.GetFullPath(Path.Combine(Root, relative));
 
-    public string Write(string relative, byte[] bytes)
+    public string PrepareFile(string relative)
     {
         var full = PathOf(relative);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        return full;
+    }
+
+    public string Write(string relative, byte[] bytes)
+    {
+        var full = PrepareFile(relative);
         File.WriteAllBytes(full, bytes);
         return full;
     }

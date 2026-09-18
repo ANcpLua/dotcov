@@ -1,5 +1,6 @@
 using System.Text;
 using System.Xml;
+using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
 
@@ -391,17 +392,11 @@ public sealed class CodeMetricsReaderTests
     [Test]
     public async Task ParseFile_MalformedXml_RethrowsWithPathPrefixed()
     {
-        var path = Path.Combine(Directory.CreateTempSubdirectory("dotcov-metrics-").FullName, "bad.xml");
-        try
-        {
-            File.WriteAllText(path, "<CodeMetricsReport><unclosed>");
+        using var temp = TempWorkspace.Create("dotcov-metrics-");
+        var path = temp.PrepareFile("bad.xml");
+        await File.WriteAllTextAsync(path, "<CodeMetricsReport><unclosed>");
 
-            var ex = Assert.ThrowsExactly<XmlException>(() => CodeMetricsReader.ParseFile(path));
-            await Assert.That(ex.Message).StartsWith(path);
-        }
-        finally
-        {
-            Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
-        }
+        var ex = Assert.ThrowsExactly<XmlException>(() => CodeMetricsReader.ParseFile(path));
+        await Assert.That(ex.Message).StartsWith(path);
     }
 }

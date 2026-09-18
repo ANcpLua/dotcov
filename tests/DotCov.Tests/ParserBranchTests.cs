@@ -1,22 +1,15 @@
-using TUnit.Assertions.Enums;
 using System.Text;
 using DotCov.Tests.Infrastructure;
+using TUnit.Assertions.Enums;
 
 namespace DotCov.Tests;
 
-/// <summary>
-/// Pins for documented-but-untested parser/report behavior found by mutation analysis:
-/// each test here kills at least one mutant that survived the full pre-existing suite.
-/// </summary>
-public sealed class CoreMutationPinTests
+public sealed class ParserBranchTests
 {
     [Test]
     public async Task Parse_RepeatedBranchLineWithDifferingValues_ReconcilesPerComponentMax()
     {
-        // The header contract: the same branched line re-emitted across <class> blocks
-        // reconciles via Math.Max on BOTH tuple components. Varying covered AND total in one
-        // line ((1/2) then (2/4)) pins each component independently — with equal totals a
-        // Min mutant on the Total position is indistinguishable from Max.
+        // Vary both covered and total counts so each component's maximum is checked independently.
         var f = Cobertura.NewDoc()
             .AddClass("x.cs", c => c.Branch(5, "(1/2)"))
             .AddClass("x.cs", c => c.Branch(5, "(2/4)"))
@@ -30,9 +23,7 @@ public sealed class CoreMutationPinTests
     [Test]
     public async Task Parse_FullyCoveredBranchLine_IsAbsentFromPartialBranches()
     {
-        // FromLineData's classification is `Covered < Total` — strictly less. A 2/2 line in
-        // PartialBranches would corrupt the JSON partialBranches array and the "needs tests"
-        // guidance for every fully-exercised branch in the report.
+        // Fully covered branches must not appear in the user-facing partial-branch list.
         var f = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c
                 .Branch(5, "100% (2/2)")
@@ -48,10 +39,7 @@ public sealed class CoreMutationPinTests
     [Test]
     public async Task Parse_OutOfOrderLinesAcrossClassBlocks_SortsUncoveredAndPartialBranchOutput()
     {
-        // Every fixture happens to emit ascending line numbers, so dictionary insertion order
-        // coincidentally equals sorted order and the ordering guarantees were deletable. A
-        // later <class> block covering EARLIER lines (state machines, nested types) produces
-        // out-of-order insertion for real — the user-visible lists must still come out sorted.
+        // Nested types can emit earlier lines later; output ordering must not depend on insertion order.
         var f = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(10, hits: 0).Branch(12, "50% (1/2)"))
             .AddClass("a.cs", c => c.Line(5, hits: 0).Branch(6, "50% (1/2)"))
@@ -64,11 +52,7 @@ public sealed class CoreMutationPinTests
     [Test]
     public async Task Parse_ValidConditionBeforeAnyLine_IsIgnoredWithoutCrashing()
     {
-        // A well-formed <condition> with valid number/coverage attributes arriving before the
-        // first <line> in a class subtree must be silently ignored (there is no line to
-        // attribute it to). The -1 sentinel is what protects this: a corrupted initial value
-        // would record the condition against a line with no branch aggregate and crash
-        // Materialize's direct index.
+        // A condition without a preceding line has no line to attribute coverage to.
         const string xml = """
                            <?xml version="1.0"?>
                            <coverage><packages><package><classes>
@@ -82,7 +66,7 @@ public sealed class CoreMutationPinTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = CoberturaParser.Parse(stream);
+        var report = await CoberturaParser.ParseAsync(stream);
 
         var f = await Assert.That(report.Files).HasSingleItem();
         await Assert.That(f.ConditionsByLine).IsEmpty();
@@ -92,9 +76,7 @@ public sealed class CoreMutationPinTests
     [Test]
     public async Task Parse_ConditionWithoutCoverageAttribute_RecordsNoPhantomDetail()
     {
-        // A coverage-less <condition> on a (1/2) line would — if the null guard were lost —
-        // record a phantom {0:0} that passes Materialize's count*2==total gate straight into
-        // the public ConditionsByLine, where a merge union can Math.Max it against real data.
+        // Missing condition coverage must retain the line aggregate without inventing detail.
         const string xml = """
                            <?xml version="1.0"?>
                            <coverage><packages><package><classes>
@@ -111,10 +93,24 @@ public sealed class CoreMutationPinTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var f = await Assert.That(CoberturaParser.Parse(stream).Files).HasSingleItem();
+        var f = await Assert.That((await CoberturaParser.ParseAsync(stream)).Files).HasSingleItem();
 
         await Assert.That(f.ConditionsByLine).IsEmpty();      // aggregate-only fallback
         await Assert.That(f.BranchesHit).IsEqualTo(1);        // line aggregate (1/2) preserved
         await Assert.That(f.BranchesTotal).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Parse_BranchOnLineZero_StillCollectsConditionDetail()
+    {
+        // Line zero is a valid condition attribution target.
+        var f = Cobertura.NewDoc()
+            .AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%")))
+            .Parse().Files[0];
+
+        await Assert.That(f.BranchesByLine[0]).IsEqualTo((1, 2));
+        await Assert.That(f.ConditionsByLine).HasSingleItem();
+        var conds = f.ConditionsByLine.Single().Value;
+        await Assert.That(conds[0]).IsEqualTo(1);
     }
 }

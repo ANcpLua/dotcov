@@ -40,14 +40,14 @@ public static class DotCovCli
         {
             // Malformed XML, DTD refusal, char-cap overflow: the parser reports which input
             // and where; the message is rendered here, once, at the output boundary.
-            stderr.WriteLine($"error: {ex.SourceName}: {ex.Message}");
+            await stderr.WriteLineAsync($"error: {ex.SourceName}: {ex.Message}");
             return 1;
         }
         catch (Exception ex) when (ex is CliError or XmlException or IOException or UnauthorizedAccessException)
         {
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
-            stderr.WriteLine($"error: {ex.Message}");
+            await stderr.WriteLineAsync($"error: {ex.Message}");
             return 1;
         }
     }
@@ -56,7 +56,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            stderr.WriteLine("Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
+            await stderr.WriteLineAsync("Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
             return 1;
         }
 
@@ -80,7 +80,7 @@ public static class DotCovCli
             _ => TableFormatter.Format(report, color)
         };
 
-        stdout.Write(output);
+        await stdout.WriteAsync(output);
 
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
@@ -92,7 +92,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            stderr.WriteLine("Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
+            await stderr.WriteLineAsync("Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
             return 1;
         }
 
@@ -118,11 +118,11 @@ public static class DotCovCli
 
         if (gate.IsPass)
         {
-            stdout.WriteLine(gate.ToString());
+            await stdout.WriteLineAsync(gate.ToString());
             return await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
         }
 
-        stderr.WriteLine(gate.ToString());
+        await stderr.WriteLineAsync(gate.ToString());
 
         // The offender list answers "which files caused the line-gate failure", so it prints
         // only when the LINE gate actually failed. A branch-only failure listing line-threshold
@@ -130,9 +130,9 @@ public static class DotCovCli
         // have no offenders at all.
         if (gate.LineBelowThreshold)
         {
-            stderr.WriteLine("files below line threshold:");
+            await stderr.WriteLineAsync("files below line threshold:");
             foreach (var f in report.BelowPercent(minLine))
-                stderr.WriteLine(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
+                await stderr.WriteLineAsync(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
         }
 
         // Failing runs upload too — red runs are the ones a coverage dashboard most needs.
@@ -258,7 +258,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            stderr.WriteLine("Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
+            await stderr.WriteLineAsync("Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
             return 1;
         }
 
@@ -276,7 +276,7 @@ public static class DotCovCli
         if (!opts.ContainsKey("branch")) missing.Add("--branch");
         if (!opts.ContainsKey("project")) missing.Add("--project");
         if (missing.Count > 0)
-            stderr.WriteLine($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
+            await stderr.WriteLineAsync($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
 
         var snapshot = new CoverageSnapshot(
             CommitSha: opts.GetValueOrDefault("commit", "unknown"),
@@ -287,7 +287,7 @@ public static class DotCovCli
             Report: report);
 
         var json = JsonFormatter.FormatSnapshot(snapshot);
-        stdout.Write(json);
+        await stdout.WriteAsync(json);
 
         return await MaybeUpload(opts, () => json, stderr);
     }
@@ -509,11 +509,11 @@ public static class DotCovCli
 
             if (response.IsSuccessStatusCode)
             {
-                stderr.WriteLine($"Uploaded to {url} ({response.StatusCode})");
+                await stderr.WriteLineAsync($"Uploaded to {url} ({response.StatusCode})");
                 return 0;
             }
 
-            stderr.WriteLine($"Upload failed: {url} ({response.StatusCode})");
+            await stderr.WriteLineAsync($"Upload failed: {url} ({response.StatusCode})");
             return 1;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or NotSupportedException)
@@ -522,7 +522,7 @@ public static class DotCovCli
             // TaskCanceledException: the 30-second timeout above.
             // NotSupportedException: documented HttpClient behavior for non-http(s) schemes
             // (e.g. ftp://) — thrown before any connection is attempted.
-            stderr.WriteLine($"Upload failed: {url} ({ex.Message})");
+            await stderr.WriteLineAsync($"Upload failed: {url} ({ex.Message})");
             return 1;
         }
     }

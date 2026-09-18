@@ -442,4 +442,96 @@ public sealed class CorePathIdentityTests
         var again = CoverageReport.Merge(once, b);
         await Assert.That(again.SourceRoots).HasSingleItem();
     }
+
+    [Test]
+    public async Task Parse_LowercaseRelativePath_IsNotDriveLetterUppercased()
+    {
+        // Only Windows drive letters are normalized; relative paths remain case-sensitive.
+        var f = Cobertura.NewDoc()
+            .AddClass("src/app.cs", c => c.Line(1, hits: 1))
+            .Parse().Files[0];
+
+        await Assert.That(f.Path).IsEqualTo("src/app.cs");
+    }
+
+    [Test]
+    public async Task Parse_TwoCharDirectoryPath_IsNotDriveLetterUppercased()
+    {
+        // A slash at index two alone does not make a path drive-rooted.
+        var f = Cobertura.NewDoc()
+            .AddClass("ab/foo.py", c => c.Line(1, hits: 1))
+            .Parse().Files[0];
+
+        await Assert.That(f.Path).IsEqualTo("ab/foo.py");
+    }
+
+    [Test]
+    public async Task Parse_BareDriveRoot_ExactlyThreeChars_IsStillNormalized()
+    {
+        // A bare drive root is the shortest path that still needs drive-letter normalization.
+        var f = Cobertura.NewDoc()
+            .AddClass("c:\\", c => c.Line(1, hits: 1))
+            .Parse().Files[0];
+
+        await Assert.That(f.Path).IsEqualTo("C:/");
+    }
+
+    [Test]
+    public async Task Parse_EmptyFilenameWithSourceRoot_DoesNotThrow()
+    {
+        // An empty emitter filename must not turn path resolution into an index error.
+        var report = ParseXml(Doc(["/repo"], ""));
+
+        await Assert.That(report.Files.Single().Path).IsEqualTo("/repo/");
+    }
+
+    [Test]
+    public async Task Parse_TwoCharDriveRelativeFilename_CountsAsRooted()
+    {
+        // A drive-relative path must not be prefixed with the report's source root.
+        var report = ParseXml(Doc(["/repo"], "c:"));
+
+        await Assert.That(report.Files.Single().Path).IsEqualTo("c:");
+    }
+
+    [Test]
+    public async Task Merge_RootedWithRootless_StillWarnsOnAmbiguousFileIdentity()
+    {
+        // Rooted and rootless reports can describe the same file; warn in either merge order.
+        var rooted = ParseXml(
+            """
+            <?xml version="1.0"?>
+            <coverage><sources><source>/repo</source></sources><packages><package><classes>
+              <class name="A" filename="src/app.cs"><lines><line number="1" hits="1" branch="false" /></lines></class>
+              <class name="B" filename="src/only.cs"><lines><line number="1" hits="1" branch="false" /></lines></class>
+            </classes></package></packages></coverage>
+            """);
+        var rootless = ParseXml(Doc([], "app.cs"));
+
+        var w = await Assert.That(CoverageReport.Merge(rooted, rootless).Warnings).HasSingleItem();
+        await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.Detail).Contains("/repo/src/app.cs");
+        await Assert.That(w.Detail).Contains("'app.cs'");
+
+        var mirrored = await Assert.That(CoverageReport.Merge(rootless, rooted).Warnings).HasSingleItem();
+        await Assert.That(mirrored.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+    }
+
+    [Test]
+    public async Task Parse_BareDriveRootRespellings_DedupToOneRootWithoutAmbiguityWarning()
+    {
+        // Different spellings of the shortest drive root must still resolve to one identity.
+        var report = ParseXml(
+            """
+            <?xml version="1.0"?>
+            <coverage><sources><source>c:/</source><source>C:\</source></sources>
+            <packages><package><classes>
+              <class name="X" filename="app\main.py"><lines><line number="1" hits="1" branch="false" /></lines></class>
+            </classes></package></packages></coverage>
+            """);
+
+        await Assert.That(report.SourceRoots.Single()).IsEqualTo("C:");
+        await Assert.That(report.Warnings).IsEmpty();
+        await Assert.That(report.Files.Single().Path).IsEqualTo("C:/app/main.py");
+    }
 }

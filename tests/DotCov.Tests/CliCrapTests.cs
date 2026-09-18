@@ -10,9 +10,9 @@ namespace DotCov.Tests;
 /// </summary>
 public sealed class CliCrapTests : IDisposable
 {
-    private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("dotcov-cli-crap-");
+    private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-crap-");
 
-    public void Dispose() => _dir.Delete(recursive: true);
+    public void Dispose() => _ws.Dispose();
 
     private static async Task<(int Code, string StdOut, string StdErr)> Run(params string[] args)
     {
@@ -22,23 +22,15 @@ public sealed class CliCrapTests : IDisposable
         return (code, stdout.ToString(), stderr.ToString());
     }
 
-    private string WriteFile(string relative, byte[] bytes)
-    {
-        var path = Path.Combine(_dir.FullName, relative);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, bytes);
-        return path;
-    }
-
     /// <summary>comp 2, cov 0 → CRAP exactly 6: passes the default gate only because at-threshold passes.</summary>
     private string AtDefaultThreshold() =>
-        WriteFile("at.cobertura.xml", Cobertura.NewDoc()
+        _ws.Write("at.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
             .ToBytes());
 
     /// <summary>comp 3, cov 0 → CRAP 12: fails the default gate.</summary>
     private string AboveDefaultThreshold() =>
-        WriteFile("above.cobertura.xml", Cobertura.NewDoc()
+        _ws.Write("above.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c
                 .Method("Risky", "()", "3", m => m.Line(1, hits: 0))
                 .Method("Safe", "()", "1", m => m.Line(5, hits: 1)))
@@ -46,7 +38,7 @@ public sealed class CliCrapTests : IDisposable
 
     /// <summary>Method detail present but no usable complexity anywhere.</summary>
     private string NoComplexity() =>
-        WriteFile("nocomp.cobertura.xml", Cobertura.NewDoc()
+        _ws.Write("nocomp.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "()", null, m => m.Line(1, hits: 1)))
             .ToBytes());
 
@@ -83,7 +75,7 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_NoMethodDetail_Nodata_Exits1()
     {
-        var noMethods = WriteFile("plain.cobertura.xml", Cobertura.NewDoc()
+        var noMethods = _ws.Write("plain.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/C.cs", c => c.Line(1, hits: 1))
             .ToBytes());
 
@@ -108,11 +100,11 @@ public sealed class CliCrapTests : IDisposable
     {
         // The same directory dispatch as report/check: point crap at a TestResults-style
         // directory and the default **/coverage.cobertura.xml pattern finds nested reports.
-        WriteFile("run-1/coverage.cobertura.xml", Cobertura.NewDoc()
+        _ws.Write("run-1/coverage.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
             .ToBytes());
 
-        var (code, stdout, _) = await Run("crap", _dir.FullName);
+        var (code, stdout, _) = await Run("crap", _ws.Root);
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).Contains("MyApp.A.M");
@@ -123,7 +115,7 @@ public sealed class CliCrapTests : IDisposable
     {
         // A malformed hits attribute inside a method degrades to 0 hits; the CRAP path must
         // say so — every warning, one line each — while the gate still decides on the data.
-        var path = WriteFile("warn.cobertura.xml", Cobertura.NewDoc()
+        var path = _ws.Write("warn.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("1", "lots").Line(2, hits: 1)))
             .ToBytes());
 
@@ -138,7 +130,7 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_EmptyDirectory_Nodata_Exits1()
     {
-        var dir = Directory.CreateDirectory(Path.Combine(_dir.FullName, "empty")).FullName;
+        var dir = _ws.CreateDirectory("empty");
 
         var (code, _, stderr) = await Run("crap", dir);
 
@@ -149,9 +141,9 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_MalformedReport_ErrorNamesTheFileOnce()
     {
-        var bad = WriteFile("bad/coverage.cobertura.xml", "<coverage><packa"u8.ToArray());
+        var bad = _ws.Write("bad/coverage.cobertura.xml", "<coverage><packa"u8.ToArray());
 
-        var (code, _, stderr) = await Run("crap", Path.Combine(_dir.FullName, "bad"));
+        var (code, _, stderr) = await Run("crap", _ws.PathOf("bad"));
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).StartsWith($"error: {bad}: ");
@@ -164,7 +156,7 @@ public sealed class CliCrapTests : IDisposable
         // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.
         AtDefaultThreshold();
 
-        var (code, _, stderr) = await Run("crap", _dir.FullName, "--pattern", "sub/dir/coverage.xml");
+        var (code, _, stderr) = await Run("crap", _ws.Root, "--pattern", "sub/dir/coverage.xml");
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).StartsWith("error:");
@@ -174,7 +166,7 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_MissingPath_Error_Exits1()
     {
-        var (code, _, stderr) = await Run("crap", Path.Combine(_dir.FullName, "nope.xml"));
+        var (code, _, stderr) = await Run("crap", _ws.PathOf("nope.xml"));
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).StartsWith("error:");
@@ -218,10 +210,10 @@ public sealed class CliCrapTests : IDisposable
     {
         // Coverage carries no complexity; the metrics file supplies comp 5 for the uncovered
         // method M → CRAP 30 → fail. The zero-extra-file path is preferred only when usable.
-        var coverage = WriteFile("mixed.cobertura.xml", Cobertura.NewDoc()
+        var coverage = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, hits: 0)))
             .ToBytes());
-        var metricsPath = Path.Combine(_dir.FullName, "metrics.xml");
+        var metricsPath = _ws.PathOf("metrics.xml");
         await File.WriteAllTextAsync(metricsPath, """
             <?xml version="1.0" encoding="utf-8"?>
             <CodeMetricsReport Version="1.0">
@@ -301,7 +293,7 @@ public sealed class CliCrapTests : IDisposable
     {
         // A high-CRAP method in Program.cs (excluded by the WellKnown rules) must not fail the
         // gate once --exclude-generated is on — same rule set as report/check.
-        var mixed = WriteFile("gen.cobertura.xml", Cobertura.NewDoc()
+        var mixed = _ws.Write("gen.cobertura.xml", Cobertura.NewDoc()
             .AddClass("Program.cs", "Program", c => c.Method("Main", "()", "9", m => m.Line(1, hits: 0)))
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)))
             .ToBytes());

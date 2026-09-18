@@ -555,4 +555,40 @@ public sealed class CoverageDiffTests
         await Assert.That(result.Regressions.Single().Path).IsEqualTo("gone.cs");
         await Assert.That(result.Improvements.Single().Path).IsEqualTo("fresh.cs");
     }
+
+    [Test]
+    public async Task Compare_DeltaExactlyMovementEpsilon_IsModified()
+    {
+        // 1/10000 equals the epsilon exactly; only smaller movements count as noise.
+        var before = Reports.Single("a.cs", hit: 0, total: 10000);
+        var after = Reports.Single("a.cs", hit: 1, total: 10000);
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var file = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(file.Delta).IsEqualTo(CoverageDiff.MovementEpsilon);
+        await Assert.That(file.Change).IsEqualTo(FileChangeKind.Modified);
+    }
+
+    [Test]
+    public async Task Compare_ExactlyTwoSegmentSuffixAgreement_IsAlreadyPairingEvidence()
+    {
+        // Two matching trailing segments are sufficient; three would miss the boundary.
+        var before = Make(new FileCoverage("old/src/App.cs", 1, 2, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 0 }
+        });
+        var after = Make(new FileCoverage("new/src/App.cs", 2, 2, 0, 0)
+        {
+            LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1 }
+        });
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var d = await Assert.That(result.Files).HasSingleItem();
+        await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
+        await Assert.That(d.Path).IsEqualTo("new/src/App.cs");
+        await Assert.That(result.Added).IsEmpty();
+        await Assert.That(result.Removed).IsEmpty();
+    }
 }
