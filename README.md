@@ -1,231 +1,81 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/ANcpLua/dotcov/nuget-publish.yml?branch=main&style=flat-square&label=Build)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
 [![Coverage](https://raw.githubusercontent.com/ANcpLua/dotcov/badges/coverage-badge.svg)](https://github.com/ANcpLua/dotcov/tree/badges)
-[![dotcov](https://img.shields.io/nuget/v/DotCov.Tool?style=flat-square&label=dotcov&color=0891B2)](https://www.nuget.org/packages/DotCov.Tool/)
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square)](https://dotnet.microsoft.com/download/dotnet/10.0)
-[![MIT](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
 # DotCov
 
-Turn Cobertura XML into a build decision. Table, markdown, JSON, and an exit code your CI can
-act on — no coverage service, no account, no upload unless you ask for one.
+Turn Cobertura XML into a build decision — a table, a markdown block, a JSON payload, and an
+exit code your CI can act on. No coverage service, no account, no upload unless you ask for one.
+
+## Migrating from 0.x
+
+Version 1.0 replaces `DotCov.Nuke` with `DotCov.Fallout` and separates report discovery from
+XML parsing (`ReportResolver.Resolve` replaces the parser's path methods). See the
+[1.0 migration notes](docs/releases/1.0.0.md) for both upgrades.
+
+## Getting started
 
 ```bash
 dotnet tool install -g DotCov.Tool
-dotcov check TestResults/ --min-line 80
 ```
 
-| Package | For | Install |
-|---|---|---|
-| [![DotCov.Tool](https://img.shields.io/nuget/v/DotCov.Tool?style=flat-square&label=DotCov.Tool&color=0891B2)](https://www.nuget.org/packages/DotCov.Tool/) | CI scripts and your terminal. Native AOT | `dotnet tool install -g DotCov.Tool` |
-| [![DotCov](https://img.shields.io/nuget/v/DotCov?style=flat-square&label=DotCov&color=0891B2)](https://www.nuget.org/packages/DotCov/) | Your own code. Zero package references, AOT-clean | `dotnet add package DotCov` |
-| [![DotCov.Fallout](https://img.shields.io/nuget/v/DotCov.Fallout?style=flat-square&label=DotCov.Fallout&color=0891B2)](https://www.nuget.org/packages/DotCov.Fallout/) | Fallout builds | `fallout :add-package DotCov.Fallout` |
-
-Upgrading from 0.x? See the [1.0 migration notes](docs/releases/1.0.0.md) for
-the `DotCov.Nuke` → `DotCov.Fallout` replacement and parser API changes.
-
----
-
-## Fail the build under 80%
-
-```yaml
-- run: dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
-- run: dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
+```bash
+dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
 ```
 
-```console
+```
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file — dotcov globs `**/*cobertura*.xml` beneath it (hidden
-directories included) and merges every match, so a sharded test matrix needs no merge step.
-Both timestamped coverlet.MTP files and classic `coverage.cobertura.xml` files match the
-default. Below threshold it prints the
-offending files and exits `1`.
+That is the whole setup. Point `dotcov` at the directory your test run wrote its Cobertura
+reports to, not at a file: it searches for `**/*cobertura*.xml` (including timestamped MTP
+reports and hidden directories) and merges everything it finds, so a sharded test matrix needs
+no merge step. Below threshold it prints the offending files and exits `1`.
 
-**Fails closed.** A run that measured *nothing* also exits `1` (`NODATA:`), as does a run where
-you set every threshold to zero (`DISABLED:`). A gate that can't see must not report success.
-Discriminate on the first stderr token, never on the prose:
+## Packages
+
+| Package | For | Install |
+|---|---|---|
+| [DotCov.Tool](src/DotCov.Tool/README.md) | CI scripts and your terminal; Native AOT | `dotnet tool install -g DotCov.Tool` |
+| [DotCov](src/DotCov/README.md) | Your own code; zero package references, AOT-clean | `dotnet add package DotCov` |
+| [DotCov.Fallout](src/DotCov.Fallout/README.md) | [Fallout](https://fallout.build) builds; one interface, no target wiring | `fallout :add-package DotCov.Fallout` |
+
+Each package README is the reference for that package: the CLI's commands and flags, the
+library API, and the Fallout component's parameters and outcomes.
+
+## Commands
+
+| Command | Effect |
+|---|---|
+| `dotcov report <path>` | Parse and render as `table`, `json`, or `md`; `--threshold N` highlights files below N% |
+| `dotcov check <path>` | CI gate on `--min-line` (default `80`) and `--min-branch` (default `0`) |
+| `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `6`), `--top N`, `--metrics <file>` |
+| `dotcov diff <before> <after>` | Per-file deltas plus lines that flipped in files the change never touched |
+| `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the report |
+
+`<path>` is a file or a directory. `--github-summary` appends the markdown block to
+`$GITHUB_STEP_SUMMARY` on pass **and** fail, `--upload <url>` POSTs the JSON payload to an
+endpoint you control, and `dotcov --help` prints the full flag reference with examples.
+
+## Outcomes
 
 | Token | Meaning | Exit |
 |---|---|---|
-| `PASS:` | met the bar | 0 |
-| `FAIL:` | below the bar | 1 |
-| `NODATA:` | nothing measured | 1 |
-| `DISABLED:` | no threshold armed | 1 |
-| `error:` | bad path / parse / size cap / bad flag / upload | 1 |
-| — | unknown command | 2 |
+| `PASS:` | Thresholds met | 0 |
+| `FAIL:` | Below a threshold | 1 |
+| `NODATA:` | Reports parsed, but nothing measured | 1 |
+| `DISABLED:` | Every threshold is `0` | 1 |
+| `error:` | Bad path, parse failure, size cap, bad flag value, upload failure | 1 |
+| — | Unknown command | 2 |
 
-## Put a coverage table in the PR
+Everything that is not a verified pass exits non-zero. The first stderr token is the
+discriminator — branch on it, not on the message text. Percentages are invariant-formatted,
+so CI logs read `62.0%` on every host, never `62,0%`.
 
-```yaml
-- run: dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
-```
+Parsing is streaming `XmlReader`: no full-DOM load, DTDs prohibited and external resolution
+disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
 
-`--github-summary` appends the markdown to `$GITHUB_STEP_SUMMARY` on **pass and fail** — a
-green build still shows its number. Want it as a comment instead? `--format md` writes the same
-block to stdout:
+## Feedback
 
-```console
-$ dotcov report TestResults/ --format md
-## Coverage Report
-
-**Line coverage:** 58.3% (7/12)
-**Branch coverage:** 50.0% (3/6)
-
-| File | Lines | Line % | Branches | Branch % |
-|------|------:|-------:|---------:|---------:|
-| `src/Unused.cs` | 0/3 | 0.0% | - | - |
-| `src/Parser.cs` | 3/5 | 60.0% | 1/4 | 25.0% |
-| `src/Calculator.cs` | 4/4 | 100.0% | 2/2 | 100.0% |
-```
-
-## Decide what to test next
-
-Coverage tells you *how much*. CRAP tells you *where*. Every method is scored
-`comp² · (1 − cov)³ + comp`, worst first:
-
-```console
-$ dotcov crap TestResults/ --exclude-generated --top 5
-Method                                              Comp     Cov %      CRAP
-----------------------------------------------------------------------------
-DotCov.Formatters.MarkdownFormatter.Render            43    100.0%      43.0
-DotCov.Tool.DotCovCli.RunAsync                        40    100.0%      40.0
-DotCov.Tool.DotCovCli.Diff                            14     50.0%      38.5
-DotCov.CoberturaParser.ConsumeClass                   34    100.0%      34.0
-DotCov.FileCoverage.MergeWith                         32    100.0%      32.0
-----------------------------------------------------------------------------
-... 250 more methods below (--top 5)
-FAIL: worst CRAP 43.0 (max 6) - 69 of 255 methods above threshold
-```
-
-Fully covered code scores its own complexity; fully uncovered code scores `comp² + comp`. So a
-100%-covered 43-branch method still scores 43 — the formula is telling you to split it, not to
-test it. `Diff` at 50% is the opposite case: test it. That's the whole loop — take the top row,
-pull whichever lever it points at, rerun.
-
-That output is dotcov scored against itself, and at the default `--max-crap 6` it does not pass.
-
-```bash
-dotcov crap TestResults/ --max-crap 6              # gate; exit 1 above threshold (at-threshold passes)
-dotcov crap TestResults/ --top 10 --format md      # worst offenders for a PR comment
-dotcov crap cov.xml --metrics MyApp.Metrics.xml    # when the report has no complexity
-```
-
-**Where complexity comes from.** Coverlet embeds it per `<method>` and dotcov uses it
-automatically. gcovr, grcov and plain Cobertura don't emit it — generate
-`dotnet msbuild /t:Metrics` output with the
-[`Microsoft.CodeAnalysis.Metrics`](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics)
-package and pass `--metrics`. When both exist the embedded value wins, having measured the
-assembly that was actually covered.
-
-**Two honest limits.** `cov` is line coverage, not basis-path coverage, so a method whose lines
-all ran but whose branch combinations didn't will flatter itself. And lambdas, local functions
-and async state machines compile to separate IL methods; dotcov demangles them back into the
-source method (`<M>d__3+MoveNext` → `M`) and reconciles complexity with `Math.Max` rather than
-summing, so lambda-heavy methods read lower than Roslyn scores them. Anything unscorable, or any
-metrics member matching no method, is printed under its own heading rather than dropped.
-
-## See what a PR did to coverage
-
-```bash
-dotcov diff before.cobertura.xml after.cobertura.xml --format md
-```
-
-```console
-File                            Before     After     Delta      Change
------------------------------------------------------------------------
-services/svc-b/app/main.py       80.0%     33.3%    -46.7%    Modified
------------------------------------------------------------------------
-TOTAL                            80.0%     33.3%    -46.7%
-Indirect changes: 8 lines flipped across 1 file
-```
-
-Added / removed / modified, per-file deltas, and *indirect* changes — lines that flipped in
-files the PR never touched.
-
-## Keep your own coverage history
-
-```bash
-dotcov snapshot TestResults/ \
-  --commit "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --project MyApp \
-  --upload https://collector.example.com/api/v1/coverage
-```
-
-Versioned JSON — commit, branch, project, timestamp, SHA-256 of the report, full body — POSTed
-to any endpoint you control. Drop `--upload` and it prints to stdout for `jq`. This repo's own
-badge works this way: CI runs `dotcov report --format json`, writes shields.io endpoint JSON to
-a `badges` branch, and the badge above reads it. No third-party coverage service anywhere.
-
-## Gate a Fallout build
-
-```csharp
-using DotCov.Fallout;
-
-class Build : FalloutBuild, ICoverageReport { }
-```
-
-```bash
-fallout ReportCoverage --coverage-min-line 80 --coverage-exclude-generated-param true
-```
-
-Globs `RootDirectory / "TestResults"`, merges, renders, writes the step summary, fails below
-threshold. Attaches to `ICompile` through `TryDependsOn`, so inheriting it is optional.
-Parameters: `--coverage-min-line` (80), `--coverage-min-branch` (0), `--coverage-format`
-(`table`), `--coverage-exclude-generated-param` (false), `--coverage-pattern`
-(`**/*cobertura*.xml`), `--coverage-max-chars-param` (50000000). Every value is validated
-once, up front. Override `CoverageSearchDirectory` to point elsewhere.
-
-## Build it into your own tool
-
-```csharp
-using DotCov;
-using DotCov.Formatters;
-
-var report = CoberturaParser.Parse(ReportResolver.Resolve("TestResults/"))   // file or directory
-                            .Exclude(ExclusionRules.WellKnown);
-
-var gate = report.Evaluate(minLinePercent: 80, minBranchPercent: 60);
-if (!gate.IsPass)
-{
-    Console.Error.WriteLine(gate);
-    if (gate.LineBelowThreshold) { /* branch on flags, not on Reason text */ }
-    return 1;
-}
-Console.WriteLine(TableFormatter.Format(report));
-```
-
-Rates are `double?`: `null` means *unanswerable*, which is neither 0.0 nor 1.0. `Evaluate`
-returns four outcomes (`Pass`, `Fail`, `NoData`, `Disabled`) and `IsPass` covers only the first.
-`CoverageDiff.Compare` gives you the diff model, `CoberturaParser.ParseMethods` the per-method
-data behind `crap` (with its warnings and source roots), and `ParseAsync` a cancellable streaming overload.
-
-Parsing is `XmlReader`-streaming with `DtdProcessing.Prohibit`, `XmlResolver = null`, and a
-50,000,000-character-per-file cap (`--max-chars`, or the `maxChars` overloads; `0` disables).
-The package has no `PackageReference`s at all and compiles with the trim/AOT analyzers on and
-warnings as errors.
-
-Full API: IntelliSense, or [the source](https://github.com/ANcpLua/dotcov/tree/main/src/DotCov) —
-every public type is documented there.
-
----
-
-## Flags
-
-| Flag | Effect |
-|---|---|
-| `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, state machines, `Program.cs` |
-| `--keep <subs>` | Comma-separated substrings exempt from the above (`--keep Program.cs`) |
-| `--pattern <glob>` | Filename to scan for: `name` or `**/name`. Default `**/*cobertura*.xml`, including timestamped MTP reports (use `**/coverage.xml` for generic gcovr/coverage.py names) |
-| `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
-| `--format` | `table` · `json` · `md` |
-| `--threshold <n>` | `report` only: highlight files below n% |
-| `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY` |
-| `--upload <url>` | POST the JSON payload |
-
-Every percentage is invariant-formatted: `62.0%` on every host, never `62,0%`.
-
-`dotcov --help` prints the same reference with examples.
-
-## License
-
-[MIT](LICENSE) — © Alexander Nachtmann
+[Issues](https://github.com/ANcpLua/dotcov/issues) ·
+[Release notes](docs/releases/1.0.0.md) ·
+[MIT](LICENSE)
