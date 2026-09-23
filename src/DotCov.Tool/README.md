@@ -42,17 +42,27 @@ green build still shows its number.
 
 ## Exit codes
 
-Everything that is not a verified pass exits non-zero, including a run that measured nothing.
-The first stderr token is the discriminator — branch on it, not on the message text:
+The gate commands `check` and `crap` return `0` only for a measured pass. Their outcomes and
+shared CLI errors are listed below. Branch on the first stderr token, not the message text:
 
 | Token | Meaning | Exit |
 |---|---|---|
 | `PASS:` | met the threshold | 0 |
 | `FAIL:` | below the threshold | 1 |
-| `NODATA:` | nothing was measured | 1 |
-| `DISABLED:` | every threshold was 0, so nothing was checked | 1 |
+| `NODATA:` | the gate lacks the data needed to evaluate | 1 |
+| `DISABLED:` | both `check` thresholds are 0, so nothing was checked | 1 |
 | `error:` | bad path, parse failure, size cap, bad flag value, upload failure | 1 |
 | — | unknown command | 2 |
+
+`report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
+They do not require measured coverage or enforce thresholds. `report --threshold` affects
+presentation, not the exit code. Use `check` when CI must require measured coverage.
+
+An existing directory with no matching reports is valid empty input for reporting commands;
+a missing path or malformed report is an error. An empty `report` displays `no data` in
+Markdown and `-` for percentages in the table. Its JSON has `files: []`, zero totals, and no
+`lineRate` or `branchRate` fields. These represent missing measurements, not 0% coverage.
+For that same empty directory, `check --min-line 1` returns `NODATA:` and exits `1`.
 
 ## Deciding what to test next
 

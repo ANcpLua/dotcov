@@ -58,18 +58,24 @@ endpoint you control, and `dotcov --help` prints the full flag reference with ex
 
 ## Outcomes
 
+`report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed,
+including when the input contains no coverage data. That is command success, not a coverage
+pass. `check` and `crap` return `0` only for a measured pass. Their outcomes and shared CLI
+errors are listed below.
+
 | Token | Meaning | Exit |
 |---|---|---|
 | `PASS:` | Thresholds met | 0 |
 | `FAIL:` | Below a threshold | 1 |
-| `NODATA:` | Reports parsed, but nothing measured | 1 |
-| `DISABLED:` | Every threshold is `0` | 1 |
+| `NODATA:` | The gate lacks the data needed to evaluate | 1 |
+| `DISABLED:` | Both `check` thresholds are `0` | 1 |
 | `error:` | Bad path, parse failure, size cap, bad flag value, upload failure | 1 |
 | — | Unknown command | 2 |
 
-Everything that is not a verified pass exits non-zero. The first stderr token is the
-discriminator — branch on it, not on the message text. Percentages are invariant-formatted,
-so CI logs read `62.0%` on every host, never `62,0%`.
+Use `check` when CI must require measured coverage. For gate outcomes and CLI errors, branch
+on the first stderr token, not the message text. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
+for empty-report output. Percentages are invariant-formatted, so CI logs read `62.0%` on every
+host, never `62,0%`.
 
 Parsing is streaming `XmlReader`: no full-DOM load, DTDs prohibited and external resolution
 disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
