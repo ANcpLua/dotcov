@@ -1,7 +1,7 @@
 <Project>
 
   <PropertyGroup>
-    <TUnitVersion>1.68.17</TUnitVersion>
+    <TUnitVersion>1.69.0</TUnitVersion>
     <CoverletMtpVersion>10.0.1</CoverletMtpVersion>
     <FalloutVersion>10.4.0</FalloutVersion>
     <ANcpLuaAnalyzersVersion>2.1.2</ANcpLuaAnalyzersVersion>
