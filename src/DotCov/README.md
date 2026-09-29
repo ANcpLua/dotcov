@@ -73,9 +73,9 @@ SHA-256 of the source file.
 ## Parsing and safety
 
 `CoberturaParser` walks the document with `XmlReader` — no `XDocument.Load`, no full-DOM
-allocation, bounded memory. DTDs are prohibited and `XmlResolver` is null, so there is no XXE or
-entity-expansion surface, and each file is capped at 50,000,000 characters by default. Raise or
-remove the cap with the `maxChars` overloads (`0` disables it).
+allocation, bounded memory. DTDs are ignored, never processed, and `XmlResolver` is null, so
+there is no XXE or entity-expansion surface, and each file is capped at 50,000,000 characters
+by default. Raise or remove the cap with the `maxChars` overloads (`0` disables it).
 
 The package has no `PackageReference`s at all and builds with the trim/AOT analyzers on and
 warnings as errors, so AOT-cleanliness is enforced by the compiler rather than by convention.

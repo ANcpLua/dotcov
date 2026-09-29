@@ -75,7 +75,7 @@ does not fail an otherwise passing gate. Percentages are invariant-formatted, so
 `62.0%` on every host, never `62,0%`.
 
 Parsing comes from [DotCov](https://www.nuget.org/packages/DotCov/): streaming `XmlReader`,
-no full-DOM load, DTDs prohibited and external resolution disabled, bounded memory.
+no full-DOM load, DTDs ignored (never processed), external resolution disabled, bounded memory.
 
 ## Also in this family
 

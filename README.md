@@ -81,8 +81,8 @@ on the first stderr token, not the message text. See the [CLI exit-code contract
 for empty-report output. Percentages are invariant-formatted, so CI logs read `62.0%` on every
 host, never `62,0%`.
 
-Parsing is streaming `XmlReader`: no full-DOM load, DTDs prohibited and external resolution
-disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
+Parsing is streaming `XmlReader`: no full-DOM load, DTDs ignored (never processed), external
+resolution disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
 
 ## Feedback
 
