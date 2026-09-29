@@ -81,8 +81,11 @@ jobs:
           CI: true
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A coverage drop below build/Build.cs's
-      # thresholds fails the job, on PRs and main alike, before any badge is drawn.
+      # thresholds fails the job, on PRs and main alike, before any badge is drawn. Ubuntu only,
+      # like the badge: coverlet cannot instrument on the Windows runner ("DotCov.dll ... is
+      # being used by another process"), so that leg writes no report and the gate reads NODATA.
       - name: Coverage gate (dotcov checking dotcov)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
