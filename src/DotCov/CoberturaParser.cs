@@ -113,6 +113,16 @@ public static partial class CoberturaParser
     {
         public readonly List<string> SourceRoots = [];
         public readonly List<CoverageWarning> Warnings = [];
+        private readonly HashSet<CoverageWarning> _seen = [];
+
+        /// <summary>
+        /// Record a warning once per document: coverlet repeats every line under its method and
+        /// again in the class summary, and one malformed source line is one anomaly.
+        /// </summary>
+        public void Warn(CoverageWarning warning)
+        {
+            if (_seen.Add(warning)) Warnings.Add(warning);
+        }
     }
 
     /// <summary>
@@ -186,7 +196,7 @@ public static partial class CoberturaParser
 
         document.SourceRoots.Add(root);
         if (document.SourceRoots.Count is 2)
-            document.Warnings.Add(new CoverageWarning(
+            document.Warn(new CoverageWarning(
                 CoverageWarningKind.FileIdentityAmbiguous,
                 "",
                 0,
@@ -286,7 +296,7 @@ public static partial class CoberturaParser
             if (long.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h))
                 hits = (int)Math.Clamp(h, int.MinValue, int.MaxValue);
             else
-                document.Warnings.Add(new CoverageWarning(
+                document.Warn(new CoverageWarning(
                     CoverageWarningKind.MalformedHits,
                     file,
                     number,
@@ -425,7 +435,7 @@ public static partial class CoberturaParser
             }
             else
             {
-                document.Warnings.Add(new CoverageWarning(
+                document.Warn(new CoverageWarning(
                     CoverageWarningKind.MalformedConditionCoverage,
                     file,
                     line.Number,

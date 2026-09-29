@@ -321,6 +321,21 @@ public sealed class CoberturaParserTests
     }
 
     [Test]
+    public async Task Parse_MalformedLineUnderMethodAndClass_WarnsOncePerAggregation()
+    {
+        // Coverlet repeats every line under its <method> and in the class summary; the one
+        // malformed source line used to raise a warning per repetition.
+        var document = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("M", "()", "1", m => m.MalformedLine("7", "lots"))
+                .MalformedLine("7", "lots"));
+
+        var fileWarning = await Assert.That(document.Parse().Warnings).HasSingleItem();
+        await Assert.That(fileWarning.Line).IsEqualTo(7);
+        await Assert.That(CoberturaParser.ParseMethods(document.ToStream()).Warnings).HasSingleItem();
+    }
+
+    [Test]
     public async Task Parse_HitsAboveIntMax_CountsAsCoveredLine()
     {
         // 64-bit hit counts are real (soak runs; gcovr/llvm-cov/JaCoCo converters use long

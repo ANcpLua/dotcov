@@ -73,7 +73,7 @@ public static class CrapFormatter
         sb.AppendLine($"## CRAP Report{badge}");
         sb.AppendLine();
         sb.AppendLine(Invariant($"**Threshold:** max CRAP {gate.MaxCrap} — CRAP(m) = comp² · (1 − cov)³ + comp"));
-        if (gate.Outcome is GateOutcome.NoData)
+        if (gate.Outcome is GateOutcome.NoData or GateOutcome.Disabled)
         {
             sb.AppendLine();
             sb.AppendLine($"> **No verdict:** {gate.Reason}.");

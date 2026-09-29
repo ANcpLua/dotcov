@@ -109,6 +109,13 @@ public sealed class CrapReport
     /// </summary>
     public CrapGateResult Evaluate(double maxCrap)
     {
+        // Nothing can exceed an infinite threshold, so the gate cannot fail — reported as
+        // Disabled, like check's 0/0, never as a pass.
+        if (double.IsPositiveInfinity(maxCrap))
+            return new CrapGateResult(GateOutcome.Disabled, maxCrap, Methods.Count, 0,
+                Methods.Count is 0 ? null : Methods.Max(static m => m.Score),
+                "no finite threshold - this gate cannot fail");
+
         if (Methods.Count is 0)
         {
             var reason = Unscored.Count > 0
