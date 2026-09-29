@@ -6,12 +6,12 @@ or the component. Before routine verification, choose the matching target:
 
 ```sh
 dotnet tool restore
-dotnet fallout Test
-dotnet fallout Test --filter '/*/*/FalloutBuildTests/*'
-dotnet fallout Coverage
-dotnet fallout Report --format md
-dotnet fallout Crap --top 10
-dotnet fallout Snapshot
+fallout Test
+fallout Test --filter '/*/*/FalloutBuildTests/*'
+fallout Coverage
+fallout Report --format md
+fallout Crap --top 10
+fallout Snapshot
 ```
 
 `Diff` requires `--before` naming an existing Cobertura file or directory.

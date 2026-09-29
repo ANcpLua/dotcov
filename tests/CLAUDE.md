@@ -42,7 +42,7 @@ Ohne Aktivierung bleiben normale Testläufe uninstrumentiert.
 
 ```bash
 dotnet tool restore
-dotnet fallout Coverage                                         # Wrapper
+fallout Coverage                                         # Wrapper
 dotnet test --project tests/DotCov.Tests -p:Coverage=true         # direkt
 ```
 
