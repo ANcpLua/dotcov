@@ -178,7 +178,7 @@ public sealed class CliCrapTests : IDisposable
         var (code, _, stderr) = await Run("crap");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("Usage: dotcov crap");
+        await Assert.That(stderr).StartsWith("error: missing path. Usage: dotcov crap");
     }
 
     [Test]

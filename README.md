@@ -73,7 +73,7 @@ errors are listed below.
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | Both `check` thresholds are `0` | 1 |
-| `error:` | Bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
+| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
 | — | Unknown command | 2 |
 
 Use `check` when CI must require measured coverage. For gate outcomes and CLI errors, branch

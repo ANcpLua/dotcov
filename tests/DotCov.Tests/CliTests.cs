@@ -150,7 +150,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(command);
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("Usage:");
+        await Assert.That(stderr).StartsWith($"error: missing path. Usage: dotcov {command}");
     }
 
     // ── Arguments a command does not use: an error, never a silently applied default ──

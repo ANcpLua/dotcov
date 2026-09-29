@@ -59,7 +59,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            await stderr.WriteLineAsync("Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
+            await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
             return 1;
         }
 
@@ -99,7 +99,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            await stderr.WriteLineAsync("Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
+            await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
             return 1;
         }
 
@@ -166,7 +166,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            stderr.WriteLine("Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
+            stderr.WriteLine("error: missing path. Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
             return 1;
         }
 
@@ -248,7 +248,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
         {
-            stderr.WriteLine("Usage: dotcov diff <before> <after> [--format table|json|md]");
+            stderr.WriteLine("error: missing path. Usage: dotcov diff <before> <after> [--format table|json|md]");
             return 1;
         }
 
@@ -276,7 +276,7 @@ public static class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            await stderr.WriteLineAsync("Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
+            await stderr.WriteLineAsync("error: missing path. Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
             return 1;
         }
 
@@ -367,9 +367,9 @@ public static class DotCovCli
             Exit codes:
               0  success; for check, the gate passed
               1  gate failed or was inconclusive (NODATA/DISABLED), or the command could not
-                 run: parse/IO/size-cap error, invalid flag value, unknown flag, extra path,
-                 upload failure. The stderr first token (FAIL:/NODATA:/DISABLED:/error:)
-                 distinguishes these.
+                 run: missing path, parse/IO/size-cap error, invalid flag value, unknown flag,
+                 extra path, upload failure. The stderr first token
+                 (FAIL:/NODATA:/DISABLED:/error:) distinguishes these.
               2  unknown command
 
             crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML

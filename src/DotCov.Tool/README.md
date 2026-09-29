@@ -53,7 +53,7 @@ shared CLI errors are listed below. Branch on the first stderr token, not the me
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | both `check` thresholds are 0, so nothing was checked | 1 |
-| `error:` | bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
+| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
 | — | unknown command | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
