@@ -98,5 +98,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.2.0.md) ·
+[Release notes](docs/releases/1.3.0.md) ·
 [MIT](LICENSE)
