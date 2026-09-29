@@ -37,14 +37,31 @@ dotcov check    TestResults/ --min-line 80 --exclude-generated   # CI gate, exit
 dotcov crap     TestResults/ --max-crap 6                        # per-method risk gate
 dotcov diff     before.xml after.xml --format md                 # compare two reports
 dotcov snapshot TestResults/ --commit SHA --branch main --project MyApp
+dotcov test     tests/MyApp.Tests --min-line 80 -- -c Release    # dotnet test, then report and gate
 ```
 
 `--github-summary` writes the markdown table to `$GITHUB_STEP_SUMMARY` on pass **and** fail, so a
 green build still shows its number.
 
+## Testing and gating in one step
+
+`dotcov test` runs `dotnet test` with Microsoft Code Coverage writing Cobertura into a fresh
+`TestResults/<run>` directory, then prints the table and gates that run like `check`:
+
+```bash
+dotcov test tests/MyApp.Tests --min-line 80 --exclude-generated -- -c Release
+```
+
+It passes the coverage options of the runner `dotnet test` uses in the current directory:
+`DOTNET_TEST_RUNNER`, else `test.runner` in the nearest `global.json`, else VSTest. On
+Microsoft.Testing.Platform the test project needs `Microsoft.Testing.Extensions.CodeCoverage`
+(TUnit includes it); on VSTest, `Microsoft.NET.Test.Sdk` brings the Code Coverage collector.
+Arguments after `--` go to `dotnet test` unchanged. Its output goes to stdout, so stderr still
+starts with the verdict. A failed test run exits `1` with `error:` and no coverage verdict.
+
 ## Exit codes
 
-The gate commands `check` and `crap` return `0` only for a measured pass. Their outcomes and
+The gate commands `check`, `crap`, and `test` return `0` only for a measured pass. Their outcomes and
 shared CLI errors are listed below. Branch on the first stderr token, not the message text:
 
 | Token | Meaning | Exit |
@@ -53,7 +70,7 @@ shared CLI errors are listed below. Branch on the first stderr token, not the me
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | both `check` thresholds are 0, so nothing was checked | 1 |
-| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
+| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
 | — | unknown command | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.

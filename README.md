@@ -53,6 +53,7 @@ library API, and the Fallout component's parameters and outcomes.
 | `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `30`), `--top N`, `--metrics <file>` |
 | `dotcov diff <before> <after>` | Per-file deltas plus lines that flipped in files the change never touched |
 | `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the reports it read |
+| `dotcov test [<project>]` | Runs `dotnet test` with Microsoft Code Coverage into a fresh `TestResults/<run>`, then reports and gates it like `check`; arguments after `--` go to `dotnet test` |
 
 `<path>` is a file or a directory. `--github-summary` appends the markdown block to
 `$GITHUB_STEP_SUMMARY` on pass **and** fail, `--upload <url>` POSTs the JSON payload to an
@@ -64,7 +65,7 @@ a silently applied default.
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed,
 including when the input contains no coverage data. That is command success, not a coverage
-pass. `check` and `crap` return `0` only for a measured pass. Their outcomes and shared CLI
+pass. `check`, `crap`, and `test` return `0` only for a measured pass. Their outcomes and shared CLI
 errors are listed below.
 
 | Token | Meaning | Exit |
@@ -73,7 +74,7 @@ errors are listed below.
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | Both `check` thresholds are `0` | 1 |
-| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
+| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
 | — | Unknown command | 2 |
 
 Use `check` when CI must require measured coverage. For gate outcomes and CLI errors, branch

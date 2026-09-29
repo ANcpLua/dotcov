@@ -197,6 +197,55 @@ public sealed class CliTests : IDisposable
         await Assert.That(stderr).StartsWith($"error: Unexpected argument '{uncovered}' for 'check'.");
     }
 
+    [Test]
+    [Arguments("report")]
+    [Arguments("check")]
+    [Arguments("crap")]
+    [Arguments("diff")]
+    [Arguments("snapshot")]
+    public async Task Separator_IsAnError_ForEveryCommandButTest(string command)
+    {
+        // Only test forwards what follows '--'; anywhere else it would be dropped unread.
+        var (code, stdout, stderr) = await Run(command, HalfCovered(), "--", "-c", "Release");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith($"error: Unknown option '--' for '{command}'.");
+    }
+
+    [Test]
+    public async Task Test_DotnetTestOptionBeforeTheSeparator_IsAnError_NamingTheSeparator()
+    {
+        var (code, stdout, stderr) = await Run("test", "--filter", "Slow");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith("error: Unknown option '--filter' for 'test'. Pass dotnet test arguments after '--'.");
+    }
+
+    [Test]
+    public async Task Test_SecondPositional_IsAnError_NamingTheSeparator()
+    {
+        var (code, stdout, stderr) = await Run("test", "App.Tests.csproj", "-c", "Release");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith("error: Unexpected argument '-c' for 'test'. Pass dotnet test arguments after '--'.");
+    }
+
+    [Test]
+    [Arguments("--min-line", "abc")]
+    [Arguments("--min-branch", "NaN")]
+    public async Task Test_InvalidThreshold_FailsBeforeAnyTestRuns(string flag, string value)
+    {
+        var (code, stdout, stderr) = await Run("test", flag, value);
+
+        await Assert.That(code).IsEqualTo(1);
+        // No echoed "> dotnet test" line: nothing was started.
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith($"error: Invalid {flag} value: '{value}'");
+    }
+
     // ── Invalid numeric flags ──
 
     [Test]

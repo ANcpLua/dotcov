@@ -4,7 +4,7 @@ namespace DotCov.Tests.Infrastructure;
 
 internal static class ChildProcess
 {
-    public static async Task<(int ExitCode, string Output)> RunAsync(
+    public static async Task<ChildRun> RunAsync(
         ProcessStartInfo startInfo, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -15,7 +15,7 @@ internal static class ChildProcess
         try
         {
             await process.WaitForExitAsync(cancellationToken);
-            return (process.ExitCode, await stdout + await stderr);
+            return new ChildRun(process.ExitCode, await stdout, await stderr);
         }
         finally
         {
@@ -30,4 +30,10 @@ internal static class ChildProcess
             await Task.WhenAll(stdout, stderr);
         }
     }
+}
+
+/// <summary>A finished child process. <see cref="Output"/> is stdout followed by stderr.</summary>
+internal sealed record ChildRun(int ExitCode, string StdOut, string StdErr)
+{
+    public string Output => StdOut + StdErr;
 }
