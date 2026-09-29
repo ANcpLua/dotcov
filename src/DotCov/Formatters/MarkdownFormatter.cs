@@ -35,22 +35,40 @@ public static class MarkdownFormatter
     private static string Render(CoverageReport report, GateResult? gate, string? thresholdLine, bool floorFailing)
     {
         var sb = new StringBuilder();
-        var badge = gate?.Outcome switch
-        {
-            GateOutcome.Pass => " ✅",
-            GateOutcome.Fail => " ❌",
-            GateOutcome.NoData => " ⚠️",
-            GateOutcome.Disabled => " ⚠️",
-            _ => "",
-        };
 
         // Floor only the dimension(s) that actually fell short: flooring a passing rate would
         // misreport it (2499/2500 must stay 100.0%, not become 99.9%).
         var floorLine = floorFailing && gate is { LineBelowThreshold: true };
         var floorBranch = floorFailing && gate is { BranchBelowThreshold: true };
 
-        sb.AppendLine($"## Coverage Report{badge}");
+        sb.AppendLine($"## Coverage Report{Badge(gate)}");
         sb.AppendLine();
+        AppendSummary(sb, report, gate, thresholdLine, floorLine, floorBranch);
+
+        sb.AppendLine();
+        sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
+        sb.AppendLine("|------|------:|-------:|---------:|---------:|");
+
+        foreach (var f in report.Files.WorstFirst())
+            sb.AppendLine(FileRow(f, gate, floorLine, floorBranch));
+
+        AppendWarnings(sb, report);
+
+        return sb.ToString();
+    }
+
+    private static string Badge(GateResult? gate) => gate?.Outcome switch
+    {
+        GateOutcome.Pass => " ✅",
+        GateOutcome.Fail => " ❌",
+        GateOutcome.NoData => " ⚠️",
+        GateOutcome.Disabled => " ⚠️",
+        _ => "",
+    };
+
+    private static void AppendSummary(
+        StringBuilder sb, CoverageReport report, GateResult? gate, string? thresholdLine, bool floorLine, bool floorBranch)
+    {
         sb.AppendLine(report.LineRate is { } lr
             ? Invariant($"**Line coverage:** {Percent(lr, floorLine)} ({report.TotalLinesHit}/{report.TotalLines})")
             : "**Line coverage:** no data - the report contains no measured lines");
@@ -70,27 +88,18 @@ public static class MarkdownFormatter
 
         if (thresholdLine is not null)
             sb.AppendLine(thresholdLine);
+    }
 
-        sb.AppendLine();
-        sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
-        sb.AppendLine("|------|------:|-------:|---------:|---------:|");
-
-        foreach (var f in report.Files.WorstFirst())
-        {
-            // Per-file flooring follows the same rule as the CLI offender list: only files
-            // genuinely below the missed minimum in a failing dimension floor their display.
-            var floorFileLine = floorLine && gate is { } lg
-                && f.LineRate is { } fileLr && !GateResult.MeetsThreshold(fileLr, lg.MinLinePercent);
-            var floorFileBranch = floorBranch && gate is { } bg
-                && f.BranchRate is { } fileBr && !GateResult.MeetsThreshold(fileBr, bg.MinBranchPercent);
-            var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
-            sb.AppendLine(
-                $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate, floorFileLine)} | {branches} | {Pct(f.BranchRate, floorFileBranch)} |");
-        }
-
-        AppendWarnings(sb, report);
-
-        return sb.ToString();
+    private static string FileRow(FileCoverage f, GateResult? gate, bool floorLine, bool floorBranch)
+    {
+        // Per-file flooring follows the same rule as the CLI offender list: only files
+        // genuinely below the missed minimum in a failing dimension floor their display.
+        var floorFileLine = floorLine && gate is { } lg
+            && f.LineRate is { } fileLr && !GateResult.MeetsThreshold(fileLr, lg.MinLinePercent);
+        var floorFileBranch = floorBranch && gate is { } bg
+            && f.BranchRate is { } fileBr && !GateResult.MeetsThreshold(fileBr, bg.MinBranchPercent);
+        var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
+        return $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate, floorFileLine)} | {branches} | {Pct(f.BranchRate, floorFileBranch)} |";
     }
 
     private static void AppendWarnings(StringBuilder sb, CoverageReport report)
