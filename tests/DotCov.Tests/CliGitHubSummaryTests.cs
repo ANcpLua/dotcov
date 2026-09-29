@@ -156,7 +156,8 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var (checkCode, _, checkErr) = await Run(
             "check", HalfCovered(), "--min-line", "90", "--github-summary");
         await Assert.That(checkCode).IsEqualTo(1);
-        await Assert.That(checkErr).Contains("FAIL");
+        // The summary warning follows the verdict; it used to be the first stderr token.
+        await Assert.That(checkErr).StartsWith("FAIL:");
         await Assert.That(checkErr).Contains("warning: could not write GITHUB_STEP_SUMMARY");
         await Assert.That(checkErr).DoesNotContain("Unhandled exception");
     }

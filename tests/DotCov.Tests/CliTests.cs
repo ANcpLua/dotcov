@@ -198,6 +198,16 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
+    public async Task Keep_WithoutExcludeGenerated_IsAnError()
+    {
+        // --keep only exempts files from --exclude-generated; alone it used to change nothing silently.
+        var (code, _, stderr) = await Run("report", HalfCovered(), "--keep", "Program.cs");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated.");
+    }
+
+    [Test]
     [Arguments("report")]
     [Arguments("check")]
     [Arguments("crap")]
@@ -437,6 +447,39 @@ public sealed class CliTests : IDisposable
         await Assert.That(stderr).Contains($"merged 2 reports from '{dir}':");
         await Assert.That(stderr).Contains($"  {degraded}");
         await Assert.That(stderr).Contains($"  {other}");
+    }
+
+    [Test]
+    public async Task Report_Table_WritesWarningDetailsToStderr()
+    {
+        // The table shows only a warning count; the details used to appear nowhere.
+        var path = _ws.Write("table-warn.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
+            .ToBytes());
+
+        var (code, stdout, stderr) = await Run("report", path);
+
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stdout).Contains("Warnings: 1");
+        await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
+    }
+
+    [Test]
+    public async Task Diff_WarningsOfBothReports_GoToStderr()
+    {
+        // diff used to drop both reports' warnings, so a degraded input changed the diff unseen.
+        var before = _ws.Write("diff-warn/before.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
+            .ToBytes());
+        var after = _ws.Write("diff-warn/after.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 1).MalformedLine("2", "many"))
+            .ToBytes());
+
+        var (code, _, stderr) = await Run("diff", before, after);
+
+        await Assert.That(code).IsEqualTo(0);
+        await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
+        await Assert.That(stderr).Contains("warning: src/A.cs:2: hits='many' could not be parsed");
     }
 
     // ── Upload failures ──

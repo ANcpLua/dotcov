@@ -73,6 +73,16 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
+    public async Task Crap_InfiniteThreshold_IsDisabled_Exits1()
+    {
+        // Nothing exceeds an infinite threshold; it used to PASS a gate that could not fail.
+        var (code, _, stderr) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "Infinity");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("DISABLED:");
+    }
+
+    [Test]
     public async Task Crap_NoMethodDetail_Nodata_Exits1()
     {
         var noMethods = _ws.Write("plain.cobertura.xml", Cobertura.NewDoc()

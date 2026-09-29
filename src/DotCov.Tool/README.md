@@ -69,7 +69,7 @@ shared CLI errors are listed below. Branch on the first stderr token, not the me
 | `PASS:` | met the threshold | 0 |
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 1 |
-| `DISABLED:` | both `check` thresholds are 0, so nothing was checked | 1 |
+| `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 1 |
 | `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
 | — | unknown command | 2 |
 
@@ -114,7 +114,7 @@ from coverlet's per-method attribute automatically; for emitters that write none
 | Flag | Effect |
 |---|---|
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
-| `--keep <subs>` | Comma-separated substrings exempt from the above |
+| `--keep <subs>` | Comma-separated substrings exempt from `--exclude-generated`; requires it |
 | `--pattern <glob>` | Filename to scan for. Default `**/*cobertura*.xml`, including timestamped MTP reports |
 | `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
 | `--format` | `table`, `json`, `md` |

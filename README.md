@@ -73,7 +73,7 @@ errors are listed below.
 | `PASS:` | Thresholds met | 0 |
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 1 |
-| `DISABLED:` | Both `check` thresholds are `0` | 1 |
+| `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 1 |
 | `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
 | — | Unknown command | 2 |
 
@@ -98,5 +98,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.0.0.md) ·
+[Release notes](docs/releases/1.2.0.md) ·
 [MIT](LICENSE)
