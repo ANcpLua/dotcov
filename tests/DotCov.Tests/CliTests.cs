@@ -219,7 +219,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run("check", HalfCovered(), flag, value);
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains($"Invalid {flag} value: '{value}'");
+        await Assert.That(stderr).StartsWith($"error: Invalid {flag} value: '{value}'");
     }
 
     // ── --format validation ──
@@ -398,7 +398,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "notaurl");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("Upload failed: notaurl");
+        await Assert.That(stderr).StartsWith("error: Upload failed: notaurl");
         await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
@@ -410,18 +410,23 @@ public sealed class CliTests : IDisposable
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stdout).Contains("abc123");
-        await Assert.That(stderr).Contains("Upload failed: http://127.0.0.1:1/x");
+        // The missing --branch/--project warning follows; the upload error leads.
+        await Assert.That(stderr).StartsWith("error: Upload failed: http://127.0.0.1:1/x");
         await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
     [Test]
     public async Task Check_PassingGate_UploadFailure_Exits1()
     {
+        // Two reports merge, so stderr also lists them; the upload error still leads.
+        HalfCovered("up/a/coverage.cobertura.xml");
+        HalfCovered("up/b/coverage.cobertura.xml");
+
         var (code, _, stderr) = await Run(
-            "check", HalfCovered(), "--min-line", "40", "--upload", "http://127.0.0.1:1/x");
+            "check", _ws.PathOf("up"), "--min-line", "40", "--upload", "http://127.0.0.1:1/x");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("Upload failed");
+        await Assert.That(stderr).StartsWith("error: Upload failed");
     }
 
     [Test]

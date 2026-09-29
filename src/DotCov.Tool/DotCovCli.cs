@@ -89,8 +89,10 @@ public static class DotCovCli
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
 
+        // A failed upload is the outcome, so its "error:" line leads the diagnostics.
+        var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
         WriteInputs(path, inputs, stderr);
-        return await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
+        return exitCode;
     }
 
     static async Task<int> Check(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
@@ -125,8 +127,10 @@ public static class DotCovCli
         if (gate.IsPass)
         {
             await stdout.WriteLineAsync(gate.ToString());
+            // A failed upload turns this pass into exit 1; its "error:" line leads stderr.
+            var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
             WriteDiagnostics(path, inputs, report.Warnings, stderr);
-            return await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
+            return exitCode;
         }
 
         await stderr.WriteLineAsync(gate.ToString());
@@ -222,7 +226,7 @@ public static class DotCovCli
         // NumberStyles.None: digits only, so negatives/signs are rejected here.
         if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var t) || t is 0)
         {
-            stderr.WriteLine($"Invalid --top value: '{raw}' (expected a positive integer).");
+            stderr.WriteLine($"error: Invalid --top value: '{raw}' (expected a positive integer).");
             return false;
         }
 
@@ -282,17 +286,6 @@ public static class DotCovCli
         var report = ApplyExclusions(merged, opts);
         var fileHash = HashInputs(inputs);
 
-        // Identity flags default to 'unknown' so local experimentation stays frictionless, but
-        // the degradation must not be silent — 'unknown' snapshots land in exactly the --upload
-        // dashboard path where commit/branch/project identity matters most. Warned only once a
-        // snapshot is actually being produced, so parse failures keep a clean "error:" stderr.
-        var missing = new List<string>(3);
-        if (!opts.ContainsKey("commit")) missing.Add("--commit");
-        if (!opts.ContainsKey("branch")) missing.Add("--branch");
-        if (!opts.ContainsKey("project")) missing.Add("--project");
-        if (missing.Count > 0)
-            await stderr.WriteLineAsync($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
-
         var snapshot = new CoverageSnapshot(
             CommitSha: opts.GetValueOrDefault("commit", "unknown"),
             Branch: opts.GetValueOrDefault("branch", "unknown"),
@@ -304,8 +297,23 @@ public static class DotCovCli
         var json = JsonFormatter.FormatSnapshot(snapshot);
         await stdout.WriteAsync(json);
 
+        // A failed upload is the outcome, so its "error:" line leads the diagnostics.
+        var exitCode = await MaybeUpload(opts, () => json, stderr);
+
+        // Identity flags default to 'unknown' so local experimentation stays frictionless, but
+        // the degradation must not be silent — 'unknown' snapshots land in exactly the --upload
+        // dashboard path where commit/branch/project identity matters most. Warned only once a
+        // snapshot was produced and after the upload outcome, so parse and upload failures keep
+        // "error:" as the first stderr token.
+        var missing = new List<string>(3);
+        if (!opts.ContainsKey("commit")) missing.Add("--commit");
+        if (!opts.ContainsKey("branch")) missing.Add("--branch");
+        if (!opts.ContainsKey("project")) missing.Add("--project");
+        if (missing.Count > 0)
+            await stderr.WriteLineAsync($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
+
         WriteInputs(path, inputs, stderr);
-        return await MaybeUpload(opts, () => json, stderr);
+        return exitCode;
     }
 
     static int Version(TextWriter stdout)
@@ -488,7 +496,7 @@ public static class DotCovCli
             // so negatives are rejected here rather than crashing XmlReaderSettings.
             !long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out maxChars))
         {
-            stderr.WriteLine($"Invalid --max-chars value: '{raw}' (expected a non-negative integer; 0 = no cap).");
+            stderr.WriteLine($"error: Invalid --max-chars value: '{raw}' (expected a non-negative integer; 0 = no cap).");
             return false;
         }
 
@@ -500,7 +508,7 @@ public static class DotCovCli
         format = opts.GetValueOrDefault("format", "table");
         if (format is "table" or "json" or "markdown" or "md") return true;
 
-        stderr.WriteLine($"Invalid --format value: '{format}' (expected table, json, markdown, or md).");
+        stderr.WriteLine($"error: Invalid --format value: '{format}' (expected table, json, markdown, or md).");
         return false;
     }
 
@@ -511,7 +519,7 @@ public static class DotCovCli
         if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !double.IsNaN(value))
             return true;
 
-        stderr.WriteLine($"Invalid --{flag} value: '{raw}' (expected a number).");
+        stderr.WriteLine($"error: Invalid --{flag} value: '{raw}' (expected a number).");
         return false;
     }
 
@@ -578,7 +586,7 @@ public static class DotCovCli
                 return 0;
             }
 
-            await stderr.WriteLineAsync($"Upload failed: {url} ({response.StatusCode})");
+            await stderr.WriteLineAsync($"error: Upload failed: {url} ({response.StatusCode})");
             return 1;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or NotSupportedException)
@@ -587,7 +595,7 @@ public static class DotCovCli
             // TaskCanceledException: the 30-second timeout above.
             // NotSupportedException: documented HttpClient behavior for non-http(s) schemes
             // (e.g. ftp://) — thrown before any connection is attempted.
-            await stderr.WriteLineAsync($"Upload failed: {url} ({ex.Message})");
+            await stderr.WriteLineAsync($"error: Upload failed: {url} ({ex.Message})");
             return 1;
         }
     }
