@@ -30,19 +30,7 @@ public static partial class DotCovCli
         try
         {
             RejectUnusedArguments(command, options, forwarded);
-
-            return command switch
-            {
-                "report" => await Report(options, stdout, stderr, color),
-                "check" => await Check(options, stdout, stderr),
-                "crap" => Crap(options, stdout, stderr, color),
-                "diff" => Diff(options, stdout, stderr, color),
-                "snapshot" => await Snapshot(options, stdout, stderr),
-                "test" => await Test(options, forwarded ?? [], stdout, stderr, color),
-                "version" => Version(stdout),
-                "help" or "--help" or "-h" => Help(stdout),
-                _ => UnknownCommand(command, stdout, stderr)
-            };
+            return await Dispatch(command, options, forwarded, stdout, stderr, color);
         }
         catch (ReportParseException ex)
         {
@@ -51,7 +39,7 @@ public static partial class DotCovCli
             await stderr.WriteLineAsync($"error: {ex.SourceName}: {ex.Message}");
             return 1;
         }
-        catch (Exception ex) when (ex is CliError or XmlException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (IsExpectedFailure(ex))
         {
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
@@ -59,6 +47,33 @@ public static partial class DotCovCli
             return 1;
         }
     }
+
+    static bool IsExpectedFailure(Exception ex) =>
+        ex is CliError or XmlException or IOException or UnauthorizedAccessException;
+
+    // Not async: each arm hands back its command's Task, so a synchronous command's exception
+    // still surfaces inside RunAsync's try, and the switch stays one branch per command.
+    static Task<int> Dispatch(
+        string command, Dictionary<string, string> options, string[]? forwarded, TextWriter stdout, TextWriter stderr, bool color) =>
+        command switch
+        {
+            "report" => Report(options, stdout, stderr, color),
+            "check" => Check(options, stdout, stderr),
+            "crap" => Task.FromResult(Crap(options, stdout, stderr, color)),
+            "diff" => Task.FromResult(Diff(options, stdout, stderr, color)),
+            "snapshot" => Snapshot(options, stdout, stderr),
+            "test" => Test(options, forwarded ?? [], stdout, stderr, color),
+            _ => Task.FromResult(NonReportCommand(command, stdout, stderr))
+        };
+
+    /// <summary>The commands that read no report: version, help, and the unknown-command exit.</summary>
+    static int NonReportCommand(string command, TextWriter stdout, TextWriter stderr) =>
+        command switch
+        {
+            "version" => Version(stdout),
+            "help" or "--help" or "-h" => Help(stdout),
+            _ => UnknownCommand(command, stdout, stderr)
+        };
 
     static async Task<int> Report(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {

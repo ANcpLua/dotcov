@@ -329,6 +329,16 @@ public readonly record struct FileCoverage(
         foreach (var (line, hits) in other.LineHits)
             mergedHits[line] = mergedHits.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
 
+        var warnings = new List<CoverageWarning>();
+        var mergedBranches = MergeBranches(other, warnings);
+        var mergedConditions = MergeConditions(other, warnings);
+
+        return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions), warnings);
+    }
+
+    /// <summary>Line-level branch union of two reports; a line whose <c>Total</c> differs adds a warning.</summary>
+    private Dictionary<int, (int Covered, int Total)> MergeBranches(FileCoverage other, List<CoverageWarning> warnings)
+    {
         // Branch dedup across reports: without per-branch location IDs (Cobertura's
         // `condition-coverage="n/m"` doesn't expose them), the safest defensible union is
         // Math.Max per line — at least N branches were exercised by some run, and Total is
@@ -341,7 +351,6 @@ public readonly record struct FileCoverage(
         // outcome fold-order-dependent — an overlaid Math.Max survives a later condition-
         // identity poisoning and cannot be un-maxed.
         var mergedBranches = new Dictionary<int, (int Covered, int Total)>(RawBranchesByLine);
-        var warnings = new List<CoverageWarning>();
 
         foreach (var (line, b) in other.RawBranchesByLine)
         {
@@ -364,6 +373,12 @@ public readonly record struct FileCoverage(
             }
         }
 
+        return mergedBranches;
+    }
+
+    /// <summary>Per-condition union of two reports; a line whose condition numbers disagree warns and is poisoned.</summary>
+    private Dictionary<int, IReadOnlyDictionary<int, int>> MergeConditions(FileCoverage other, List<CoverageWarning> warnings)
+    {
         // Correct branch union via per-condition identity: where both reports carry condition
         // detail for a line WITH the same condition-number set, union the covered outcomes per
         // coverlet `number` (Math.Max). FromLineData later overlays the derived aggregate onto
@@ -421,7 +436,7 @@ public readonly record struct FileCoverage(
             mergedConditions[line] = theirs.Count is 0 ? PoisonedConditions : new Dictionary<int, int>(theirs);
         }
 
-        return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions), warnings);
+        return mergedConditions;
     }
 
     /// <summary>
