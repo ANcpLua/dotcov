@@ -85,6 +85,16 @@ host, never `62,0%`.
 Parsing is streaming `XmlReader`: no full-DOM load, DTDs ignored (never processed), external
 resolution disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
 
+## Contributing
+
+Build, test and coverage targets run through [Fallout](https://fallout.build):
+
+```bash
+dotnet tool install -g Fallout.GlobalTool   # once
+fallout Test                                # run the tests
+fallout Coverage                            # tests plus the coverage gate
+```
+
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
