@@ -79,6 +79,12 @@ jobs:
           -p:Coverage=true --results-directory TestResults
         env:
           CI: true
+      - name: Diagnose coverage files (temporary)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -File TestResults | ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
+          Get-ChildItem -Recurse -File -Filter '*cobertura*' -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { "COBERTURA " + $_.FullName }
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A coverage drop below build/Build.cs's
       # thresholds fails the job, on PRs and main alike, before any badge is drawn.
