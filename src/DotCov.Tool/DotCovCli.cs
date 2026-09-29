@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Xml;
 using DotCov.Formatters;
 
@@ -24,6 +25,8 @@ public static class DotCovCli
 
         try
         {
+            RejectUnusedArguments(command, options);
+
             return command switch
             {
                 "report" => await Report(options, stdout, stderr, color),
@@ -71,7 +74,8 @@ public static class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
+        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var report = ApplyExclusions(merged, opts);
 
         var output = format switch
         {
@@ -85,6 +89,7 @@ public static class DotCovCli
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
 
+        WriteInputs(path, inputs, stderr);
         return await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
     }
 
@@ -104,7 +109,8 @@ public static class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
+        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var report = ApplyExclusions(merged, opts);
         var gate = report.Evaluate(minLine, minBranch);
 
         // Written on pass AND fail, and derived from the same GateResult as the exit code.
@@ -119,6 +125,7 @@ public static class DotCovCli
         if (gate.IsPass)
         {
             await stdout.WriteLineAsync(gate.ToString());
+            WriteDiagnostics(path, inputs, report.Warnings, stderr);
             return await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
         }
 
@@ -134,6 +141,8 @@ public static class DotCovCli
             foreach (var f in report.BelowPercent(minLine))
                 await stderr.WriteLineAsync(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
         }
+
+        WriteDiagnostics(path, inputs, report.Warnings, stderr);
 
         // Failing runs upload too — red runs are the ones a coverage dashboard most needs.
         // The gate's exit 1 wins regardless of the upload outcome.
@@ -159,17 +168,17 @@ public static class DotCovCli
 
         if (!TryGetFormat(opts, stderr, out var format)) return 1;
 
-        // Default 6 — Uncle Bob's agent threshold: low enough that an agent looping against the
-        // gate keeps every method trivially testable, high enough that a fully covered comp-6
-        // method still passes.
-        if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "6"), stderr, out var maxCrap))
+        // Default 30 — the original CRAP threshold (crap4j). A fully covered method scores its
+        // own complexity, so a lower default fails well-tested code on complexity alone;
+        // --max-crap 6 opts into that stricter gate.
+        if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "30"), stderr, out var maxCrap))
             return 1;
 
         if (!TryGetTop(opts, stderr, out var top)) return 1;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var parsed = ParseMethodsInput(path, pattern, maxChars);
-        WriteWarnings(parsed.Warnings, stderr);
+        var inputs = ResolveInputs(path, pattern);
+        var parsed = CoberturaParser.ParseMethods(inputs, maxChars);
         var methods = ApplyMethodExclusions(parsed.Methods, opts);
         var report = CrapAnalysis.Analyze(methods, LoadMetrics(opts, maxChars));
         var gate = report.Evaluate(maxCrap);
@@ -184,12 +193,14 @@ public static class DotCovCli
         if (gate.IsPass)
         {
             stdout.WriteLine(gate.ToString());
+            WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
             return 0;
         }
 
         // Same fail-closed policy as check: NoData (no scorable methods) exits 1 — a gate that
         // cannot see must not exit 0. stderr first token (FAIL:/NODATA:) discriminates.
         stderr.WriteLine(gate.ToString());
+        WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
         return 1;
     }
 
@@ -241,8 +252,9 @@ public static class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var result = CoverageDiff.Compare(
-            ParseInput(before, pattern, maxChars), ParseInput(after, pattern, maxChars));
+        var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars);
+        var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars);
+        var result = CoverageDiff.Compare(beforeReport, afterReport);
 
         stdout.Write(format switch
         {
@@ -251,6 +263,8 @@ public static class DotCovCli
             _ => TableFormatter.FormatDiff(result, color)
         });
 
+        WriteInputs(before, beforeInputs, stderr);
+        WriteInputs(after, afterInputs, stderr);
         return 0;
     }
 
@@ -264,8 +278,9 @@ public static class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
-        var report = ApplyExclusions(ParseInput(path, pattern, maxChars), opts);
-        var fileHash = File.Exists(path) ? FileHasher.ComputeHash(path) : null;
+        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var report = ApplyExclusions(merged, opts);
+        var fileHash = HashInputs(inputs);
 
         // Identity flags default to 'unknown' so local experimentation stays frictionless, but
         // the degradation must not be silent — 'unknown' snapshots land in exactly the --upload
@@ -289,6 +304,7 @@ public static class DotCovCli
         var json = JsonFormatter.FormatSnapshot(snapshot);
         await stdout.WriteAsync(json);
 
+        WriteInputs(path, inputs, stderr);
         return await MaybeUpload(opts, () => json, stderr);
     }
 
@@ -316,14 +332,15 @@ public static class DotCovCli
               crap     <path> [--metrics <file>] [--max-crap N] [--top N] CRAP gate: comp^2*(1-cov)^3+comp
                        [--format table|json|md]                           per method (exit 1 if any method
                                                                           is strictly above --max-crap;
-                                                                          at-threshold passes; default 6)
+                                                                          at-threshold passes; default 30)
               diff     <before> <after> [--format table|json|md]          Compare two reports
               snapshot <path> [--commit SHA] [--branch B] [--project P]   Create pipeline-ready JSON
                                                                           (identity defaults to 'unknown')
               version                                                     Show version
 
-            Global flags:
-              --exclude-generated       Skip generated files, migrations, state machines, Program.cs
+            Shared flags (a flag the command does not use is an error, never ignored):
+              --exclude-generated       Skip generated files, migrations, GlobalUsings.cs, Program.cs
+                                        (report, check, crap, snapshot)
               --keep <substrings>       Exempt comma-separated paths from --exclude-generated by
                                         case-insensitive substring match, not globs
                                         (e.g. --keep Program.cs to measure a CLI tool's entry point)
@@ -331,17 +348,20 @@ public static class DotCovCli
                                         (top level only) or '**/filename' (recursive)
                                         (default {{ReportPattern.DefaultText}})
               --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
-              --upload <url>            POST JSON payload to any endpoint
-              --github-summary          Write markdown to $GITHUB_STEP_SUMMARY
+              --upload <url>            POST JSON payload to any endpoint (report, check, snapshot)
+              --github-summary          Write markdown to $GITHUB_STEP_SUMMARY (report, check, crap)
 
             <path> can be a file or directory. Directories are scanned for {{ReportPattern.DefaultText}};
             override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
+            Every match is merged; when there is more than one, stderr lists them after the result.
+            Give each test run a fresh results directory so an earlier run's report is not merged.
 
             Exit codes:
               0  success; for check, the gate passed
               1  gate failed or was inconclusive (NODATA/DISABLED), or the command could not
-                 run: parse/IO/size-cap error, invalid flag value, upload failure. The stderr
-                 first token (FAIL:/NODATA:/DISABLED:/error:) distinguishes these.
+                 run: parse/IO/size-cap error, invalid flag value, unknown flag, extra path,
+                 upload failure. The stderr first token (FAIL:/NODATA:/DISABLED:/error:)
+                 distinguishes these.
               2  unknown command
 
             crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML
@@ -387,11 +407,56 @@ public static class DotCovCli
         }
     }
 
-    static CoverageReport ParseInput(string path, ReportPattern pattern, long maxChars) =>
-        CoberturaParser.Parse(ResolveInputs(path, pattern), maxChars);
+    /// <summary>Parse and merge what <paramref name="path"/> resolves to; the inputs come back so they can be named.</summary>
+    static (CoverageReport Report, IReadOnlyList<ReportInput> Inputs) ParseInput(string path, ReportPattern pattern, long maxChars)
+    {
+        var inputs = ResolveInputs(path, pattern);
+        return (CoberturaParser.Parse(inputs, maxChars), inputs);
+    }
 
-    static MethodCoverageReport ParseMethodsInput(string path, ReportPattern pattern, long maxChars) =>
-        CoberturaParser.ParseMethods(ResolveInputs(path, pattern), maxChars);
+    /// <summary>
+    /// Every report a path resolved to, when there was more than one. All matches are merged, so
+    /// a report an earlier run left in the same directory silently lifts the result; naming them
+    /// makes that visible. Written after the verdict, which stays the first stderr token.
+    /// </summary>
+    static void WriteInputs(string path, IReadOnlyList<ReportInput> inputs, TextWriter stderr)
+    {
+        if (inputs.Count < 2) return;
+
+        stderr.WriteLine(FormattableString.Invariant($"merged {inputs.Count} reports from '{path}':"));
+        foreach (var input in inputs)
+            stderr.WriteLine($"  {input.SourceName}");
+    }
+
+    /// <summary>A gate's diagnostics, after its verdict: every warning, then the merged reports.</summary>
+    static void WriteDiagnostics(
+        string path, IReadOnlyList<ReportInput> inputs, IReadOnlyList<CoverageWarning> warnings, TextWriter stderr)
+    {
+        WriteWarnings(warnings, stderr);
+        WriteInputs(path, inputs, stderr);
+    }
+
+    /// <summary>
+    /// SHA-256 over the resolved reports in resolution order: for a single file exactly
+    /// <see cref="FileHasher.ComputeHash"/>, for a directory the set that was merged. Null when
+    /// nothing was resolved.
+    /// </summary>
+    static string? HashInputs(IReadOnlyList<ReportInput> inputs)
+    {
+        if (inputs.Count is 0) return null;
+
+        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[81920];
+        foreach (var input in inputs)
+        {
+            using var stream = input.OpenStream();
+            int read;
+            while ((read = stream.Read(buffer)) > 0)
+                sha256.AppendData(buffer.AsSpan(0, read));
+        }
+
+        return Convert.ToHexStringLower(sha256.GetHashAndReset());
+    }
 
     /// <summary>Method-level twin of <see cref="ApplyExclusions"/> — same flags, same rule set.</summary>
     static IReadOnlyList<MethodCoverage> ApplyMethodExclusions(
@@ -527,6 +592,41 @@ public static class DotCovCli
         }
     }
 
+    // The options each command acts on. Anything else — a misspelled flag, '--name=value', a flag
+    // only another command reads, a second path from a shell glob — used to be accepted and
+    // ignored, so a gate could pass on defaults nobody asked for. help and version take none.
+    static readonly Dictionary<string, HashSet<string>> AcceptedOptions = new(StringComparer.Ordinal)
+    {
+        ["report"] = Accept("file", "format", "threshold", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
+        ["check"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
+        ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", "exclude-generated", "keep", "pattern", "max-chars", "github-summary"),
+        ["diff"] = Accept("before", "after", "format", "pattern", "max-chars"),
+        ["snapshot"] = Accept("file", "commit", "branch", "project", "exclude-generated", "keep", "pattern", "max-chars", "upload"),
+    };
+
+    static HashSet<string> Accept(params string[] names) => new(names, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Fail before any report is read when an argument would otherwise be ignored.</summary>
+    static void RejectUnusedArguments(string command, Dictionary<string, string> options)
+    {
+        if (!AcceptedOptions.TryGetValue(command, out var accepted)) return;
+
+        foreach (var (key, value) in options)
+        {
+            if (accepted.Contains(key)) continue;
+
+            // ParseArgs files every path beyond the ones a command takes as "arg<N>".
+            if (key.StartsWith("arg", StringComparison.Ordinal) &&
+                int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+                throw new CliError($"Unexpected argument '{value}' for '{command}'. To merge several reports, pass their directory.");
+
+            var equalsSign = key.IndexOf('=');
+            throw new CliError(equalsSign > 0
+                ? $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
+                : $"Unknown option '--{key}' for '{command}'.");
+        }
+    }
+
     // Flags that never take a value. Recorded as "true" the moment the token is seen, so a
     // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
     // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
@@ -568,7 +668,7 @@ public static class DotCovCli
                 var key = positional switch
                 {
                     0 => command is "diff" ? "before" : "file",
-                    1 => "after",
+                    1 when command is "diff" => "after",
                     _ => $"arg{positional}"
                 };
                 parsed[key] = raw[i];

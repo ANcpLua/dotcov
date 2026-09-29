@@ -374,8 +374,8 @@ public static class CoverageDiff
                 continue;
             }
 
-            var beforeMissed = beforeHits is 0;
-            var afterMissed = afterHits is 0;
+            var beforeMissed = beforeHits <= 0;
+            var afterMissed = afterHits <= 0;
             if (beforeMissed == afterMissed) continue;  // hit-state unchanged
 
             changes.Add(afterMissed

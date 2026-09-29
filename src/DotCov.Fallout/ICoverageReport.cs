@@ -30,7 +30,7 @@ public interface ICoverageReport : IFalloutBuild
     [Parameter("Output format: table, json, markdown (md)")]
     string Format => TryGetValue(() => Format) ?? CoverageParameters.DefaultFormat;
 
-    [Parameter("Exclude generated files, migrations, state machines (true/false)")]
+    [Parameter("Exclude generated files, migrations, GlobalUsings.cs, Program.cs (true/false)")]
     string ExcludeGeneratedParam => TryGetValue(() => ExcludeGeneratedParam) ?? CoverageParameters.DefaultExcludeGenerated;
 
     [Parameter("Report file name pattern: 'filename' or '**/filename' (gcovr and coverage.py emit coverage.xml)")]
@@ -56,6 +56,12 @@ public interface ICoverageReport : IFalloutBuild
             var inputs = ReportResolver.ResolveDirectory(searchDirectory, parameters.Pattern);
             Assert.True(inputs.Count > 0,
                 $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
+
+            // Every match is merged, so a report an earlier run left under TestResults lifts the
+            // result silently unless the merged set is named.
+            if (inputs.Count > 1)
+                Log.Information("Merging {Count} coverage reports: {Reports}",
+                    inputs.Count, inputs.Select(static input => input.SourceName));
 
             var report = ParseReports(inputs, parameters.MaxChars);
             if (parameters.ExcludeGenerated)

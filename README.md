@@ -29,7 +29,9 @@ PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 That is the whole setup. Point `dotcov` at the directory your test run wrote its Cobertura
 reports to, not at a file: it searches for `**/*cobertura*.xml` (including timestamped MTP
 reports and hidden directories) and merges everything it finds, so a sharded test matrix needs
-no merge step. Below threshold it prints the offending files and exits `1`.
+no merge step. When it merges more than one report it lists them on stderr; give each test run
+a fresh results directory, or an earlier run's report is merged too. Below threshold it prints
+the offending files and exits `1`.
 
 ## Packages
 
@@ -48,13 +50,15 @@ library API, and the Fallout component's parameters and outcomes.
 |---|---|
 | `dotcov report <path>` | Parse and render as `table`, `json`, or `md`; `--threshold N` highlights files below N% |
 | `dotcov check <path>` | CI gate on `--min-line` (default `80`) and `--min-branch` (default `0`) |
-| `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `6`), `--top N`, `--metrics <file>` |
+| `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `30`), `--top N`, `--metrics <file>` |
 | `dotcov diff <before> <after>` | Per-file deltas plus lines that flipped in files the change never touched |
-| `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the report |
+| `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the reports it read |
 
 `<path>` is a file or a directory. `--github-summary` appends the markdown block to
 `$GITHUB_STEP_SUMMARY` on pass **and** fail, `--upload <url>` POSTs the JSON payload to an
-endpoint you control, and `dotcov --help` prints the full flag reference with examples.
+endpoint you control, and `dotcov --help` prints the full flag reference with examples. A flag
+the command does not use, a misspelled flag, `--name=value`, or a second path is an error, never
+a silently applied default.
 
 ## Outcomes
 
@@ -69,7 +73,7 @@ errors are listed below.
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | Both `check` thresholds are `0` | 1 |
-| `error:` | Bad path, parse failure, size cap, bad flag value, upload failure | 1 |
+| `error:` | Bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
 | — | Unknown command | 2 |
 
 Use `check` when CI must require measured coverage. For gate outcomes and CLI errors, branch

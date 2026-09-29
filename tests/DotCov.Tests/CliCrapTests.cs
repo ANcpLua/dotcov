@@ -22,17 +22,17 @@ public sealed class CliCrapTests : IDisposable
         return (code, stdout.ToString(), stderr.ToString());
     }
 
-    /// <summary>comp 2, cov 0 → CRAP exactly 6: passes the default gate only because at-threshold passes.</summary>
+    /// <summary>comp 5, cov 0 → CRAP exactly 30: passes the default gate only because at-threshold passes.</summary>
     private string AtDefaultThreshold() =>
         _ws.Write("at.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
+            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "5", m => m.Line(1, hits: 0)))
             .ToBytes());
 
-    /// <summary>comp 3, cov 0 → CRAP 12: fails the default gate.</summary>
+    /// <summary>comp 6, cov 0 → CRAP 42: fails the default gate.</summary>
     private string AboveDefaultThreshold() =>
         _ws.Write("above.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c
-                .Method("Risky", "()", "3", m => m.Line(1, hits: 0))
+                .Method("Risky", "()", "6", m => m.Line(1, hits: 0))
                 .Method("Safe", "()", "1", m => m.Line(5, hits: 1)))
             .ToBytes());
 
@@ -50,7 +50,7 @@ public sealed class CliCrapTests : IDisposable
         var (code, stdout, _) = await Run("crap", AtDefaultThreshold());
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("PASS: worst CRAP 6.0 (max 6)");
+        await Assert.That(stdout).Contains("PASS: worst CRAP 30.0 (max 30)");
     }
 
     [Test]
@@ -67,9 +67,9 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_RaisedThreshold_TurnsSameReportGreen()
     {
-        var (code, _, _) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "12");
+        var (code, _, _) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "42");
 
-        await Assert.That(code).IsEqualTo(0);   // 12 is at-threshold for the Risky method → passes
+        await Assert.That(code).IsEqualTo(0);   // 42 is at-threshold for the Risky method → passes
     }
 
     [Test]
@@ -208,8 +208,8 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_MetricsFile_SuppliesComplexity_GatesOnIt()
     {
-        // Coverage carries no complexity; the metrics file supplies comp 5 for the uncovered
-        // method M → CRAP 30 → fail. The zero-extra-file path is preferred only when usable.
+        // Coverage carries no complexity; the metrics file supplies comp 6 for the uncovered
+        // method M → CRAP 42 → fail. The zero-extra-file path is preferred only when usable.
         var coverage = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, hits: 0)))
             .ToBytes());
@@ -227,7 +227,7 @@ public sealed class CliCrapTests : IDisposable
                             <Members>
                               <Method Name="void B.M(int value)">
                                 <Metrics>
-                                  <Metric Name="CyclomaticComplexity" Value="5" />
+                                  <Metric Name="CyclomaticComplexity" Value="6" />
                                 </Metrics>
                               </Method>
                               <Method Name="void B.NeverCovered()">
@@ -249,7 +249,7 @@ public sealed class CliCrapTests : IDisposable
         var (code, stdout, stderr) = await Run("crap", coverage, "--metrics", metricsPath);
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("FAIL: worst CRAP 30.0");
+        await Assert.That(stderr).Contains("FAIL: worst CRAP 42.0");
         // The unmatched metrics member is listed, never silently dropped.
         await Assert.That(stdout).Contains("void B.NeverCovered()");
     }

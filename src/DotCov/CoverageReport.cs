@@ -214,7 +214,7 @@ public readonly record struct FileCoverage(
     /// </summary>
     public LineStatus GetLineStatus(int line)
     {
-        if (!LineHits.TryGetValue(line, out var hits) || hits is 0)
+        if (!LineHits.TryGetValue(line, out var hits) || hits <= 0)
             return LineStatus.Miss;
         if (BranchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
             return LineStatus.Partial;
@@ -283,7 +283,7 @@ public readonly record struct FileCoverage(
         var partial = 0;
         foreach (var (line, hits) in lineHits)
         {
-            if (hits is 0) continue;
+            if (hits <= 0) continue;
             if (branchesByLine.TryGetValue(line, out var b) && b.Covered < b.Total)
                 partial++;
             else
@@ -730,7 +730,7 @@ public sealed class CoverageReport
 
 /// <summary>
 /// Well-known exclusion patterns from BuildCoverage.cs — battle-tested.
-/// Generated code, build output, migrations, and async state machines inflate coverage numbers.
+/// Generated code, build output, migrations, and host bootstrap files inflate coverage numbers.
 /// </summary>
 public static class ExclusionRules
 {

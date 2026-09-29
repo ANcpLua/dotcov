@@ -153,6 +153,50 @@ public sealed class CliTests : IDisposable
         await Assert.That(stderr).Contains("Usage:");
     }
 
+    // ── Arguments a command does not use: an error, never a silently applied default ──
+
+    /// <summary>90% line coverage: passes the default --min-line 80, fails an intended 99.</summary>
+    private string NinetyPercent() =>
+        _ws.Write("ninety.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/N.cs", c =>
+            {
+                for (var line = 1; line <= 9; line++) c.Line(line, hits: 1);
+                c.Line(10, hits: 0);
+            })
+            .ToBytes());
+
+    [Test]
+    [Arguments("--min-lin 99")]
+    [Arguments("--min-line=99")]
+    [Arguments("--max-crap 99")]
+    public async Task Check_OptionItDoesNotUse_IsAnError_NotTheDefaultGate(string option)
+    {
+        // Each used to be ignored, so the gate ran at the default --min-line 80 and passed.
+        var (code, stdout, stderr) = await Run(["check", NinetyPercent(), .. option.Split(' ')]);
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stderr).StartsWith($"error: Unknown option '{option.Split(' ')[0]}' for 'check'.");
+    }
+
+    [Test]
+    public async Task Check_SecondPath_IsAnError_NotSilentlyDropped()
+    {
+        // A shell glob expands to several files; only the first used to be gated.
+        var covered = _ws.Write("glob/a.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 1))
+            .ToBytes());
+        var uncovered = _ws.Write("glob/b.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/B.cs", c => c.Line(1, hits: 0))
+            .ToBytes());
+
+        var (code, stdout, stderr) = await Run("check", covered, uncovered, "--min-line", "80");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stderr).StartsWith($"error: Unexpected argument '{uncovered}' for 'check'.");
+    }
+
     // ── Invalid numeric flags ──
 
     [Test]
@@ -321,6 +365,29 @@ public sealed class CliTests : IDisposable
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).Contains("src/A.cs");
         await Assert.That(stdout).Contains("src/B.cs");
+    }
+
+    [Test]
+    public async Task Check_WarningsAndMergedReports_FollowTheVerdictOnStderr()
+    {
+        // check used to print neither, so a degraded input or a report left over from an earlier
+        // run could decide the gate unseen. The verdict stays the first stderr token.
+        var degraded = _ws.Write("diag/a/coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
+            .ToBytes());
+        var other = _ws.Write("diag/b/coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/B.cs", c => c.Line(1, hits: 0))
+            .ToBytes());
+        var dir = _ws.PathOf("diag");
+
+        var (code, _, stderr) = await Run("check", dir, "--min-line", "80");
+
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stderr).StartsWith("FAIL:");
+        await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
+        await Assert.That(stderr).Contains($"merged 2 reports from '{dir}':");
+        await Assert.That(stderr).Contains($"  {degraded}");
+        await Assert.That(stderr).Contains($"  {other}");
     }
 
     // ── Upload failures ──
@@ -658,6 +725,22 @@ public sealed class CliTests : IDisposable
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stderr).DoesNotContain("warning:");
+    }
+
+    [Test]
+    public async Task Snapshot_Directory_HashesTheMergedReports()
+    {
+        // The hash used to exist only for a single-file input, never for the recommended directory.
+        HalfCovered("snap/a/coverage.cobertura.xml");
+        BranchHalf("snap/b/coverage.cobertura.xml");
+
+        var (code, stdout, _) = await Run(
+            "snapshot", _ws.PathOf("snap"), "--commit", "abc123", "--branch", "main", "--project", "MyApp");
+
+        await Assert.That(code).IsEqualTo(0);
+        var hash = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("fileHash").GetString();
+        await Assert.That(hash).IsNotNull();
+        await Assert.That(hash!.Length).IsEqualTo(64);
     }
 
     // ── Documented CLI contract ──

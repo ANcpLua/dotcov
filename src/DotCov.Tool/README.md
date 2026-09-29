@@ -24,8 +24,10 @@ PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 
 Pass the directory, not a file: `dotcov` globs `**/*cobertura*.xml` beneath it (hidden
 directories included) and merges every match, so a sharded test matrix needs no merge step.
-Timestamped coverlet.MTP files match the default. For generic names such as gcovr's
-`coverage.xml`, select the filename explicitly with `--pattern`.
+When it merges more than one report it lists them on stderr; give each test run a fresh results
+directory, or an earlier run's report is merged too. Timestamped coverlet.MTP files match the
+default. For generic names such as gcovr's `coverage.xml`, select the filename explicitly with
+`--pattern`.
 
 ## Commands
 
@@ -51,7 +53,7 @@ shared CLI errors are listed below. Branch on the first stderr token, not the me
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 1 |
 | `DISABLED:` | both `check` thresholds are 0, so nothing was checked | 1 |
-| `error:` | bad path, parse failure, size cap, bad flag value, upload failure | 1 |
+| `error:` | bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure | 1 |
 | — | unknown command | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
@@ -69,7 +71,7 @@ For that same empty directory, `check --min-line 1` returns `NODATA:` and exits 
 `crap` scores every method `comp² · (1 − cov)³ + comp` and sorts worst-first:
 
 ```
-$ dotcov crap TestResults/ --exclude-generated --top 5
+$ dotcov crap TestResults/ --exclude-generated --top 5 --max-crap 6
 Method                                              Comp     Cov %      CRAP
 ----------------------------------------------------------------------------
 DotCov.Formatters.MarkdownFormatter.Render            43    100.0%      43.0
@@ -84,21 +86,26 @@ FAIL: worst CRAP 43.0 (max 6) - 69 of 255 methods above threshold
 
 Fully covered code scores its own complexity, fully uncovered code scores `comp² + comp` — so a
 100%-covered 43-branch method still scores 43 and the formula is telling you to split it, not to
-test it. Complexity comes from coverlet's per-method attribute automatically; for emitters that
-write none, pass `--metrics` from `dotnet msbuild /t:Metrics`
+test it. The default `--max-crap` is 30, the original CRAP threshold; the `6` above also caps
+complexity, failing any method above complexity 6 however well it is tested. Complexity comes
+from coverlet's per-method attribute automatically; for emitters that write none, pass
+`--metrics` from `dotnet msbuild /t:Metrics`
 ([Microsoft.CodeAnalysis.Metrics](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics)).
 
 ## Flags
 
 | Flag | Effect |
 |---|---|
-| `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, state machines, `Program.cs` |
+| `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
 | `--keep <subs>` | Comma-separated substrings exempt from the above |
 | `--pattern <glob>` | Filename to scan for. Default `**/*cobertura*.xml`, including timestamped MTP reports |
 | `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
 | `--format` | `table`, `json`, `md` |
 | `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY` |
 | `--upload <url>` | POST the JSON payload |
+
+Each command accepts only the flags it uses, and `dotcov --help` lists which. A misspelled flag,
+`--name=value`, or a second path is an error, never a silently applied default.
 
 `dotcov --help` prints the full reference with examples. Percentages are invariant-formatted
 everywhere: `62.0%` on every host, never `62,0%`.

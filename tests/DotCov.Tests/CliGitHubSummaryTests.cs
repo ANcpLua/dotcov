@@ -107,14 +107,14 @@ public sealed class CliGitHubSummaryTests : IDisposable
         // from the same CrapGateResult as the exit code, written on fail too.
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
         var path = _ws.Write("crap.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/R.cs", "MyApp.R", c => c.Method("Risky", "()", "3", m => m.Line(1, hits: 0))));
+            .AddClass("src/R.cs", "MyApp.R", c => c.Method("Risky", "()", "6", m => m.Line(1, hits: 0))));
 
         var (code, _, _) = await Run("crap", path, "--github-summary");
 
         await Assert.That(code).IsEqualTo(1);
         var summary = await File.ReadAllTextAsync(SummaryPath);
         await Assert.That(summary).Contains("## CRAP Report ❌");
-        await Assert.That(summary).Contains("`FAIL: worst CRAP 12.0 (max 6)");
+        await Assert.That(summary).Contains("`FAIL: worst CRAP 42.0 (max 30)");
     }
 
     [Test]

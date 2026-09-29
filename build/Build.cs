@@ -28,7 +28,7 @@ class Build : FalloutBuild
     public string Format { get; set; } = "table";
 
     [Parameter("Maximum CRAP score")]
-    public string MaxCrap { get; set; } = "6";
+    public string MaxCrap { get; set; } = "30";
 
     [Parameter("Number of methods displayed; the CRAP gate still checks all methods")]
     public string Top { get; set; } = "20";

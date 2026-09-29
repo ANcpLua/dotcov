@@ -79,6 +79,13 @@ jobs:
           -p:Coverage=true --results-directory TestResults
         env:
           CI: true
+      # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
+      # reports (a fresh checkout holds no other run). A coverage drop below build/Build.cs's
+      # thresholds fails the job, on PRs and main alike, before any badge is drawn.
+      - name: Coverage gate (dotcov checking dotcov)
+        run: |
+          dotnet tool restore
+          dotnet fallout Coverage --reports TestResults
       # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written
       # from one RATE so they cannot disagree: coverage-badge.svg is what the READMEs display,
       # coverage-badge.json is the shields.io endpoint schema kept for machine consumers.

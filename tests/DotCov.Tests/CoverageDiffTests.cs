@@ -591,4 +591,21 @@ public sealed class CoverageDiffTests
         await Assert.That(result.Added).IsEmpty();
         await Assert.That(result.Removed).IsEmpty();
     }
+
+    [Test]
+    public async Task Compare_NegativeHits_AreMissed_InEveryView()
+    {
+        // The parser admits a negative count and the line totals read it as missed; the line
+        // status and the diff used to read it as hit, so a never-hit line became "newly missed".
+        var before = Cobertura.NewDoc().AddClass("src/N.cs", c => c.Line(1, hits: -1).Line(2, hits: 1)).Parse();
+        var after = Cobertura.NewDoc().AddClass("src/N.cs", c => c.Line(1, hits: 0).Line(2, hits: 1)).Parse();
+
+        var result = CoverageDiff.Compare(before, after);
+
+        var file = before.Files[0];
+        await Assert.That(file.LinesHit).IsEqualTo(1);
+        await Assert.That(file.StrictlyHitLines).IsEqualTo(1);
+        await Assert.That(file.GetLineStatus(1)).IsEqualTo(LineStatus.Miss);
+        await Assert.That(result.TotalLineChanges).IsEqualTo(0);
+    }
 }
