@@ -83,8 +83,11 @@ jobs:
         if: always() && runner.os == 'Windows'
         shell: pwsh
         run: |
-          Get-ChildItem -Recurse -File TestResults | ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
-          Get-ChildItem -Recurse -File -Filter '*cobertura*' -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { "COBERTURA " + $_.FullName }
+          "--- evaluated property"
+          dotnet msbuild tests/DotCov.Tests/DotCov.Tests.csproj -p:Coverage=true -p:Configuration=Release "-getProperty:TestingPlatformCommandLineArguments"
+          "--- direct run"
+          dotnet exec tests/DotCov.Tests/bin/Release/net10.0/DotCov.Tests.dll --coverlet --coverlet-output-format cobertura --coverlet-file-prefix dotcov --coverlet-include "[DotCov]*" --results-directory TestResults2 --treenode-filter "/*/*/AnsiTests/*" 2>&1 | Select-Object -Last 25
+          Get-ChildItem -Recurse -File TestResults2 | ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A coverage drop below build/Build.cs's
       # thresholds fails the job, on PRs and main alike, before any badge is drawn.
