@@ -1,17 +1,16 @@
 # dotcov
 
-Before verification, read the [Fallout commands](src/DotCov.Fallout/AGENTS.md).
-Use those targets for routine tests and coverage; use direct runner commands for
-diagnostics the targets do not expose.
-For test isolation, measurement, or runner diagnostics, read the
+Run tests and coverage through the [Fallout commands](src/DotCov.Fallout/AGENTS.md);
+use direct runner commands only for diagnostics the targets don't expose.
+For test isolation, measurement or runner diagnostics, read the
 [test guide](tests/CLAUDE.md).
 
-For requested code reviews, load
-[$behavioral-review](.agents/skills/behavioral-review/SKILL.md).
-Keep project commands here, not in the reusable skill.
+## Skills
 
-For workflow edits, use [$dotcov-ci-workflows](.agents/skills/dotcov-ci-workflows/SKILL.md).
-For release preparation or publication, use [$dotcov-release](.agents/skills/dotcov-release/SKILL.md).
+- Code reviews: load [$behavioral-review](.agents/skills/behavioral-review/SKILL.md).
+  Project commands stay in this file, not in the reusable skill.
+- Workflow edits: use [$dotcov-ci-workflows](.agents/skills/dotcov-ci-workflows/SKILL.md).
+- Release preparation or publication: use [$dotcov-release](.agents/skills/dotcov-release/SKILL.md).
 
 ## Code Review Rules
 
