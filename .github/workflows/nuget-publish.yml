@@ -230,3 +230,26 @@ jobs:
           dotnet nuget push "artifacts/DotCov.Tool.${{ needs.version.outputs.version }}.nupkg" \
             --source https://api.nuget.org/v3/index.json \
             --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --skip-duplicate
+
+  # The GitHub Release for a tag, after every package is on NuGet. Its notes are the finished
+  # docs/releases/<version>.md (the same text v1.0.0 was published with); a tag without that
+  # file fails here, on purpose. Manual dispatches publish packages only: they have no tag to
+  # release against, so this job is tag pushes only.
+  release:
+    needs: [version, publish]
+    if: needs.version.outputs.is_release == 'true' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Create the GitHub Release from docs/releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          test -f "docs/releases/$V.md" || { echo "docs/releases/$V.md is missing"; exit 1; }
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Release v$V exists already"; exit 0
+          fi
+          gh release create "v$V" --verify-tag --title "DotCov $V" --notes-file "docs/releases/$V.md"
