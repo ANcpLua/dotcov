@@ -100,6 +100,9 @@ public sealed class RepositoryBuildSnapshotTests : IDisposable
                  }.Concat(args).Concat(["--root", _workspace.Root, "--no-logo"]))
             start.ArgumentList.Add(argument);
         start.Environment.Remove("GITHUB_STEP_SUMMARY");
+        // On GitHub Actions, Fallout's GitRepository takes branch and commit from GITHUB_REF and
+        // GITHUB_SHA instead of the workspace repository these tests build.
+        start.Environment.Remove("GITHUB_ACTIONS");
         start.Environment["NO_COLOR"] = "1";
 
         var run = await ChildProcess.RunAsync(start, cancellationToken);
