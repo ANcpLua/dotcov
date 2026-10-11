@@ -10,10 +10,12 @@ public static class MarkdownFormatter
         // A gate that could not evaluate gets its own badge. Rendering NoData/Disabled as ✅
         // is what lets an unmeasured build read as a healthy one in a PR summary.
         var gate = threshold.HasValue ? report.Evaluate(threshold.Value) : (GateResult?)null;
-        var thresholdLine = threshold.HasValue ? Invariant($"**Threshold:** {threshold.Value:F0}%") : null;
+        // The threshold exactly as evaluated (round-trip, like the gate overload): F0 printed
+        // 79.6 as "80%" beside a ✅ for 79.8%, and 0.4 as "0%" beside a ❌.
+        var thresholdLine = threshold.HasValue ? Invariant($"**Threshold:** {threshold.Value}%") : null;
         // Legacy path renders un-floored rates — its output shape is pinned by existing
         // consumers. The GateResult overload below is the floor-aware presentation.
-        return Render(report, gate, thresholdLine, floorFailing: false);
+        return Render(report, gate, thresholdLine, floorLine: false, floorBranch: false);
     }
 
     /// <summary>
@@ -29,17 +31,15 @@ public static class MarkdownFormatter
     public static string Format(CoverageReport report, GateResult gate) =>
         Render(report, gate,
             Invariant($"**Threshold:** line {gate.MinLinePercent}%, branch {gate.MinBranchPercent}%"),
-            floorFailing: true)
+            // Floor only the dimension(s) that actually fell short: flooring a passing rate
+            // would misreport it (2499/2500 must stay 100.0%, not become 99.9%).
+            floorLine: gate.LineBelowThreshold, floorBranch: gate.BranchBelowThreshold)
         + Invariant($"{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
-    private static string Render(CoverageReport report, GateResult? gate, string? thresholdLine, bool floorFailing)
+    private static string Render(
+        CoverageReport report, GateResult? gate, string? thresholdLine, bool floorLine, bool floorBranch)
     {
         var sb = new StringBuilder();
-
-        // Floor only the dimension(s) that actually fell short: flooring a passing rate would
-        // misreport it (2499/2500 must stay 100.0%, not become 99.9%).
-        var floorLine = floorFailing && gate is { LineBelowThreshold: true };
-        var floorBranch = floorFailing && gate is { BranchBelowThreshold: true };
 
         sb.AppendLine($"## Coverage Report{Badge(gate)}");
         sb.AppendLine();
@@ -99,7 +99,7 @@ public static class MarkdownFormatter
         var floorFileBranch = floorBranch && gate is { } bg
             && f.BranchRate is { } fileBr && !GateResult.MeetsThreshold(fileBr, bg.MinBranchPercent);
         var branches = f.BranchesTotal > 0 ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-";
-        return $"| `{f.Path}` | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate, floorFileLine)} | {branches} | {Pct(f.BranchRate, floorFileBranch)} |";
+        return $"| {TableCode(f.Path)} | {f.LinesHit}/{f.LinesTotal} | {Pct(f.LineRate, floorFileLine)} | {branches} | {Pct(f.BranchRate, floorFileBranch)} |";
     }
 
     private static void AppendWarnings(StringBuilder sb, CoverageReport report)
@@ -113,14 +113,21 @@ public static class MarkdownFormatter
         sb.AppendLine("### Warnings");
         sb.AppendLine();
         foreach (var w in report.Warnings)
-            sb.AppendLine($"- `{w.File}:{w.Line}` — {w.Kind}: {w.Detail}");
+            sb.AppendLine($"- {Code($"{w.File}:{w.Line}")} — {w.Kind}: {w.Detail}");
     }
 
     public static string FormatDiff(CoverageDiffResult diff)
     {
         var sb = new StringBuilder();
 
-        var icon = diff.Delta switch { > 0 => "📈", < 0 => "📉", _ => "➡️" };
+        // Same movement threshold as the change kind and AnsiPen.Delta: a sub-epsilon wobble
+        // is Unchanged and painted dim, so the header must not call it a rise or a fall.
+        var icon = diff.Delta switch
+        {
+            >= CoverageDiff.MovementEpsilon => "📈",
+            <= -CoverageDiff.MovementEpsilon => "📉",
+            _ => "➡️"
+        };
         sb.AppendLine($"## Coverage Diff {icon}");
         sb.AppendLine();
         // Null rates render as "-" like the table/JSON formatters: a diff against an
@@ -131,7 +138,7 @@ public static class MarkdownFormatter
         sb.AppendLine("|------|-------:|------:|------:|--------|");
 
         foreach (var d in diff.Files)
-            sb.AppendLine($"| `{d.Path}` | {Pct(d.Before)} | {Pct(d.After)} | {SignedPct(d.Delta)} | {d.Change} |");
+            sb.AppendLine($"| {TableCode(d.Path)} | {Pct(d.Before)} | {Pct(d.After)} | {SignedPct(d.Delta)} | {d.Change} |");
 
         AppendIndirectChanges(sb, diff);
 
@@ -148,7 +155,7 @@ public static class MarkdownFormatter
     private static string Percent(double rate, bool floorTowardFail)
     {
         var pct = rate * 100;
-        if (floorTowardFail) pct = Math.Floor(pct * 10 + GateResult.RateEpsilon) / 10;
+        if (floorTowardFail) pct = GateResult.FloorToTenth(pct);
         return Invariant($"{pct:F1}%");
     }
 
@@ -189,7 +196,33 @@ public static class MarkdownFormatter
             if (added       > 0) fragments.Add($"{added} added");
             if (removed     > 0) fragments.Add($"{removed} removed");
 
-            sb.AppendLine($"- `{d.Path}`: {string.Join(", ", fragments)}");
+            sb.AppendLine($"- {Code(d.Path)}: {string.Join(", ", fragments)}");
         }
     }
+
+    /// <summary>
+    /// <paramref name="text"/> as one inline code span, whatever it contains: line breaks
+    /// become spaces, and a text carrying backticks gets a fence one backtick longer than its
+    /// longest backtick run, padded with the single space CommonMark strips — a lone-backtick
+    /// fence closed at the first backtick of the text and spilled the rest as prose.
+    /// </summary>
+    internal static string Code(string text)
+    {
+        text = text.ReplaceLineEndings(" ");
+        int longest = 0, run = 0;
+        foreach (var c in text)
+            longest = Math.Max(longest, run = c is '`' ? run + 1 : 0);
+        if (longest is 0) return $"`{text}`";
+
+        var fence = new string('`', longest + 1);
+        return $"{fence} {text} {fence}";
+    }
+
+    /// <summary>
+    /// <see cref="Code"/> for a table cell: GFM splits cells on every unescaped <c>|</c>, code
+    /// spans included, so a pipe in a name shifted every later cell one column right. The
+    /// table parser consumes the <c>\|</c> escape before inline parsing, so it renders as
+    /// <c>|</c> inside the span.
+    /// </summary>
+    internal static string TableCode(string text) => Code(text.Replace("|", "\\|", StringComparison.Ordinal));
 }

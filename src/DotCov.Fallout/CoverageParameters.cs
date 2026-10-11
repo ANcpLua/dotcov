@@ -35,9 +35,12 @@ internal sealed record CoverageParameters(
             ParsePattern(pattern, "Coverage Pattern"),
             ParseMaxChars(maxChars, "Coverage MaxCharsParam"));
 
-    /// <summary>Culture-invariant number; a comma decimal separator is garbage, not 80.5.</summary>
+    /// <summary>
+    /// Culture-invariant number; a comma decimal separator is garbage, not 80.5. NaN is rejected
+    /// as the CLI rejects it: every comparison against NaN is false, so it gates nothing.
+    /// </summary>
     public static double ParseThreshold(string value, string parameterName) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && !double.IsNaN(parsed)
             ? parsed
             : throw new ArgumentException($"Invalid {parameterName}: '{value}' (expected a number).");
 

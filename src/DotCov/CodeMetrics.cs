@@ -65,6 +65,7 @@ public readonly record struct CodeMetricsMember(
 public static class CodeMetricsReader
 {
     private const long DefaultMaxChars = 50_000_000;
+    private const string GlobalNamespaceDisplay = "<global namespace>";
 
     public static IReadOnlyList<CodeMetricsMember> Parse(Stream stream, long maxChars = DefaultMaxChars)
     {
@@ -132,13 +133,16 @@ public static class CodeMetricsReader
         switch (reader.LocalName)
         {
             case "Namespace":
-                state.Namespace = reader.GetAttribute("Name") ?? "";
+                // The writer names namespaces with ToDisplayString(), which spells the global
+                // namespace "<global namespace>"; IL names its types with no prefix at all.
+                var ns = reader.GetAttribute("Name") ?? "";
+                state.Namespace = ns is GlobalNamespaceDisplay ? "" : ns;
                 break;
 
             case "NamedType":
                 // Empty elements raise no EndElement, so only a real subtree pushes.
                 if (!reader.IsEmptyElement)
-                    state.TypeChain.Add(StripGenericsPerSegment(reader.GetAttribute("Name") ?? ""));
+                    state.TypeChain.Add(TypeSegment(reader.GetAttribute("Name") ?? ""));
                 break;
 
             case "Metric":
@@ -160,7 +164,8 @@ public static class CodeMetricsReader
                 break;
 
             case "NamedType":
-                if (state.TypeChain.Count > 0) state.TypeChain.RemoveAt(state.TypeChain.Count - 1);
+                // Every EndElement pairs with a non-empty start element, which pushed.
+                state.TypeChain.RemoveAt(state.TypeChain.Count - 1);
                 break;
 
             default:
@@ -219,6 +224,20 @@ public static class CodeMetricsReader
     }
 
     /// <summary>
+    /// The IL type a NamedType's members compile onto: generic parameter lists stripped, and a
+    /// trailing C# 14 extension block (<c>Ext.extension(string)</c>) dropped — its members are
+    /// emitted as static methods of the enclosing static class.
+    /// </summary>
+    private static string TypeSegment(string name)
+    {
+        var stripped = StripGenericsPerSegment(name);
+        var dot = BalancedText.LastIndexOfTopLevel(stripped, '.');
+        return dot >= 0 && stripped.AsSpan(dot + 1).StartsWith("extension(", StringComparison.Ordinal)
+            ? stripped[..dot]
+            : stripped;
+    }
+
+    /// <summary>
     /// Strip generic parameter lists per dot-segment: <c>Outer&lt;T&gt;.Inner&lt;U&gt;</c> →
     /// <c>Outer.Inner</c>. Depth-tracked so dots inside angle brackets never split segments.
     /// </summary>
@@ -274,13 +293,20 @@ public static class CodeMetricsReader
         if (TryOperatorName(head, arity, out var op))
             return (op, arity, CodeMetricsMemberKind.Method);
 
-        // Top-level statements: Roslyn names the synthesized entry point `<Main>$` — normalized
-        // to `Main`, the same identity MethodIdentity gives the coverage side, so the two match.
-        // (StripGenericsPerSegment below would otherwise reduce it to `$`.)
-        if (segment is "<Main>$")
+        // Top-level statements: Roslyn names the synthesized entry point `<Main>$` and
+        // MinimallyQualifiedFormat displays it as `<top-level-statements-entry-point>` (no type,
+        // no parameter list) — both normalized to `Main`, the same identity MethodIdentity gives
+        // the coverage side, so the two match. (StripGenericsPerSegment below would otherwise
+        // reduce them to `$` and an empty name.)
+        if (segment is "<Main>$" or "<top-level-statements-entry-point>")
             return ("Main", arity, CodeMetricsMemberKind.Method);
 
         segment = StripGenericsPerSegment(segment);
+
+        // Destructor: `Type.~Type()` compiles to Finalize. Only a destructor name starts with
+        // `~` — `operator ~` was claimed by TryOperatorName above.
+        if (segment.StartsWith('~'))
+            return ("Finalize", arity, CodeMetricsMemberKind.Method);
 
         // Constructor: no return type (the head IS the dotted name — no top-level space) and
         // the member name equals its type's simple name: `Calculator.Calculator(int seed)`.
@@ -325,6 +351,7 @@ public static class CodeMetricsReader
     {
         name = "";
         if (FindTopLevel(head, ".implicit operator") >= 0) { name = "op_Implicit"; return true; }
+        if (FindTopLevel(head, ".explicit operator checked ") >= 0) { name = "op_CheckedExplicit"; return true; }
         if (FindTopLevel(head, ".explicit operator") >= 0) { name = "op_Explicit"; return true; }
 
         var opIdx = FindTopLevel(head, ".operator ");
@@ -334,10 +361,17 @@ public static class CodeMetricsReader
     }
 
     /// <summary>
-    /// Split off the parameter list: head before the first top-level <c>(</c>, arity from
-    /// counting top-level commas inside it. Depth-tracked (see <see cref="BalancedText"/>) so
-    /// <c>Dictionary&lt;string, int&gt;</c> and <c>int[,]</c> never inflate arity.
-    /// No parameter list → arity null.
+    /// Split off the parameter list: head before its <c>(</c>, arity from counting top-level
+    /// commas inside it. Depth-tracked (see <see cref="BalancedText"/>) so
+    /// <c>Dictionary&lt;string, int&gt;</c>, <c>int[,]</c>, and default-value literals such as
+    /// <c>string sep = ", "</c> never change the arity. No parameter list → arity null.
+    /// <para>
+    /// The list directly follows the member name, so it is the last top-level <c>(</c> after the
+    /// last top-level <c>.</c>. An earlier <c>(</c> belongs to a type — a tuple
+    /// (<c>(int, int) Type.M()</c>, <c>Type.implicit operator (int, int)(Type t)</c>) or a C# 14
+    /// extension block (<c>bool extension(string).IsBig.get</c>) — so
+    /// <c>(int, int) Type.Pair.get</c> has no parameter list at all.
+    /// </para>
     /// <para>
     /// Operator displays are located by their <c>.operator </c> marker instead: tokens like
     /// <c>operator &lt;</c> or <c>operator &gt;&gt;</c> carry unbalanced angle brackets that
@@ -348,14 +382,19 @@ public static class CodeMetricsReader
     private static (string Head, int? Arity) SplitParameterList(string display)
     {
         var opIdx = FindTopLevel(display, ".operator ");
-        var open = opIdx >= 0
-            ? display.IndexOf('(', opIdx)
-            : BalancedText.IndexOfTopLevel(display, '(');
+        var open = opIdx >= 0 ? display.IndexOf('(', opIdx) : MemberParameterListOpen(display);
         if (open < 0) return (display, null);
 
         var close = display.LastIndexOf(')');
         var parameters = close > open ? display[(open + 1)..close] : display[(open + 1)..];
         return (display[..open], BalancedText.CountTopLevelItems(parameters));
+    }
+
+    private static int MemberParameterListOpen(string display)
+    {
+        var nameStart = BalancedText.LastIndexOfTopLevel(display, '.') + 1;
+        var open = BalancedText.LastIndexOfTopLevel(display.AsSpan(nameStart), '(');
+        return open < 0 ? -1 : nameStart + open;
     }
 
     private static int FindTopLevel(string head, string marker)
@@ -382,14 +421,25 @@ public static class CodeMetricsReader
     /// <summary>
     /// C# operator token → CLS <c>op_*</c> method name: a mechanical mapping, so a table, not a
     /// switch. Unary/binary <c>+</c> and <c>-</c> share a token and are disambiguated by arity
-    /// first. Unknown tokens keep a raw spelling so they land in the unmatched list with their
-    /// display name rather than silently colliding.
+    /// first, as are C# 14's parameterless instance <c>++</c>/<c>--</c> (compound assignments:
+    /// <c>op_IncrementAssignment</c>). A <c>checked</c> operator compiles to the same name with
+    /// <c>Checked</c> inserted (<c>op_CheckedAddition</c>). Unknown tokens keep a raw spelling so
+    /// they land in the unmatched list with their display name rather than silently colliding.
     /// </summary>
     private static string OperatorMethodName(string token, int? arity)
     {
-        if (arity is 1 && token is "+") return "op_UnaryPlus";
-        if (arity is 1 && token is "-") return "op_UnaryNegation";
-        return OperatorNames.TryGetValue(token, out var name) ? name : $"operator {token}";
+        var isChecked = token.StartsWith("checked ", StringComparison.Ordinal);
+        var core = isChecked ? token["checked ".Length..] : token;
+        var name = (arity, core) switch
+        {
+            (1, "+") => "op_UnaryPlus",
+            (1, "-") => "op_UnaryNegation",
+            (0, "++") => "op_IncrementAssignment",
+            (0, "--") => "op_DecrementAssignment",
+            _ => OperatorNames.GetValueOrDefault(core),
+        };
+        if (name is null) return $"operator {token}";
+        return isChecked ? "op_Checked" + name["op_".Length..] : name;
     }
 
     private static readonly FrozenDictionary<string, string> OperatorNames =
@@ -418,5 +468,17 @@ public static class CodeMetricsReader
             [">"] = "op_GreaterThan",
             ["<="] = "op_LessThanOrEqual",
             [">="] = "op_GreaterThanOrEqual",
+            // C# 14 user-defined compound assignment (instance, void-returning).
+            ["+="] = "op_AdditionAssignment",
+            ["-="] = "op_SubtractionAssignment",
+            ["*="] = "op_MultiplicationAssignment",
+            ["/="] = "op_DivisionAssignment",
+            ["%="] = "op_ModulusAssignment",
+            ["&="] = "op_BitwiseAndAssignment",
+            ["|="] = "op_BitwiseOrAssignment",
+            ["^="] = "op_ExclusiveOrAssignment",
+            ["<<="] = "op_LeftShiftAssignment",
+            [">>="] = "op_RightShiftAssignment",
+            [">>>="] = "op_UnsignedRightShiftAssignment",
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }

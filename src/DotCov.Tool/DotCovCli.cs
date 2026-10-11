@@ -25,11 +25,11 @@ public static partial class DotCovCli
         // (it goes to dotnet test unchanged); every other command rejects the separator.
         var separator = Array.IndexOf(args, "--");
         var forwarded = separator > 0 ? args[(separator + 1)..] : null;
-        var (command, options) = ParseArgs(separator > 0 ? args[..separator] : args);
+        var (command, options, malformed) = Parse(separator > 0 ? args[..separator] : args);
 
         try
         {
-            RejectUnusedArguments(command, options, forwarded);
+            RejectUnusedArguments(command, options, malformed, forwarded);
             return await Dispatch(command, options, forwarded, stdout, stderr, color);
         }
         catch (ReportParseException ex)
@@ -39,8 +39,12 @@ public static partial class DotCovCli
             await stderr.WriteLineAsync($"error: {ex.SourceName}: {ex.Message}");
             return 1;
         }
-        catch (Exception ex) when (IsExpectedFailure(ex))
+        catch (Exception ex)
         {
+            // Not a filter: `catch (Exception) when` adds a type test no thrown object can fail.
+            // Anything unexpected is a bug and propagates with its stack trace.
+            if (!IsExpectedFailure(ex)) throw;
+
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
             await stderr.WriteLineAsync($"error: {ex.Message}");
@@ -134,18 +138,19 @@ public static partial class DotCovCli
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
-        return await Gate(ApplyExclusions(merged, opts), minLine, minBranch, path, inputs, opts, stdout, stderr);
+        var report = ApplyExclusions(merged, opts);
+        return await Gate(report, report.Evaluate(minLine, minBranch), path, inputs, opts, stdout, stderr);
     }
 
     /// <summary>
     /// The line/branch gate over a parsed report, shared by check and test: step summary, verdict,
-    /// offending files, diagnostics, and upload all come from one evaluation.
+    /// offending files, diagnostics, and upload all come from one evaluation, the
+    /// <paramref name="gate"/> the caller evaluated (test also renders its table from it).
     /// </summary>
     static async Task<int> Gate(
-        CoverageReport report, double minLine, double minBranch, string path, IReadOnlyList<ReportInput> inputs,
+        CoverageReport report, GateResult gate, string path, IReadOnlyList<ReportInput> inputs,
         Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
     {
-        var gate = report.Evaluate(minLine, minBranch);
 
         // Written on pass AND fail, and derived from the same GateResult as the exit code.
         // Previously the summary was fail-only and re-evaluated with min-branch 0, so a
@@ -175,11 +180,12 @@ public static partial class DotCovCli
         // The offender list answers "which files caused the line-gate failure", so it prints
         // only when the LINE gate actually failed. A branch-only failure listing line-threshold
         // files (possibly with 100% branch coverage) blamed the wrong files; NoData/Disabled
-        // have no offenders at all.
-        if (gate.LineBelowThreshold)
+        // have no offenders at all — a branch-NoData gate can still carry a line rate below
+        // min-line, so the outcome is checked, not just the line comparison.
+        if (gate is { Outcome: GateOutcome.Fail, LineBelowThreshold: true })
         {
             await stderr.WriteLineAsync("files below line threshold:");
-            foreach (var f in report.BelowPercent(minLine))
+            foreach (var f in report.BelowPercent(gate.MinLinePercent))
                 await stderr.WriteLineAsync(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
         }
 
@@ -237,7 +243,10 @@ public static partial class DotCovCli
 
         if (gate.IsPass)
         {
-            stdout.WriteLine(gate.ToString());
+            // JSON carries the verdict in its "gate" object; a line after the document would
+            // make stdout invalid JSON exactly when the gate passed.
+            if (format is not "json")
+                stdout.WriteLine(gate.ToString());
             WriteSummary();
             WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
             return 0;
@@ -460,6 +469,11 @@ public static partial class DotCovCli
     /// </summary>
     static IReadOnlyList<ReportInput> ResolveInputs(string path, ReportPattern pattern)
     {
+        // An empty argument (an unset shell variable) names no path; the resolver would reject
+        // it with an ArgumentException meant for programming errors, not with a CLI error.
+        if (path.Length is 0)
+            throw new CliError("missing path: the path argument is empty.");
+
         try
         {
             return ReportResolver.Resolve(path, pattern);
@@ -671,7 +685,8 @@ public static partial class DotCovCli
     static HashSet<string> Accept(params string[] names) => new(names, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Fail before any report is read or test is run when an argument would otherwise be ignored.</summary>
-    static void RejectUnusedArguments(string command, Dictionary<string, string> options, string[]? forwarded)
+    static void RejectUnusedArguments(
+        string command, Dictionary<string, string> options, List<string> malformed, string[]? forwarded)
     {
         if (!AcceptedOptions.TryGetValue(command, out var accepted)) return;
 
@@ -691,11 +706,19 @@ public static partial class DotCovCli
 
             var equalsSign = key.IndexOf('=');
             throw new CliError(equalsSign > 0
-                ? $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
+                // A valueless flag written with a value: the space-separated form would fail
+                // again, its value becoming a stray positional argument.
+                ? ValuelessFlags.Contains(key[..equalsSign])
+                    ? $"Unknown option '--{key}' for '{command}'. '--{key[..equalsSign]}' takes no value."
+                    : $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
                 : command is "test"
                     ? $"Unknown option '--{key}' for 'test'. Pass dotnet test arguments after '--'."
                     : $"Unknown option '--{key}' for '{command}'.");
         }
+
+        // What the dictionary cannot show: a flag that got no value, or one spelled like a path.
+        if (malformed.Count > 0)
+            throw new CliError(malformed[0]);
 
         // --keep only exempts files from --exclude-generated; on its own it would change nothing.
         if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated"))
@@ -710,10 +733,22 @@ public static partial class DotCovCli
 
     public static (string command, Dictionary<string, string> options) ParseArgs(string[] raw)
     {
-        if (raw.Length is 0) return ("help", []);
+        var (command, options, _) = Parse(raw);
+        return (command, options);
+    }
+
+    /// <summary>
+    /// <see cref="ParseArgs"/> plus an error for each flag the dictionary misrepresents: one that
+    /// got no value (recorded as "true", so an unknown name can still be reported by name) and
+    /// one named like the slot a path is filed under, which would replace that path.
+    /// </summary>
+    static (string Command, Dictionary<string, string> Options, List<string> Malformed) Parse(string[] raw)
+    {
+        if (raw.Length is 0) return ("help", [], []);
 
         var command = raw[0];
         var parsed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var malformed = new List<string>();
         string? pendingKey = null;
         var positional = 0;
 
@@ -721,8 +756,11 @@ public static partial class DotCovCli
         {
             if (raw[i].StartsWith("--"))
             {
-                if (pendingKey is not null) parsed[pendingKey] = "true";
+                if (pendingKey is not null) EndWithoutValue(pendingKey);
                 var key = raw[i][2..];
+                if (IsPathSlot(command, key))
+                    malformed.Add($"Unknown option '--{key}' for '{command}'. Pass the path as a positional argument.");
+
                 if (ValuelessFlags.Contains(key))
                 {
                     parsed[key] = "true";
@@ -751,8 +789,22 @@ public static partial class DotCovCli
             }
         }
 
-        if (pendingKey is not null) parsed[pendingKey] = "true";
+        if (pendingKey is not null) EndWithoutValue(pendingKey);
 
-        return (command, parsed);
+        return (command, parsed, malformed);
+
+        void EndWithoutValue(string key)
+        {
+            // Its "true" placeholder is no value either: it would stamp a snapshot "true" or scan
+            // a directory for a file named "true".
+            parsed[key] = "true";
+            malformed.Add($"Option '--{key}' requires a value.");
+        }
     }
+
+    /// <summary>The dictionary keys paths are filed under: none of them is a flag.</summary>
+    static bool IsPathSlot(string command, string key) =>
+        command is "diff"
+            ? key.Equals("before", StringComparison.OrdinalIgnoreCase) || key.Equals("after", StringComparison.OrdinalIgnoreCase)
+            : key.Equals("file", StringComparison.OrdinalIgnoreCase);
 }

@@ -6,6 +6,11 @@ namespace DotCov;
 /// can never inflate an arity and a dot inside generic arguments can never split a name.
 /// Shared by <see cref="MethodIdentity"/> (IL signatures) and <see cref="CodeMetricsReader"/>
 /// (Roslyn display strings), which count parameters over the same nesting rules.
+/// <para>
+/// String and char literals are opaque: Roslyn displays parameter default values
+/// (<c>string sep = ", "</c>, <c>char open = '&lt;'</c>), and the commas and brackets inside a
+/// literal are text, not structure. IL signatures never contain quotes.
+/// </para>
 /// </summary>
 internal static class BalancedText
 {
@@ -18,22 +23,21 @@ internal static class BalancedText
     }
 
     /// <summary>
-    /// First index of <paramref name="target"/> at bracket depth 0, or −1. The target match is
-    /// tested before the character adjusts depth, so a target of <c>'('</c> finds the opening
-    /// parenthesis itself rather than skipping past it.
+    /// Index of the quote closing the string or char literal opened at <paramref name="open"/>,
+    /// honoring backslash escapes (<c>"a\"b"</c>, <c>'\''</c>); the last index when the literal
+    /// never closes, so an unterminated literal swallows the rest of the text.
     /// </summary>
-    internal static int IndexOfTopLevel(ReadOnlySpan<char> text, char target)
+    private static int LiteralEnd(ReadOnlySpan<char> text, int open)
     {
-        var depth = 0;
-        for (var i = 0; i < text.Length; i++)
+        for (var i = open + 1; i < text.Length; i++)
         {
-            if (depth is 0 && text[i] == target) return i;
-            depth += DepthDelta(text[i]);
+            if (text[i] is '\\') i++;
+            else if (text[i] == text[open]) return i;
         }
-        return -1;
+        return text.Length - 1;
     }
 
-    /// <summary>Last index of <paramref name="target"/> at bracket depth 0, or −1.</summary>
+    /// <summary>Last index of <paramref name="target"/> at bracket depth 0, outside literals, or −1.</summary>
     internal static int LastIndexOfTopLevel(ReadOnlySpan<char> text, char target)
     {
         var depth = 0;
@@ -41,7 +45,8 @@ internal static class BalancedText
         for (var i = 0; i < text.Length; i++)
         {
             if (depth is 0 && text[i] == target) last = i;
-            depth += DepthDelta(text[i]);
+            if (text[i] is '"' or '\'') i = LiteralEnd(text, i);
+            else depth += DepthDelta(text[i]);
         }
         return last;
     }
@@ -56,10 +61,11 @@ internal static class BalancedText
 
         var depth = 0;
         var count = 1;
-        foreach (var c in list)
+        for (var i = 0; i < list.Length; i++)
         {
-            if (depth is 0 && c is ',') count++;
-            depth += DepthDelta(c);
+            if (depth is 0 && list[i] is ',') count++;
+            if (list[i] is '"' or '\'') i = LiteralEnd(list, i);
+            else depth += DepthDelta(list[i]);
         }
         return count;
     }

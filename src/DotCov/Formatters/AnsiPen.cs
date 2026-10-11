@@ -20,12 +20,13 @@ public readonly struct AnsiPen(bool enabled)
     /// <summary>
     /// Color a coverage percentage cell by its rate (0..1). A null rate means unmeasured and
     /// falls to the dim arm - no colour verdict is asserted over data that does not exist.
+    /// A measured 0% is data, the worst there is, so it paints red like any rate below 50%.
     /// </summary>
     public string Rate(string text, double? rate) => rate switch
     {
         >= 0.75 => Green(text),
         >= 0.5 => Yellow(text),
-        > 0 => Red(text),
+        >= 0 => Red(text),
         _ => Dim(text)
     };
 

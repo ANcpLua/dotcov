@@ -339,13 +339,13 @@ public sealed class CodeMetricsReaderTests
     }
 
     [Test]
-    public async Task CheckedOperator_UnknownToken_KeepsRawSpelling()
+    public async Task CheckedOperator_NormalizesToCheckedClsName()
     {
-        // `operator checked -` is not in the CLS table: the raw spelling survives so the member
-        // lands in the unmatched list with its display name rather than silently colliding.
+        // `operator checked -` compiles to op_CheckedSubtraction (C# 11 checked operators);
+        // the raw spelling could never match the coverage method.
         var members = Parse(Method("Calculator Calculator.operator checked -(Calculator a, Calculator b)", 1));
 
-        await Assert.That(members.Single().MemberName).IsEqualTo("operator checked -");
+        await Assert.That(members.Single().MemberName).IsEqualTo("op_CheckedSubtraction");
     }
 
     [Test]

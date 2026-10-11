@@ -39,8 +39,12 @@ public static partial class DotCovCli
 
         var (merged, inputs) = ParseInput(results, ReportPattern.Default, DefaultMaxChars);
         var report = ApplyExclusions(merged, opts);
-        await stdout.WriteAsync(TableFormatter.Format(report, color));
-        return await Gate(report, minLine, minBranch, results, inputs, opts, stdout, stderr);
+        // The table is rendered from the same evaluation as the verdict, so a failing dimension's
+        // TOTAL floors like the verdict does: 19999/20000 against --min-line 100 reads 99.9%
+        // above "FAIL: line 99.9% (min 100%)", never 100.0%.
+        var gate = report.Evaluate(minLine, minBranch);
+        await stdout.WriteAsync(TableFormatter.Format(report, gate, color));
+        return await Gate(report, gate, results, inputs, opts, stdout, stderr);
     }
 
     /// <summary>
