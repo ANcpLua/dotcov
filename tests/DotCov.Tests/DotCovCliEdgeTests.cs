@@ -42,9 +42,9 @@ public sealed class DotCovCliEdgeTests : IDisposable
         }
     }
 
-    private static async Task AssertOneLineError(int code, string stdout, string stderr, string expectedStart)
+    private static async Task AssertOneLineError(int code, string stdout, string stderr, string expectedStart, int expectedCode = 2)
     {
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(expectedCode);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith(expectedStart);
         await Assert.That(stderr).DoesNotContain("   at ");
@@ -60,7 +60,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
     public async Task EmptyPath_IsAMissingPathError_NotAnUnhandledException(string command)
     {
         // `dotcov check "$COVERAGE_DIR"` with the variable unset passes "". It gets the
-        // documented exit 5 for a missing path, not an unhandled crash with a stack trace.
+        // documented exit 2 for a missing path, not an unhandled crash with a stack trace.
         var (code, stdout, stderr) = await Run(command, "");
 
         await AssertOneLineError(code, stdout, stderr, "error: missing path");
@@ -76,6 +76,32 @@ public sealed class DotCovCliEdgeTests : IDisposable
 
         await AssertOneLineError(beforeCode, beforeOut, beforeErr, "error: missing path");
         await AssertOneLineError(afterCode, afterOut, afterErr, "error: missing path");
+    }
+
+    [Test]
+    [Arguments("--metrics")]
+    [Arguments("--METRICS")]
+    public async Task EmptyMetricsPath_IsUsageRegardlessOfFlagCasing(string flag)
+    {
+        var (code, stdout, stderr) = await Run("crap", HalfCovered(), flag, "");
+
+        await AssertOneLineError(code, stdout, stderr, "error: missing path");
+    }
+
+    [Test]
+    public async Task ShortUnknownFlag_IsUsageBeforeReadingInput()
+    {
+        var (code, stdout, stderr) = await Run("report", "-q");
+
+        await AssertOneLineError(code, stdout, stderr, "error: Unknown option '-q'");
+    }
+
+    [Test]
+    public async Task HttpsUpload_WithMissingReport_IsExecutionFailure()
+    {
+        var (code, stdout, stderr) = await Run("report", _ws.PathOf("missing.xml"), "--upload", "https://example.invalid/coverage");
+
+        await AssertOneLineError(code, stdout, stderr, "error: No file or directory", expectedCode: 5);
     }
 
     // ── A flag that takes a value but got none is an error, never the value "true" ──
@@ -202,7 +228,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
 
         var (code, stdout, stderr) = await Run("crap", coverage, "--metrics", metrics);
 
-        await AssertOneLineError(code, stdout, stderr, $"error: {metrics}: ");
+        await AssertOneLineError(code, stdout, stderr, $"error: {metrics}: ", expectedCode: 5);
     }
 
     [Test]
@@ -225,7 +251,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
 
         var (code, stdout, stderr) = await Run("report", unreadable!);
 
-        await AssertOneLineError(code, stdout, stderr, $"error: Access to the path '{unreadable}' is denied.");
+        await AssertOneLineError(code, stdout, stderr, $"error: Access to the path '{unreadable}' is denied.", expectedCode: 5);
     }
 
     [Test]

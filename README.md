@@ -4,7 +4,7 @@
 # DotCov
 
 Turn Cobertura XML into a build decision — a table, a markdown block, a JSON payload, and an
-exit code your CI can act on. No coverage service, no account, no upload unless you ask for one.
+exit code your CI can act on. Local by default; uploads are opt-in.
 
 ## Migrating from 0.x
 
@@ -26,12 +26,10 @@ dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-That is the whole setup. Point `dotcov` at the directory your test run wrote its Cobertura
-reports to, not at a file: it searches for `**/*cobertura*.xml` (including timestamped MTP
-reports and hidden directories) and merges everything it finds, so a sharded test matrix needs
-no merge step. When it merges more than one report it lists them on stderr; give each test run
-a fresh results directory, or an earlier run's report is merged too. Below threshold it prints
-the offending files and exits `1`.
+Pass a report file or a fresh run directory. A directory search finds `**/*cobertura*.xml`
+(including timestamped MTP reports and hidden directories) and merges everything it finds, so a sharded test matrix needs
+no merge step. Merged reports are listed on stderr. Use a fresh directory for each run to
+avoid stale reports. Below threshold it lists offending files and exits `1`.
 
 ## Packages
 
@@ -41,8 +39,7 @@ the offending files and exits `1`.
 | [DotCov](src/DotCov/README.md) | Your own code; zero package references, AOT-clean | `dotnet add package DotCov` |
 | [DotCov.Fallout](src/DotCov.Fallout/README.md) | [Fallout](https://fallout.build) builds; one interface, no target wiring | `fallout :add-package DotCov.Fallout` |
 
-Each package README is the reference for that package: the CLI's commands and flags, the
-library API, and the Fallout component's parameters and outcomes.
+Package READMEs cover CLI flags, library APIs, and Fallout parameters.
 
 ## Commands
 
@@ -61,12 +58,16 @@ endpoint you control, and `dotcov --help` prints the full flag reference with ex
 the command does not use, a misspelled flag, `--name=value`, or a second path is an error, never
 a silently applied default.
 
+Run `dotcov version` or `dotcov --version` to print the version.
+
 ## Outcomes
+
+Since 1.7, usage errors exit `2` (formerly `5`); execution errors remain `5`.
+Omitting a path exits `2`; supplying a nonexistent path exits `5`. Update script branches.
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed,
 including when the input contains no coverage data. That is command success, not a coverage
-pass. `check`, `crap`, and `test` return `0` only for a measured pass. Their outcomes and shared CLI
-errors are listed below.
+pass. `check`, `crap`, and `test` return `0` only for a measured pass. Outcomes:
 
 | Token | Meaning | Exit |
 |---|---|---|
@@ -74,8 +75,8 @@ errors are listed below.
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 3 |
 | `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 4 |
-| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload or badge write failure, failed test run | 5 |
-| — | Unknown command | 2 |
+| `error:` | Unreadable/nonexistent path, parse/size-cap error, upload or badge write failure, failed test run | 5 |
+| `error:` or unknown command | Usage: unknown command/flag, invalid value, missing/extra argument | 2 |
 
 Use `check` when CI must require measured coverage. Branch on the exit code. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
 for details. Percentages are invariant-formatted, so CI logs read `62.0%` on every
@@ -102,7 +103,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v1.6.1
+  - uses: ANcpLua/dotcov/.github/actions/badge@v1.7.0
     with:
       reports: TestResults
       min-line: 80
@@ -148,5 +149,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.6.1.md) ·
+[Release notes](docs/releases/1.7.0.md) ·
 [MIT](LICENSE)

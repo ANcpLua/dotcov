@@ -113,7 +113,7 @@ public sealed class CliBadgeTests : IDisposable
 
         var (code, stdout, stderr) = await Run("check", missing, "--badge-dir", "");
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).IsEqualTo($"error: Invalid --badge-dir value: '' (expected a directory).{Environment.NewLine}");
     }
@@ -123,7 +123,7 @@ public sealed class CliBadgeTests : IDisposable
     {
         var (code, stdout, stderr) = await Run("test", "--badge-dir", "");
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         // No echoed "> dotnet test" line: nothing was started.
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith("error: Invalid --badge-dir value: ''");
@@ -139,7 +139,7 @@ public sealed class CliBadgeTests : IDisposable
 
         var (code, stdout, stderr) = await Run(command, HalfCovered(), "--badge-dir", directory);
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith($"error: Unknown option '--badge-dir' for '{command}'.");
         await Assert.That(Directory.Exists(directory)).IsFalse();

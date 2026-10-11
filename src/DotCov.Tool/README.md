@@ -4,8 +4,7 @@
 # DotCov.Tool
 
 `dotcov` turns Cobertura XML into a build decision — a table, a markdown block, a JSON payload,
-and an exit code your CI can act on. No coverage service, no account, no upload unless you ask
-for one.
+and an exit code your CI can act on. Local by default; uploads are opt-in.
 
 ## Getting started
 
@@ -22,12 +21,11 @@ dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
 PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
 ```
 
-Pass the directory, not a file: `dotcov` globs `**/*cobertura*.xml` beneath it (hidden
-directories included) and merges every match, so a sharded test matrix needs no merge step.
-When it merges more than one report it lists them on stderr; give each test run a fresh results
-directory, or an earlier run's report is merged too. Timestamped coverlet.MTP files match the
-default. For generic names such as gcovr's `coverage.xml`, select the filename explicitly with
-`--pattern`.
+Pass a file or fresh run directory. A directory search matches `**/*cobertura*.xml` beneath it
+(hidden directories included) and merges every match, so a sharded test matrix needs no merge step.
+Merged reports are listed on stderr. Use a fresh directory for each run to avoid stale reports.
+Timestamped coverlet.MTP files match. For generic names such as gcovr's `coverage.xml`, select
+the filename explicitly with `--pattern`.
 
 ## Commands
 
@@ -63,8 +61,11 @@ starts with the verdict. A failed test run exits `5` with `error:` and no covera
 
 ## Exit codes
 
-The gate commands `check`, `crap`, and `test` return `0` only for a measured pass. Their outcomes and
-shared CLI errors have distinct exit codes:
+Since 1.7, usage errors exit `2` instead of `5`; update scripts accordingly. A missing
+path argument exits `2`; a supplied nonexistent path exits `5`. Invalid upload URLs
+are usage errors; HTTP/connection failures remain execution errors.
+
+`check`, `crap`, and `test` return `0` only for a measured pass:
 
 | Token | Meaning | Exit |
 |---|---|---|
@@ -72,8 +73,8 @@ shared CLI errors have distinct exit codes:
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 3 |
 | `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 4 |
-| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload or badge write failure, failed test run | 5 |
-| — | unknown command | 2 |
+| `error:` | unreadable/nonexistent path, parse/size-cap error, upload or badge write failure, failed test run | 5 |
+| `error:` or unknown command | usage: unknown command/flag, invalid value, missing/extra argument | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
 A passing gate whose badge cannot be written returns `5`; a non-passing gate keeps its code if an
@@ -82,7 +83,7 @@ Reporting commands do not enforce thresholds. `report --threshold` affects
 presentation, not the exit code. Use `check` when CI must require measured coverage.
 
 An existing directory with no matching reports is valid empty input for reporting commands;
-a missing path or malformed report is an error. An empty `report` displays `no data` in
+a supplied nonexistent path or malformed report exits `5`. An empty `report` displays `no data` in
 Markdown and `-` for percentages in the table. Its JSON has `files: []`, zero totals, and no
 `lineRate` or `branchRate` fields. These represent missing measurements, not 0% coverage.
 For that same empty directory, `check --min-line 1` returns `NODATA:` and exits `3`.
@@ -126,11 +127,9 @@ from coverlet's per-method attribute automatically; for emitters that write none
 | `--upload <url>` | POST the JSON payload |
 | `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome; created if missing |
 
-Each command accepts only the flags it uses, and `dotcov --help` lists which. A misspelled flag,
-`--name=value`, or a second path is an error, never a silently applied default.
+Commands reject unused flags, `--name=value`, and extra paths; see `dotcov --help`.
 
-`dotcov --help` prints the full reference with examples. Percentages are invariant-formatted
-everywhere: `62.0%` on every host, never `62,0%`.
+`dotcov version` and `dotcov --version` print the version. Percentages use `62.0%` on every host.
 
 ## Also in this family
 
