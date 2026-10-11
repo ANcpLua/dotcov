@@ -1,0 +1,68 @@
+name: dotcov coverage badge
+description: >-
+  Gate Cobertura coverage with dotcov check, render the verdict as coverage-badge.svg and
+  coverage-badge.json, and publish both to a branch. Run it after your tests; publishing needs
+  `permissions: contents: write` and a checkout with persisted credentials.
+author: ANcpLua
+
+inputs:
+  reports:
+    description: Cobertura report file or directory, as `dotcov check` takes it.
+    required: true
+  pattern:
+    description: Report file name to scan a directory for ('filename' or '**/filename'). Empty uses dotcov's default.
+    default: ''
+  min-line:
+    description: Minimum line coverage percentage.
+    default: '80'
+  min-branch:
+    description: Minimum branch coverage percentage; above 0 the badge shows the branch rate too.
+    default: '0'
+  args:
+    description: Further `dotcov check` arguments, split on whitespace, e.g. `--exclude-generated`.
+    default: ''
+  branch:
+    description: Branch the badge is published to. Created as an orphan branch when missing.
+    default: badges
+  publish:
+    description: 'true to publish the badge to `branch`; false renders it only.'
+    default: 'true'
+  fail-on-gate:
+    description: >-
+      true fails the step when the gate does not pass (FAIL, NODATA, DISABLED), after publishing.
+      false keeps it green for those outcomes; an error (bad input, unreadable report) still fails.
+    default: 'true'
+  version:
+    description: dotcov.tool version to install.
+    default: '1.6.0'
+  command:
+    description: >-
+      Command that runs dotcov instead of installing it, split on whitespace, e.g.
+      `dotnet run --project src/DotCov.Tool -c Release --`. `version` is ignored when set.
+    default: ''
+
+outputs:
+  exit-code:
+    description: Exit code of `dotcov check` (0 PASS, 1 FAIL, 3 NODATA, 4 DISABLED, 5 error).
+    value: ${{ steps.badge.outputs.exit-code }}
+  directory:
+    description: Directory holding coverage-badge.svg and coverage-badge.json; empty when none was written.
+    value: ${{ steps.badge.outputs.directory }}
+
+runs:
+  using: composite
+  steps:
+    - id: badge
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/badge.sh"
+      env:
+        DOTCOV_REPORTS: ${{ inputs.reports }}
+        DOTCOV_PATTERN: ${{ inputs.pattern }}
+        DOTCOV_MIN_LINE: ${{ inputs.min-line }}
+        DOTCOV_MIN_BRANCH: ${{ inputs.min-branch }}
+        DOTCOV_ARGS: ${{ inputs.args }}
+        DOTCOV_BRANCH: ${{ inputs.branch }}
+        DOTCOV_PUBLISH: ${{ inputs.publish }}
+        DOTCOV_FAIL_ON_GATE: ${{ inputs.fail-on-gate }}
+        DOTCOV_VERSION: ${{ inputs.version }}
+        DOTCOV_COMMAND: ${{ inputs.command }}

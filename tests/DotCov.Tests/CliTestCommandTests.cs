@@ -134,11 +134,11 @@ public sealed class CliTestCommandTests : IDisposable
 
     [Test]
     [Timeout(300_000)]
-    [Arguments("30", 0, "PASS:")]
-    [Arguments("100", 1, "FAIL:")]
-    [Arguments("0", 4, "DISABLED:")]
+    [Arguments("30", 0, "PASS:", "brightgreen")]
+    [Arguments("100", 1, "FAIL:", "red")]
+    [Arguments("0", 4, "DISABLED:", "yellow")]
     public async Task TestingPlatformProject_IsTestedReportedAndGated(
-        string minLine, int expectedCode, string verdict, CancellationToken cancellationToken)
+        string minLine, int expectedCode, string verdict, string badgeColor, CancellationToken cancellationToken)
     {
         var project = WriteTestingPlatformProject();
         var summary = _ws.PathOf("step-summary.md");
@@ -151,7 +151,7 @@ public sealed class CliTestCommandTests : IDisposable
                 ["UseSharedCompilation"] = "false",
                 ["MSBUILDDISABLENODEREUSE"] = "1"
             },
-            "test", project, "--min-line", minLine, "--exclude-generated", "--github-summary");
+            "test", project, "--min-line", minLine, "--exclude-generated", "--github-summary", "--badge-dir", "badge");
 
         await Assert.That(run.ExitCode).IsEqualTo(expectedCode).Because(run.Output);
         await Assert.That(run.StdOut).Contains($"test --project {project} --results-directory ");
@@ -162,6 +162,11 @@ public sealed class CliTestCommandTests : IDisposable
         else
             await Assert.That(run.StdErr).StartsWith(verdict);
         await Assert.That(await File.ReadAllTextAsync(summary, cancellationToken)).Contains($"`{verdict}");
+        // --badge-dir is relative to the working directory, and the badge carries the same verdict.
+        await Assert.That(await File.ReadAllTextAsync(_ws.PathOf("badge/coverage-badge.json"), cancellationToken))
+            .Contains($"\"color\":\"{badgeColor}\"");
+        await Assert.That(await File.ReadAllTextAsync(_ws.PathOf("badge/coverage-badge.svg"), cancellationToken))
+            .Contains($"<title>Coverage: {verdict}");
     }
 
     [Test]

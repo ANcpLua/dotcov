@@ -39,6 +39,9 @@ public interface ICoverageReport : IFalloutBuild
     [Parameter("Per-file XML character cap; 0 = no cap")]
     string MaxCharsParam => TryGetValue(() => MaxCharsParam) ?? CoverageParameters.DefaultMaxChars;
 
+    [Parameter("Directory, relative to the root, to write coverage-badge.svg and coverage-badge.json to; empty = no badge")]
+    string BadgeDirectory => TryGetValue(() => BadgeDirectory) ?? CoverageParameters.DefaultBadgeDirectory;
+
     AbsolutePath CoverageSearchDirectory => RootDirectory / "TestResults";
 
     Target ReportCoverage => d => d
@@ -90,8 +93,19 @@ public interface ICoverageReport : IFalloutBuild
                 !GitHubStepSummary.TryAppend(summaryPath, markdown.Value))
                 Log.Warning("Could not write GitHub step summary to {Path}", summaryPath);
 
+            // Written for every outcome before the verdict can fail the target, so a failing gate
+            // replaces a green badge. Unlike the summary, a badge is the verdict: a pass that
+            // cannot write it fails, as in the CLI, rather than leave the previous badge standing.
+            string? badgeError = null;
+            if (BadgeDirectory is { Length: > 0 } badgeDirectory &&
+                !CoverageBadge.TryWrite(Path.GetFullPath(badgeDirectory, RootDirectory), gate, out badgeError))
+                Log.Error("Could not write coverage badge to {Directory}: {Error}", badgeDirectory, badgeError);
+
             switch (gate.Outcome)
             {
+                case GateOutcome.Pass when badgeError is not null:
+                    Assert.Fail($"Coverage gate passed, but its badge could not be written: {badgeError}");
+                    break;
                 case GateOutcome.Pass:
                     Log.Information("Coverage gate passed: {Gate}", gate.ToString());
                     break;

@@ -10,7 +10,11 @@ description: >-
 
 1. Read the current [release workflow](../../../.github/workflows/nuget-publish.yml)
    and confirm the requested version, source commit/ref, and destination. Keep
-   preparation separate from publication. This repository publishes to NuGet
+   preparation separate from publication. Preparation sets the version in
+   `Directory.Build.props` (`VersionPrefix`), the badge action's `version` default
+   in [action.yml](../../../.github/actions/badge/action.yml), and the README's
+   `badge@v<version>` snippet and release-notes link; `ReleaseVersionTests` fails
+   while they disagree. This repository publishes to NuGet
    on `v*` tag pushes **and** manual dispatch with a version; upstream Fallout's
    separate opt-in publishing policy does not apply.
 2. Inspect the selected ref's workflow before dispatching: it determines both

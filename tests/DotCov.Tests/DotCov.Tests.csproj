@@ -27,6 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The badge action's script, which BadgeActionTests runs as a real bash process. -->
+    <None Include="..\..\.github\actions\badge\badge.sh" Link="BadgeAction\badge.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Recursive: the emitter corpus lives in Fixtures\Corpus\<producer>\... subdirectories. -->
     <None Update="Fixtures\**\*.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

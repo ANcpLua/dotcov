@@ -72,8 +72,9 @@ jobs:
       # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP. -p:Coverage=true
       # switches on the coverlet arguments defined in tests/DotCov.Tests/DotCov.Tests.csproj.
       # The file lands in TestResults as dotcov.coverage.cobertura.<timestamp>.xml, which the
-      # badge step selects by pattern.
+      # gate and the badge both read.
       - name: Test
+        id: test
         run: >-
           dotnet test --solution DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
           -p:Coverage=true --results-directory TestResults
@@ -81,59 +82,30 @@ jobs:
           CI: true
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A src/ project missing from the report, or
-      # a coverage drop below build/Build.cs's thresholds, fails the job, on PRs and main alike,
-      # before any badge is drawn. Ubuntu only, like the badge: coverlet cannot instrument on the
-      # Windows runner ("DotCov.dll ... is being used by another process"), so that leg writes no
-      # report and the gate reads NODATA.
+      # a coverage drop below build/Build.cs's thresholds, fails the job, on PRs and main alike.
+      # Ubuntu only, like the badge: coverlet cannot instrument on the Windows runner
+      # ("DotCov.dll ... is being used by another process"), so that leg writes no report and the
+      # gate reads NODATA.
       - name: Coverage gate (dotcov checking dotcov)
         if: matrix.os == 'ubuntu-latest'
         run: |
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
-      # Dogfood: dotcov measures dotcov, and renders its own badge. Both artifacts are written
-      # from one RATE so they cannot disagree: coverage-badge.svg is what the READMEs display,
-      # coverage-badge.json is the shields.io endpoint schema kept for machine consumers.
-      # Published to the `badges` branch and served from raw.githubusercontent — the coverage
-      # number is measured, formatted and drawn here, with no third-party service in the path.
-      - name: Generate coverage badge (dotcov measuring dotcov)
-        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          dotnet run --project src/DotCov.Tool -c Release -- report TestResults --pattern "**/dotcov.coverage.cobertura.*.xml" --format json > coverage.json
-          RATE=$(jq -r '.summary.lineRate // empty' coverage.json)
-          # Absent key means no line data was measured; a badge claiming otherwise would lie.
-          if [ -z "$RATE" ]; then echo "no line data — refusing to publish a badge"; exit 1; fi
-          COLOR=$(awk -v r="$RATE" 'BEGIN { print (r >= 90) ? "brightgreen" : (r >= 75) ? "yellow" : "red" }')
-          MSG=$(awk -v r="$RATE" 'BEGIN { printf "%.1f%%", r }')
-          if   [ "$COLOR" = brightgreen ]; then HEX='#4b0'
-          elif [ "$COLOR" = yellow ];      then HEX='#dfb317'
-          else                                  HEX='#e05d44'; fi
-          # Verdana 11px advance widths, x10: "Coverage" measures 530, and the message is only
-          # ever digits, '.' and '%'. textLength pins the drawn width, so a slightly-off estimate
-          # shifts glyph spacing but can never clip. Geometry matches shields' flat-square style
-          # so this badge sits flush with the others in the README.
-          LTEXT=530
-          MTEXT=$(awk -v s="$MSG" 'BEGIN {
-            for (i = 1; i <= length(s); i++) { c = substr(s, i, 1)
-              w += (c == ".") ? 34 : (c == "%") ? 110 : 70 }
-            printf "%d", w }')
-          LW=$(( (LTEXT + 100) / 10 )); MW=$(( (MTEXT + 100) / 10 ))
-          TOTAL=$((LW + MW)); LX=$(( (LTEXT + 100) / 2 )); MX=$(( LW * 10 + (MTEXT + 100) / 2 ))
-          cat > coverage-badge.svg <<SVG
-          <svg xmlns="http://www.w3.org/2000/svg" width="$TOTAL" height="20" role="img" aria-label="Coverage: $MSG"><title>Coverage: $MSG</title><g shape-rendering="crispEdges"><rect width="$LW" height="20" fill="#555"/><rect x="$LW" width="$MW" height="20" fill="$HEX"/></g><g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110"><text x="$LX" y="140" textLength="$LTEXT" transform="scale(.1)">Coverage</text><text x="$MX" y="140" textLength="$MTEXT" transform="scale(.1)">$MSG</text></g></svg>
-          SVG
-          printf '{"schemaVersion":1,"label":"Coverage","message":"%s","color":"%s"}\n' "$MSG" "$COLOR" > coverage-badge.json
-          echo "badge: $MSG ($COLOR) ${TOTAL}x20"
-      - name: Publish badge to badges branch
-        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin badges
-          git worktree add -B badges badge-wt origin/badges
-          cp coverage-badge.svg coverage-badge.json badge-wt/
-          cd badge-wt
-          git add coverage-badge.svg coverage-badge.json
-          git diff --cached --quiet || { git commit -m "badge: $(jq -r .message ../coverage-badge.json) coverage"; git push origin badges; }
+      # Dogfood: the badge action, run on this build's dotcov, draws the badge from the same
+      # reports and thresholds as the gate above. It also runs when that gate failed, so a drop
+      # turns the badge red instead of leaving the last green one standing; it is skipped when the
+      # tests failed, whose coverage is not evaluated. PRs render only; pushes to main publish to
+      # the `badges` branch the READMEs read. The gate step owns the job's verdict.
+      - name: Coverage badge (dotcov drawing dotcov)
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' && steps.test.outcome == 'success' }}
+        uses: ./.github/actions/badge
+        with:
+          reports: TestResults
+          min-line: 100
+          min-branch: 100
+          command: dotnet run --project src/DotCov.Tool -c Release --property:Version=${{ needs.version.outputs.version }} --
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          fail-on-gate: false
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single

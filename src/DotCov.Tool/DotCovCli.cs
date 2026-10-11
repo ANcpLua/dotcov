@@ -18,7 +18,7 @@ public static partial class DotCovCli
     public const int NoDataExitCode = 3;
     /// <summary>Exit code when all thresholds are disabled.</summary>
     public const int DisabledExitCode = 4;
-    /// <summary>Exit code for invalid input, IO, upload, or test-run failures.</summary>
+    /// <summary>Exit code for invalid input, IO, upload, badge, or test-run failures.</summary>
     public const int ErrorExitCode = 5;
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
@@ -141,6 +141,7 @@ public static partial class DotCovCli
             return ErrorExitCode;
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
+        if (!TryGetBadgeDir(opts, stderr)) return ErrorExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -149,7 +150,7 @@ public static partial class DotCovCli
 
     /// <summary>
     /// The line/branch gate over a parsed report, shared by check and test: step summary, verdict,
-    /// offending files, diagnostics, and upload all come from one evaluation, the
+    /// offending files, diagnostics, badge, and upload all come from one evaluation, the
     /// <paramref name="gate"/> the caller evaluated (test also renders its table from it).
     /// </summary>
     static async Task<int> Gate(
@@ -170,11 +171,13 @@ public static partial class DotCovCli
         if (gate.IsPass)
         {
             await stdout.WriteLineAsync(gate.ToString());
-            // A failed upload turns this pass into exit 5; its "error:" line leads stderr.
+            // A badge that cannot be written, or a failed upload, turns this pass into exit 5;
+            // its "error:" line leads stderr.
+            var badgeWritten = WriteBadge(opts, gate, stderr);
             var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
             WriteSummary();
             WriteDiagnostics(path, inputs, report.Warnings, stderr);
-            return exitCode;
+            return badgeWritten ? exitCode : ErrorExitCode;
         }
 
         await stderr.WriteLineAsync(gate.ToString());
@@ -194,8 +197,10 @@ public static partial class DotCovCli
         WriteSummary();
         WriteDiagnostics(path, inputs, report.Warnings, stderr);
 
-        // Failing runs upload too — red runs are the ones a coverage dashboard most needs.
-        // The non-passing gate's exit code wins regardless of the upload outcome.
+        // Failing runs write their badge and upload too — red runs are the ones a badge and a
+        // coverage dashboard most need to show. The non-passing gate's exit code wins regardless
+        // of either outcome.
+        WriteBadge(opts, gate, stderr);
         await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
 
         return NonPassingGateExitCode(gate.Outcome);
@@ -415,6 +420,8 @@ public static partial class DotCovCli
               --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
               --upload <url>            POST JSON payload to any endpoint (report, check, snapshot)
               --github-summary          Write markdown to $GITHUB_STEP_SUMMARY (report, check, crap, test)
+              --badge-dir <dir>         Write the verdict as coverage-badge.svg and coverage-badge.json
+                                        into <dir>, created if missing, for every outcome (check, test)
 
             <path> can be a file or directory. Directories are scanned for {{ReportPattern.DefaultText}};
             override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
@@ -433,8 +440,9 @@ public static partial class DotCovCli
               2  unknown command
               3  NODATA: missing measurements
               4  DISABLED: no active threshold
-              5  error: invalid input, parse/IO/size-cap error, upload failure, failed test run
-            A non-passing gate keeps its exit code even if an upload also fails.
+              5  error: invalid input, parse/IO/size-cap error, upload or badge write failure,
+                 failed test run
+            A non-passing gate keeps its exit code even if an upload or badge write also fails.
 
             crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML
             (used automatically); for other emitters pass --metrics <file> produced by
@@ -444,6 +452,7 @@ public static partial class DotCovCli
               dotcov report TestResults/
               dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
               dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
+              dotcov check TestResults/ --min-line 90 --min-branch 80 --badge-dir badge
               dotcov crap TestResults/ --max-crap 6 --github-summary
               dotcov crap coverage.cobertura.xml --metrics MyApp.Metrics.xml --top 10
               dotcov report gcovr-output/ --pattern "**/coverage.xml"   # non-Coverlet report names
@@ -573,6 +582,43 @@ public static partial class DotCovCli
         return true;
     }
 
+    /// <summary>
+    /// --badge-dir, checked before any report is read or test is run: an empty value (an unset
+    /// shell variable) names no directory.
+    /// </summary>
+    static bool TryGetBadgeDir(Dictionary<string, string> opts, TextWriter stderr)
+    {
+        if (!opts.TryGetValue("badge-dir", out var directory) || directory.Length > 0) return true;
+
+        stderr.WriteLine("error: Invalid --badge-dir value: '' (expected a directory).");
+        return false;
+    }
+
+    /// <summary>
+    /// --badge-dir: the evaluated gate as <see cref="BadgeFormatter.SvgFileName"/> and
+    /// <see cref="BadgeFormatter.JsonFileName"/>, written for every outcome, so a failing gate
+    /// replaces a green badge. False, after an "error:" line, when the files could not be written.
+    /// </summary>
+    static bool WriteBadge(Dictionary<string, string> opts, GateResult gate, TextWriter stderr)
+    {
+        if (!opts.TryGetValue("badge-dir", out var directory)) return true;
+
+        var svg = BadgeFormatter.Svg(gate);
+        var json = BadgeFormatter.ShieldsJson(gate);
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, BadgeFormatter.SvgFileName), svg);
+            File.WriteAllText(Path.Combine(directory, BadgeFormatter.JsonFileName), json);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            stderr.WriteLine($"error: could not write the badge to '{directory}': {ex.Message}");
+            return false;
+        }
+    }
+
     static bool TryGetFormat(Dictionary<string, string> opts, TextWriter stderr, out string format)
     {
         format = opts.GetValueOrDefault("format", "table");
@@ -676,11 +722,11 @@ public static partial class DotCovCli
     static readonly Dictionary<string, HashSet<string>> AcceptedOptions = new(StringComparer.Ordinal)
     {
         ["report"] = Accept("file", "format", "threshold", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
-        ["check"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
+        ["check"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload", "badge-dir"),
         ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", "exclude-generated", "keep", "pattern", "max-chars", "github-summary"),
         ["diff"] = Accept("before", "after", "format", "pattern", "max-chars"),
         ["snapshot"] = Accept("file", "commit", "branch", "project", "exclude-generated", "keep", "pattern", "max-chars", "upload"),
-        ["test"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "github-summary"),
+        ["test"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "github-summary", "badge-dir"),
     };
 
     static HashSet<string> Accept(params string[] names) => new(names, StringComparer.OrdinalIgnoreCase);

@@ -66,8 +66,9 @@ var methods = CoberturaParser.ParseMethods(ReportResolver.Resolve("TestResults/"
 ```
 
 `TableFormatter`, `MarkdownFormatter`, and `JsonFormatter` render a report for a terminal, a PR
-comment, or a pipeline. Every numeric rendering is invariant-formatted: `62.0%` on every host,
-never `62,0%`. `CoverageSnapshot` wraps a report with commit, branch, project, timestamp, and a
+comment, or a pipeline. `BadgeFormatter.Svg(gate)` and `BadgeFormatter.ShieldsJson(gate)` draw an
+evaluated `GateResult` as a coverage badge, coloured by its outcome. Every numeric rendering is
+invariant-formatted: `62.0%` on every host, never `62,0%`. `CoverageSnapshot` wraps a report with commit, branch, project, timestamp, and a
 SHA-256 of the source file.
 
 ## Parsing and safety

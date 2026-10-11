@@ -53,6 +53,7 @@ build without requiring you to implement `ICompile`.
 | `--coverage-exclude-generated-param` | `false` | `true`/`false`: apply `ExclusionRules.WellKnown` before gating |
 | `--coverage-pattern` | `**/*cobertura*.xml` | `filename` (top level) or `**/filename` (recursive) |
 | `--coverage-max-chars-param` | `50000000` | Per-file XML character cap; `0` disables it |
+| `--coverage-badge-directory` | empty (off) | Write `coverage-badge.svg` and `coverage-badge.json` here, relative to the root, for every outcome |
 
 Every value is validated once, before any report is read; an invalid value fails the target
 naming the parameter. Override `CoverageSearchDirectory` in your `Build` class to scan
@@ -68,9 +69,13 @@ somewhere other than `RootDirectory / "TestResults"`.
 | Coverage below a threshold | Target fails: `Coverage below threshold: FAIL: …` |
 | Every threshold is `0` | Target fails: `Coverage gate is disabled …` |
 | Thresholds met | Target succeeds; the verdict is logged |
+| Thresholds met, badge directory unwritable | Target fails: `Coverage gate passed, but its badge could not be written: …` |
 
 Parser warnings (malformed hit counts, ambiguous source roots, …) are logged one per line
-and never change the verdict. An unwritable `GITHUB_STEP_SUMMARY` is logged as a warning and
+and never change the verdict. The badge is written before a failing verdict fails the target, so
+a drop turns it red; its colour is the outcome, and its message the line rate, plus the branch
+rate when a branch minimum is set. A non-passing gate keeps its own failure message when the badge
+cannot be written. An unwritable `GITHUB_STEP_SUMMARY` is logged as a warning and
 does not fail an otherwise passing gate. Percentages are invariant-formatted, so CI logs read
 `62.0%` on every host, never `62,0%`.
 

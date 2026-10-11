@@ -813,5 +813,6 @@ public sealed class CliTests : IDisposable
         await Assert.That(stdout).Contains("5  error:");
         await Assert.That(stdout).Contains("--pattern");
         await Assert.That(stdout).Contains("--max-chars");
+        await Assert.That(stdout).Contains("--badge-dir <dir>");
     }
 }

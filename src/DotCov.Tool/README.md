@@ -41,7 +41,9 @@ dotcov test     tests/MyApp.Tests --min-line 80 -- -c Release    # dotnet test, 
 ```
 
 `--github-summary` writes the markdown table to `$GITHUB_STEP_SUMMARY` on pass **and** fail, so a
-green build still shows its number.
+green build still shows its number. `--badge-dir <dir>` on `check` and `test` writes the verdict as
+`coverage-badge.svg` and `coverage-badge.json`, coloured by the outcome; the
+[badge action](https://github.com/ANcpLua/dotcov#badge) publishes them in one CI step.
 
 ## Testing and gating in one step
 
@@ -70,11 +72,12 @@ shared CLI errors have distinct exit codes:
 | `FAIL:` | below the threshold | 1 |
 | `NODATA:` | the gate lacks the data needed to evaluate | 3 |
 | `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 4 |
-| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 5 |
+| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload or badge write failure, failed test run | 5 |
 | — | unknown command | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
-A non-passing gate keeps its code if upload also fails.
+A passing gate whose badge cannot be written returns `5`; a non-passing gate keeps its code if an
+upload or badge write also fails.
 Reporting commands do not enforce thresholds. `report --threshold` affects
 presentation, not the exit code. Use `check` when CI must require measured coverage.
 
@@ -121,6 +124,7 @@ from coverlet's per-method attribute automatically; for emitters that write none
 | `--format` | `table`, `json`, `md` |
 | `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY` |
 | `--upload <url>` | POST the JSON payload |
+| `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome; created if missing |
 
 Each command accepts only the flags it uses, and `dotcov --help` lists which. A misspelled flag,
 `--name=value`, or a second path is an error, never a silently applied default.
