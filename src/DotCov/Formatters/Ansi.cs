@@ -35,12 +35,6 @@ public static partial class Ansi
     /// escape codes are interpreted instead of printed literally. No-op on non-Windows
     /// and on consoles that don't expose a usable handle (e.g. tests, redirected streams).
     /// </summary>
-    /// <remarks>
-    /// Coverage-excluded: this is a thin OS-conditional dispatcher whose two branches can
-    /// only be exercised on different platforms (non-Windows hits the early return, Windows
-    /// hits the try/catch). The unit tests verify the contract "never throws on any platform";
-    /// branch coverage on a single OS would otherwise penalise an unreachable path.
-    /// </remarks>
     [ExcludeFromCodeCoverage(Justification =
         "OS-conditional dispatcher: the non-Windows early return and the Windows try/catch are " +
         "mutually exclusive per platform, so single-OS branch coverage cannot exercise both.")]
@@ -75,9 +69,6 @@ public static partial class Ansi
     }
 
     #region Windows VT bootstrap
-    // Excluded from coverage: reachable only on Windows runners. The Linux/macOS CI matrix
-    // can't exercise these paths, and they're thin Win32 wrappers — coverage tooling on
-    // non-Windows would otherwise penalise an unreachable platform branch.
 
     [SupportedOSPlatform("windows")]
     [ExcludeFromCodeCoverage(Justification =

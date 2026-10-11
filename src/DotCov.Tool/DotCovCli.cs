@@ -6,7 +6,7 @@ using DotCov.Formatters;
 namespace DotCov.Tool;
 
 /// <summary>
-/// The dotcov command-line surface, extracted from Program.cs so exit codes and error paths
+/// The dotcov command-line surface, kept out of Program.cs so exit codes and error paths
 /// are testable in-process. Program.cs hands it the real console writers; tests hand it
 /// StringWriters (which also disables ANSI coloring, since only a real console gets color).
 /// </summary>
@@ -41,7 +41,6 @@ public static partial class DotCovCli
         }
         catch (Exception ex)
         {
-            // Not a filter: `catch (Exception) when` adds a type test no thrown object can fail.
             // Anything unexpected is a bug and propagates with its stack trace.
             if (!IsExpectedFailure(ex)) throw;
 
@@ -151,10 +150,7 @@ public static partial class DotCovCli
         CoverageReport report, GateResult gate, string path, IReadOnlyList<ReportInput> inputs,
         Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
     {
-
         // Written on pass AND fail, and derived from the same GateResult as the exit code.
-        // Previously the summary was fail-only and re-evaluated with min-branch 0, so a
-        // branch-gate failure exited 1 while the PR summary showed a green ✅ badge.
         // MarkdownFormatter.Format(report, gate) renders badge, both thresholds, floored
         // failing-dimension rates, AND the one-line verdict from the same precomputed
         // GateResult — no re-evaluation, no CLI-side splicing. Written after the verdict, so a
@@ -179,7 +175,7 @@ public static partial class DotCovCli
 
         // The offender list answers "which files caused the line-gate failure", so it prints
         // only when the LINE gate actually failed. A branch-only failure listing line-threshold
-        // files (possibly with 100% branch coverage) blamed the wrong files; NoData/Disabled
+        // files (possibly with 100% branch coverage) would blame the wrong files; NoData/Disabled
         // have no offenders at all — a branch-NoData gate can still carry a line rate below
         // min-line, so the outcome is checked, not just the line comparison.
         if (gate is { Outcome: GateOutcome.Fail, LineBelowThreshold: true })
@@ -200,9 +196,8 @@ public static partial class DotCovCli
         // conservative — a gate that cannot see must not exit 0. The contract (0 = pass,
         // 1 = fail or inconclusive or could-not-measure, 2 = unknown command) is documented in
         // help and both READMEs; the stderr first token (FAIL:/NODATA:/DISABLED:/error:) is the
-        // only machine-readable discriminator today. A distinct inconclusive exit code would be
-        // a CLI contract change that ripples into every consumer's CI, so it stays opt-in-later;
-        // GateResult.Outcome carries the distinction whenever that call gets made.
+        // machine-readable discriminator. A distinct inconclusive exit code would be a CLI
+        // contract change that ripples into every consumer's CI.
         return 1;
     }
 
@@ -261,7 +256,6 @@ public static partial class DotCovCli
         return 1;
     }
 
-    /// <summary>The one crap-format dispatch, shared by stdout and any future sink.</summary>
     static string RenderCrap(string format, CrapReport report, CrapGateResult gate, int? top, bool color) =>
         format switch
         {
@@ -670,8 +664,8 @@ public static partial class DotCovCli
     }
 
     // The options each command acts on. Anything else — a misspelled flag, '--name=value', a flag
-    // only another command reads, a second path from a shell glob — used to be accepted and
-    // ignored, so a gate could pass on defaults nobody asked for. help and version take none.
+    // only another command reads, a second path from a shell glob — is rejected, not ignored, so
+    // a gate cannot pass on defaults nobody asked for. help and version take none.
     static readonly Dictionary<string, HashSet<string>> AcceptedOptions = new(StringComparer.Ordinal)
     {
         ["report"] = Accept("file", "format", "threshold", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
@@ -697,7 +691,7 @@ public static partial class DotCovCli
         {
             if (accepted.Contains(key)) continue;
 
-            // ParseArgs files every path beyond the ones a command takes as "arg<N>".
+            // Parse files every path beyond the ones a command takes as "arg<N>".
             if (key.StartsWith("arg", StringComparison.Ordinal) &&
                 int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
                 throw new CliError(command is "test"

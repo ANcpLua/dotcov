@@ -124,11 +124,11 @@ public sealed class Cobertura
             return this;
         }
 
-        public ClassBuilder Branch(int number, string conditionCoverage, int hits = 1)
+        public ClassBuilder Branch(int number, string conditionCoverage)
         {
             Lines().Add(new XElement("line",
                 new XAttribute("number", number),
-                new XAttribute("hits", hits),
+                new XAttribute("hits", 1),
                 new XAttribute("branch", "true"),
                 new XAttribute("condition-coverage", conditionCoverage)));
             return this;

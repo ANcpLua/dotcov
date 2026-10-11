@@ -134,8 +134,8 @@ public static partial class CoberturaParser
 
             public MethodCoverage Materialize()
             {
-                // Range seeded from the first line, not from 0: line 0 is a real line, and a
-                // 0 sentinel let the next line overwrite it (lines 0..2 reported StartLine 2).
+                // Not seeded with 0: line 0 is a real line, and a 0 sentinel would let the next
+                // line overwrite it (lines 0..2 would report StartLine 2).
                 var linesHit = 0;
                 var start = int.MaxValue;
                 var end = int.MinValue;
@@ -146,7 +146,7 @@ public static partial class CoberturaParser
                     end = Math.Max(end, line);
                 }
 
-                if (_lineHits.Count is 0) start = end = 0;   // documented: 0 when the method carries no lines
+                if (_lineHits.Count is 0) start = end = 0;
 
                 return new MethodCoverage(
                     key.ClassName, key.MethodName, key.Signature, key.File,

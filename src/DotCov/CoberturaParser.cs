@@ -96,7 +96,7 @@ public static partial class CoberturaParser
         XmlReader.Create(stream, new XmlReaderSettings
         {
             // Ignore, not Prohibit: reference Cobertura, gcovr, and coverage.py all emit a
-            // DOCTYPE on every report, so Prohibit rejected the format's canonical emitters.
+            // DOCTYPE on every report, so Prohibit would reject the format's canonical emitters.
             // With XmlResolver = null external entities can never resolve and an entity
             // reference in content still throws.
             DtdProcessing = DtdProcessing.Ignore,
@@ -355,7 +355,7 @@ public static partial class CoberturaParser
     /// <summary>
     /// Prepend the report's first <c>&lt;source&gt;</c> root to a relative filename. Cobertura
     /// emitters (coverage.py, gcovr, cover2cover) write filenames relative to a source root;
-    /// discarding it made two different files that share a relative name collide on one key.
+    /// discarding it would make two different files that share a relative name collide on one key.
     /// The rooted check is manual (leading '/' or a drive-letter prefix) because
     /// <c>Path.IsPathRooted("C:/x")</c> is false on Linux and reports cross machines. The root
     /// is applied unconditionally, never only on collision — a conditional prefix would make a
@@ -419,8 +419,6 @@ public static partial class CoberturaParser
                 // A report whose ONLY declared root is the no-op sentinel exposes no roots at
                 // all — lone <source>.</source> adds no identity information. Mixed declarations
                 // keep the sentinel so Merge can tell ('.', '/real') apart from ('/real').
-                // (Count/index rather than a list pattern: the pattern's null test can never
-                // fail on this readonly field.)
                 SourceRoots = document.SourceRoots.Count is 1 && document.SourceRoots[0].Length is 0
                     ? []
                     : document.SourceRoots
@@ -457,8 +455,8 @@ public static partial class CoberturaParser
                 : line.Hits;
 
             // Emitters disagree on casing: original Cobertura/JaCoCo write `branch="true"`,
-            // Coverlet writes `branch="True"`. A literal compare silently dropped Coverlet
-            // branches and rendered branch coverage as a fake 100%.
+            // Coverlet writes `branch="True"`. A literal compare would silently drop Coverlet
+            // branches and render branch coverage as a fake 100%.
             if (!string.Equals(reader.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase) ||
                 reader.GetAttribute("condition-coverage") is not { } cond)
                 return;
@@ -511,7 +509,7 @@ public static partial class CoberturaParser
     /// <summary>
     /// Read <c>(covered/total)</c> from a <c>condition-coverage</c> value. A fraction claiming
     /// more covered outcomes than the line has is malformed like any other unreadable value:
-    /// accepting it put BranchesHit above BranchesTotal (a &gt;100% branch rate).
+    /// accepting it would put BranchesHit above BranchesTotal (a &gt;100% branch rate).
     /// </summary>
     private static bool TryParseConditionCoverage(string cond, out int covered, out int total)
     {

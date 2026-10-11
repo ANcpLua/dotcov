@@ -10,11 +10,11 @@ public static class MarkdownFormatter
         // A gate that could not evaluate gets its own badge. Rendering NoData/Disabled as ✅
         // is what lets an unmeasured build read as a healthy one in a PR summary.
         var gate = threshold.HasValue ? report.Evaluate(threshold.Value) : (GateResult?)null;
-        // The threshold exactly as evaluated (round-trip, like the gate overload): F0 printed
+        // The threshold exactly as evaluated (round-trip, like the gate overload): F0 would print
         // 79.6 as "80%" beside a ✅ for 79.8%, and 0.4 as "0%" beside a ❌.
         var thresholdLine = threshold.HasValue ? Invariant($"**Threshold:** {threshold.Value}%") : null;
-        // Legacy path renders un-floored rates — its output shape is pinned by existing
-        // consumers. The GateResult overload below is the floor-aware presentation.
+        // Renders un-floored rates, an output shape this overload's consumers depend on. The
+        // GateResult overload below is the floor-aware presentation.
         return Render(report, gate, thresholdLine, floorLine: false, floorBranch: false);
     }
 
@@ -104,9 +104,6 @@ public static class MarkdownFormatter
 
     private static void AppendWarnings(StringBuilder sb, CoverageReport report)
     {
-        // Structured anomaly surface — kept additive so existing consumers see no change
-        // when nothing diverged. Detailed list lives here because table/JSON have their
-        // own conventions; markdown is the natural place for full per-entry context.
         if (report.Warnings.Count is 0) return;
 
         sb.AppendLine();
@@ -204,7 +201,7 @@ public static class MarkdownFormatter
     /// <paramref name="text"/> as one inline code span, whatever it contains: line breaks
     /// become spaces, and a text carrying backticks gets a fence one backtick longer than its
     /// longest backtick run, padded with the single space CommonMark strips — a lone-backtick
-    /// fence closed at the first backtick of the text and spilled the rest as prose.
+    /// fence would close at the first backtick of the text and spill the rest as prose.
     /// </summary>
     internal static string Code(string text)
     {
@@ -220,8 +217,8 @@ public static class MarkdownFormatter
 
     /// <summary>
     /// <see cref="Code"/> for a table cell: GFM splits cells on every unescaped <c>|</c>, code
-    /// spans included, so a pipe in a name shifted every later cell one column right. The
-    /// table parser consumes the <c>\|</c> escape before inline parsing, so it renders as
+    /// spans included, so a raw pipe in a name would shift every later cell one column right.
+    /// The table parser consumes the <c>\|</c> escape before inline parsing, so it renders as
     /// <c>|</c> inside the span.
     /// </summary>
     internal static string TableCode(string text) => Code(text.Replace("|", "\\|", StringComparison.Ordinal));

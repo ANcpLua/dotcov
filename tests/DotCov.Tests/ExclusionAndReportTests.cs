@@ -8,12 +8,12 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task WellKnown_HasNoStructurallyDeadRules()
     {
-        // No "d__" rule: it matched on Path (the filename), but coverlet only ever puts d__ in the
-        // *class name* — so the rule was structurally dead. Assert it's gone, not present.
-        // (The behavioral effect of every live pattern is protected by the Exclude_WellKnown_*
-        // theories below — mirroring the list contents here would just restate the data.)
+        // No "d__" rule: rules match the path (the filename), but coverlet only ever puts d__ in
+        // the *class name*, so such a rule could never fire. The behavioral effect of every live
+        // pattern is protected by the Exclude_WellKnown_* theories below; mirroring the list
+        // contents here would just restate the data.
         await Assert.That(ExclusionRules.WellKnown).DoesNotContain("d__");
-        // No bare "GlobalUsings" substring either: it swallowed real product code in any
+        // No bare "GlobalUsings" substring either: it would swallow real product code in any
         // directory whose name contains it (src/GlobalUsingsGenerator/…).
         await Assert.That(ExclusionRules.WellKnown).DoesNotContain("GlobalUsings");
     }
@@ -81,8 +81,8 @@ public sealed class ExclusionAndReportTests
     [Test]
     [Arguments("Source/file.cs")]
     [Arguments("src/MyService.cs")]
-    // Real product code whose *directory name* contains "GlobalUsings" — the old unanchored
-    // substring rule silently dropped this whole directory, which could flip a failing
+    // Real product code whose *directory name* contains "GlobalUsings": an unanchored
+    // substring rule would drop this whole directory, which could flip a failing
     // `check --min-line` gate to PASS.
     [Arguments("src/GlobalUsingsGenerator/Emitter.cs")]
     public async Task Exclude_WellKnown_KeepsNonMatchingFile(string path)
@@ -147,8 +147,8 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task Empty_StaticInstance_HasNoFilesAndNoRates()
     {
-        // The empty report is the whole point of this change: it used to claim 1.0/1.0, so a
-        // glob that matched nothing rendered as flawless coverage and cleared every threshold.
+        // An empty report has no rates: claiming 1.0/1.0 would render a glob that matched
+        // nothing as flawless coverage that clears every threshold.
         await Assert.That(CoverageReport.Empty.Files).IsEmpty();
         await Assert.That(CoverageReport.Empty.LineRate).IsNull();
         await Assert.That(CoverageReport.Empty.BranchRate).IsNull();
@@ -205,8 +205,8 @@ public sealed class ExclusionAndReportTests
     public async Task FileCoverage_MergeWith_BranchesOnlyInOther_PreservesEntry()
     {
         // `a` has the same line tracked but no branch data for it; `b` carries the branches.
-        // The merge must keep `b`'s BranchesByLine entry — a regression that overwrote with
-        // the empty dict would silently flip the merged line from Partial back to Hit.
+        // The merge must keep `b`'s BranchesByLine entry: overwriting it with the empty dict
+        // would silently flip the merged line from Partial back to Hit.
         var a = Reports.ClassifiedFile("a.cs", 1, 1, 0, 0,
             lineHits: new Dictionary<int, int> { [10] = 1 },
             branchesByLine: new Dictionary<int, (int Covered, int Total)>());
@@ -285,7 +285,6 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task TryGetLineStatus_TrackedZeroHitLine_ReturnsTrueAndMiss()
     {
-        // The key contract: line IS tracked but had zero hits. Distinct from untracked.
         var f = new FileCoverage("a.cs", 0, 1, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [10] = 0 }
@@ -311,7 +310,7 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task TryGetLineStatus_UnknownLine_ReturnsFalseAndMiss()
     {
-        // The other key contract: false signals "not tracked", out param is Miss for ergonomics.
+        // False signals "not tracked"; the out param is Miss for ergonomics.
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
         await Assert.That(f.TryGetLineStatus(999, out var status)).IsFalse();
@@ -362,8 +361,8 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task FileCoverage_StrictLineRate_EmptyLines_ReturnsNull()
     {
-        // Empty FileCoverage (no LineHits at all) — null, not a vacuous 1.0. Callers do have to
-        // handle empty files, and the type now makes them: that is the point, not an inconvenience.
+        // Empty FileCoverage (no LineHits at all) — null, not a vacuous 1.0, so the type makes
+        // callers handle empty files.
         var f = new FileCoverage("a.cs", 0, 0, 0, 0);
 
         await Assert.That(f.StrictLineRate).IsNull();
@@ -405,7 +404,7 @@ public sealed class ExclusionAndReportTests
         await Assert.That(diff.Improvements.Single().Path).IsEqualTo("up.cs");
     }
 
-    // ── Single-pass classification: precomputed counts vs. previous getter logic ──
+    // ── Single-pass classification: precomputed counts agree with GetLineStatus ──
 
     [Test]
     public async Task Classify_MixedHitPartialFullMissed_CountsStrictAndPartial() =>
@@ -489,8 +488,6 @@ public sealed class ExclusionAndReportTests
 
         var (merged, _) = a.MergeWith(b);
 
-        // Independently classify the merged dicts and compare. This is the "did MergeWith do
-        // the same work the factory would have done?" check.
         var reference = Reports.ClassifiedFile(merged.Path,
             merged.LinesHit, merged.LinesTotal, merged.BranchesHit, merged.BranchesTotal,
             lineHits: merged.LineHits, branchesByLine: merged.BranchesByLine);
@@ -530,7 +527,7 @@ public sealed class ExclusionAndReportTests
     {
         // Two CI jobs disagree on the branch Total for line 10 — usually Release vs. Debug
         // builds. The merge keeps the larger total (Math.Max) and surfaces the divergence
-        // as a structured warning so it stops being a silent bug.
+        // as a structured warning instead of hiding it.
         var a = new FileCoverage("src/Calculator.cs", 1, 1, 3, 5)
         {
             LineHits = new Dictionary<int, int> { [10] = 1 },
@@ -599,7 +596,7 @@ public sealed class ExclusionAndReportTests
     public async Task CoverageReport_Merge_PropagatesPerSideWarningsAndAppendsNew()
     {
         // a.Warnings + b.Warnings must carry through, and any new BranchTotalMismatch
-        // surfaced by the per-file MergeWithWarnings call gets appended on top.
+        // surfaced by the per-file MergeWith call gets appended on top.
         var aFile = new FileCoverage("a.cs", 1, 1, 3, 5)
         {
             LineHits = new Dictionary<int, int> { [10] = 1 },
@@ -638,7 +635,7 @@ public sealed class ExclusionAndReportTests
     [Test]
     public async Task CoverageReport_Merge_DistinctFiles_PropagatesWarningsWithoutNewOnes()
     {
-        // No path overlap → no per-file MergeWithWarnings call → only the carried-over
+        // No path overlap → no per-file MergeWith call → only the carried-over
         // warnings come through. Guards against the merge fabricating false anomalies.
         var a = new CoverageReport([new FileCoverage("a.cs", 1, 1, 0, 0)])
         {

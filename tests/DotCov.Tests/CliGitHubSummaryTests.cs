@@ -5,9 +5,9 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// Pins --github-summary behavior: the badge must derive from the same GateResult as the exit
-/// code (a branch-gate failure once exited 1 while the summary showed ✅), the summary is
-/// written on pass AND fail, and a bad GITHUB_STEP_SUMMARY path degrades to a warning instead
-/// of aborting the command. Env-var dependent, so serialized under <see cref="ProcessState.Environment"/>.
+/// code, the summary is written on pass AND fail, and a bad GITHUB_STEP_SUMMARY path degrades
+/// to a warning instead of aborting the command. Env-var dependent, so serialized under
+/// <see cref="ProcessState.Environment"/>.
 /// </summary>
 [NotInParallel(ProcessState.Environment)]
 public sealed class CliGitHubSummaryTests : IDisposable
@@ -36,8 +36,8 @@ public sealed class CliGitHubSummaryTests : IDisposable
     [Test]
     public async Task Check_BranchGateFailure_SummaryShowsFailBadge()
     {
-        // The false-green regression: exit 1 for a branch-gate failure must not pair with a ✅
-        // badge computed from a line-only re-evaluation.
+        // Exit 1 for a branch-gate failure must not pair with a ✅ badge computed from a
+        // line-only re-evaluation.
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
 
         var (code, _, _) = await Run(
@@ -55,8 +55,6 @@ public sealed class CliGitHubSummaryTests : IDisposable
     [Test]
     public async Task Check_PassingGate_StillWritesSummary()
     {
-        // Green builds keep their coverage summary — previously the pass path returned before
-        // the --github-summary handling and wrote nothing.
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
 
         var (code, _, _) = await Run("check", HalfCovered(), "--min-line", "40", "--github-summary");
@@ -156,7 +154,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var (checkCode, _, checkErr) = await Run(
             "check", HalfCovered(), "--min-line", "90", "--github-summary");
         await Assert.That(checkCode).IsEqualTo(1);
-        // The summary warning follows the verdict; it used to be the first stderr token.
+        // The summary warning follows the verdict, so the verdict stays the first stderr token.
         await Assert.That(checkErr).StartsWith("FAIL:");
         await Assert.That(checkErr).Contains("warning: could not write GITHUB_STEP_SUMMARY");
         await Assert.That(checkErr).DoesNotContain("Unhandled exception");

@@ -10,8 +10,8 @@ namespace DotCov.Formatters;
 /// Native-AOT and trim safe (zero IL2026/IL3050). This is the same zero-dependency, streaming
 /// ethos as <see cref="CoberturaParser"/>: hand-written, allocation-light, statically analyzable.
 /// <para>
-/// The wire shape is unchanged from the previous reflection-based projection: camelCase keys,
-/// two-space indentation, and the "absent key == clean" contract — a null/empty property is
+/// The wire shape: camelCase keys, two-space indentation, and the "absent key == clean"
+/// contract — a null/empty property is
 /// omitted entirely (so consumers detect e.g. a warning-free report with
 /// <c>!root.TryGetProperty("warnings", out _)</c>) rather than emitted as <c>null</c>.
 /// </para>
@@ -110,8 +110,8 @@ public static class JsonFormatter
         writer.WriteEndObject();
     }
 
-    // Omitted entirely when empty — same `Count == 0 ? null : …` shape the WhenWritingNull
-    // policy used to give, so consumers can treat a missing "warnings" key as "clean report".
+    // Omitted entirely when empty, so consumers can treat a missing "warnings" key as
+    // "clean report".
     private static void WriteWarnings(Utf8JsonWriter writer, CoverageReport report)
     {
         if (report.Warnings.Count is 0) return;
@@ -162,9 +162,9 @@ public static class JsonFormatter
     }
 
     // Visitor dispatch over the closed LineDelta hierarchy. Wire format pins all-lowercase
-    // `change` strings (added/removed/newlyhit/newlymissed) and the same field omission as the
-    // prior projection: Added carries no `beforeHits`, Removed carries no `afterHits`. Switch is
-    // the compile-time-exhaustive entry point — a fifth variant breaks this call at compile time.
+    // `change` strings (added/removed/newlyhit/newlymissed) and field omission: Added carries
+    // no `beforeHits`, Removed carries no `afterHits`. Switch is the compile-time-exhaustive
+    // entry point — a fifth variant breaks this call at compile time.
     private static void WriteLineDelta(Utf8JsonWriter writer, LineDelta c) => c.Switch(
         added: a =>
         {

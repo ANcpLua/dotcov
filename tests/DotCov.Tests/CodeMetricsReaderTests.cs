@@ -305,8 +305,8 @@ public sealed class CodeMetricsReaderTests
     /// <summary>
     /// The full operator-token table, exercised through real MinimallyQualifiedFormat display
     /// strings (XML-escaped where the token contains angle brackets). Comparison and shift
-    /// tokens are the regression half: their unbalanced <c>&lt;</c>/<c>&gt;</c> once derailed
-    /// the depth-tracked parameter split, so they never reached the table.
+    /// tokens carry unbalanced <c>&lt;</c>/<c>&gt;</c> that must not derail the depth-tracked
+    /// parameter split before they reach the table.
     /// </summary>
     [Test]
     [Arguments("Calculator Calculator.operator +(Calculator a)", "op_UnaryPlus")]

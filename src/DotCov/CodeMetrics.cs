@@ -69,7 +69,7 @@ public static class CodeMetricsReader
 
     public static IReadOnlyList<CodeMetricsMember> Parse(Stream stream, long maxChars = DefaultMaxChars)
     {
-        // Same hardening rationale as CoberturaParser.CreateSecureSettings: DTD skipped without
+        // Same hardening rationale as CoberturaParser.CreateReader: DTD skipped without
         // processing, entities can never resolve, bounded document size.
         using var reader = XmlReader.Create(stream, new XmlReaderSettings
         {

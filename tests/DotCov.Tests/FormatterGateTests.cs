@@ -32,9 +32,9 @@ public sealed class FormatterGateTests
     [Test]
     public async Task GateOverload_ClosesWithBacktickedVerdictLine()
     {
-        // The one-line verdict CI logs grep for is part of the formatter's output — the CLI
-        // no longer splices it on, so it must end the document, backticked, byte-identical
-        // to GateResult.ToString().
+        // The one-line verdict CI logs grep for is part of the formatter's output, not spliced
+        // on by the CLI, so it must end the document, backticked, byte-identical to
+        // GateResult.ToString().
         var report = Reports.Single("src/App.cs", hit: 1999, total: 2500);
         var gate = report.Evaluate(80);
 

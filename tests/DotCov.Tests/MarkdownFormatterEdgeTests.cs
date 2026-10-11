@@ -16,7 +16,8 @@ public sealed class MarkdownFormatterEdgeTests
     public async Task Format_FractionalThreshold_ShowsTheThresholdTheBadgeWasJudgedAgainst()
     {
         // 798/1000 = 79.8% clears 79.6, so the badge is a pass. Printing the threshold as
-        // "80%" put a ✅ next to "79.8%" and "Threshold: 80%" - a pass that reads as a failure.
+        // "80%" would put a ✅ next to "79.8%" and "Threshold: 80%" - a pass that reads as a
+        // failure.
         var report = Reports.Single("src/A.cs", hit: 798, total: 1000);
 
         var md = MarkdownFormatter.Format(report, threshold: 79.6);
@@ -94,8 +95,8 @@ public sealed class MarkdownFormatterEdgeTests
     public async Task Format_PipeInFileName_KeepsTheRowAtFiveCells()
     {
         // '|' is legal in Linux file names. GFM splits table cells on every unescaped pipe,
-        // code spans included, so an unescaped one shifted the row: the Lines column showed
-        // "b.cs`" and the branch rate fell off the end.
+        // code spans included, so an unescaped one would shift the row: the Lines column would
+        // show "b.cs`" and the branch rate would fall off the end.
         var report = Reports.Single("src/a|b.cs", hit: 1, total: 2);
 
         var md = MarkdownFormatter.Format(report);

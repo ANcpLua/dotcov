@@ -6,7 +6,7 @@ namespace DotCov.Tests;
 /// The condition-identity mismatch arm of <see cref="FileCoverage.MergeWith"/> and the
 /// presentation-time condition overlay. Two properties are pinned: (1) a keyset mismatch
 /// permanently POISONS the line's condition identity (empty-dict sentinel, absorbing), so the
-/// merged aggregate no longer depends on the order reports are folded in; (2) the
+/// merged aggregate does not depend on the order reports are folded in; (2) the
 /// condition-derived aggregate is overlaid onto the presented line aggregate in FromLineData
 /// — never baked into merge state, where a Math.Max could not be undone by a later poison.
 /// </summary>
@@ -37,8 +37,8 @@ public sealed class MergeConditionIdentityTests
     [Arguments("CBA")]
     public async Task Merge_MismatchedIdentityReport_EveryFoldOrderConvergesToTheRawAggregate(string order)
     {
-        // Pre-fix, directory order A,B,C yielded 2/4 (A∪B overlaid before C's mismatch) while
-        // C,A,B yielded 1/4 — the same uploads passed or failed `check --min-branch 50`
+        // An order-dependent merge would yield 2/4 for A,B,C (A∪B overlaid before C's mismatch)
+        // but 1/4 for C,A,B — the same uploads would pass or fail `check --min-branch 50`
         // depending on TestResults subdirectory naming.
         var merged = order
             .Select(name => name switch { 'A' => A(), 'B' => B(), _ => C() })
@@ -90,7 +90,7 @@ public sealed class MergeConditionIdentityTests
         await Assert.That(merged.Files[0].BranchesHit).IsEqualTo(1);
     }
 
-    // ── The one-sided overlay (C4): condition detail proving more than the line aggregate ──
+    // ── The one-sided overlay: condition detail proving more than the line aggregate ──
 
     /// <summary>
     /// Two class blocks with complementary conditions: per-condition Math.Max across blocks
@@ -158,7 +158,6 @@ public sealed class MergeConditionIdentityTests
     [Test]
     public async Task Merge_ConditionIdentityMismatch_DetailNamesBothNumberSetsAscending()
     {
-        // The warning must expose both divergent condition-number sets in ascending order.
         var a = Cobertura.NewDoc()
             .AddClass("x.cs", c => c.BranchWithConditions(5, "50% (2/4)", (1, "50%"), (3, "50%")))
             .Parse();

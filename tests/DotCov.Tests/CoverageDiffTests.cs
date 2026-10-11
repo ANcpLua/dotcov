@@ -166,10 +166,9 @@ public sealed class CoverageDiffTests
     [Test]
     public async Task Compare_CaseDistinctFileNames_StayDistinctAndMatchExactly()
     {
-        // xt_TCPMSS.c and xt_tcpmss.c genuinely coexist (linux/net/netfilter). Under the old
-        // OrdinalIgnoreCase lookups this diff couldn't even be built — ToDictionary threw on
-        // the "duplicate" keys. Ordinal keying matches each exactly; the file-name fallback
-        // never crosses them because final-segment comparison is Ordinal too.
+        // xt_TCPMSS.c and xt_tcpmss.c genuinely coexist (linux/net/netfilter). Ordinal keying
+        // matches each exactly; the file-name fallback never crosses them because final-segment
+        // comparison is Ordinal too.
         var before = Make(
             new FileCoverage("net/xt_TCPMSS.c", 4, 4, 0, 0),
             new FileCoverage("net/xt_tcpmss.c", 0, 4, 0, 0));
@@ -190,7 +189,7 @@ public sealed class CoverageDiffTests
     [Test]
     public async Task Compare_RemovedZeroRateFile_IsARegression_AddedZeroRateFile_IsNotAnImprovement()
     {
-        // Variant A: losing a MEASURED file is a regression of what the report vouches for,
+        // Losing a MEASURED file is a regression of what the report vouches for,
         // whatever its rate — a removed 0% file included. Its numeric delta is positive zero
         // (never -0.0, which would render as "+-0.0%"). A new 0% file adds nothing that could
         // count as an improvement, and is not a regression either.
@@ -595,8 +594,8 @@ public sealed class CoverageDiffTests
     [Test]
     public async Task Compare_NegativeHits_AreMissed_InEveryView()
     {
-        // The parser admits a negative count and the line totals read it as missed; the line
-        // status and the diff used to read it as hit, so a never-hit line became "newly missed".
+        // The parser admits a negative count; the line totals, the line status and the diff all
+        // read it as missed, so a never-hit line is not "newly missed".
         var before = Cobertura.NewDoc().AddClass("src/N.cs", c => c.Line(1, hits: -1).Line(2, hits: 1)).Parse();
         var after = Cobertura.NewDoc().AddClass("src/N.cs", c => c.Line(1, hits: 0).Line(2, hits: 1)).Parse();
 

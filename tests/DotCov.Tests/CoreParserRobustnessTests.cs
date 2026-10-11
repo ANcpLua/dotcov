@@ -1,4 +1,3 @@
-using System.Text;
 using System.Xml;
 using DotCov.Tests.Infrastructure;
 
@@ -52,9 +51,8 @@ public sealed class CoreParserRobustnessTests
     [Test]
     public void ParseDirectory_OneMalformedFileAmongSeveral_PropagatesXmlException()
     {
-        // Current contract, pinned: a malformed file inside the aggregate propagates its
-        // XmlException out of ParseDirectory rather than being skipped — a broken artifact
-        // must not silently shrink the merged report.
+        // A malformed file inside the aggregate propagates as a ReportParseException rather
+        // than being skipped — a broken artifact must not silently shrink the merged report.
         using var temp = TempWorkspace.Create("dotcov-robust-");
         File.WriteAllBytes(temp.PrepareFile("good/coverage.cobertura.xml"),
             Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
@@ -64,7 +62,7 @@ public sealed class CoreParserRobustnessTests
         Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
     }
 
-    // ── C23: parse errors must name the offending file ──
+    // ── Parse errors must name the offending file ──
 
     [Test]
     public async Task ParseFile_MalformedXml_ExceptionNamesTheFile()
@@ -111,7 +109,6 @@ public sealed class CoreParserRobustnessTests
 
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
 
-        // The exception names the malformed report, not the healthy one.
         await Assert.That(ex.SourceName).IsEqualTo(badPath);
     }
 }

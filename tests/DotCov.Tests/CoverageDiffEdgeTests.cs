@@ -17,8 +17,8 @@ public sealed class CoverageDiffEdgeTests
     {
         // One more covered line out of 10,000 moves the rate by exactly MovementEpsilon, which
         // counts as movement (FileDelta.Compared: "differ by at least MovementEpsilon"). From
-        // 0/10000 that held; from 5000/10000 the subtraction landed one rounding error short
-        // (9.999999999998899E-05) and the file read as Unchanged — so did 99.99% → 100%.
+        // 5000/10000 a raw subtraction lands one rounding error short (9.999999999998899E-05),
+        // as does 99.99% → 100%; both must still read as Modified.
         var result = CoverageDiff.Compare(
             Reports.Single("a.cs", hit: beforeHit, total: 10000),
             Reports.Single("a.cs", hit: afterHit, total: 10000));

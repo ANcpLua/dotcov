@@ -95,9 +95,9 @@ public sealed class CoverageParametersTests
         await Assert.That(CoverageParameters.ParseFormat(value, "Coverage Format").ToString()).IsEqualTo(expected);
 
     [Test]
-    [Arguments("markdwon")] // the typo the old silent-table fallback swallowed
+    [Arguments("markdwon")]
     [Arguments("xml")]
-    [Arguments("TABLE")] // case-sensitive, matching the original switch arms
+    [Arguments("TABLE")] // format names are case-sensitive
     [Arguments("")]
     public async Task ParseFormat_UnknownFormat_FailsLoudlyInsteadOfSilentTable(string value)
     {

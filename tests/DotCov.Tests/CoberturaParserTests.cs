@@ -72,7 +72,7 @@ public sealed class CoberturaParserTests
 
         await Assert.That(unused.BranchesTotal).IsEqualTo(0);
         // Not 1.0. A file with no branches has no branch rate - reporting "100%" for absent
-        // data is what let a --min-branch gate pass on reports carrying no branch data at all.
+        // data would let a --min-branch gate pass on reports carrying no branch data at all.
         await Assert.That(unused.BranchRate).IsNull();
         await Assert.That(unused.HasBranchData).IsFalse();
     }
@@ -148,7 +148,7 @@ public sealed class CoberturaParserTests
     public async Task Parse_BenignDoctype_ParsesLikeReferenceCobertura()
     {
         // Reference Cobertura, gcovr, and coverage.py emit this DOCTYPE on every report.
-        // DtdProcessing.Prohibit rejected the format's canonical emitters; the DOCTYPE must
+        // DtdProcessing.Prohibit would reject the format's canonical emitters; the DOCTYPE must
         // be skipped, not fatal — while the XXE test above stays dead.
         const string canonical = """
                                  <?xml version="1.0"?>
@@ -324,7 +324,7 @@ public sealed class CoberturaParserTests
     public async Task Parse_MalformedLineUnderMethodAndClass_WarnsOncePerAggregation()
     {
         // Coverlet repeats every line under its <method> and in the class summary; the one
-        // malformed source line used to raise a warning per repetition.
+        // malformed source line warns once per aggregation, not once per repetition.
         var document = Cobertura.NewDoc()
             .AddClass("src/A.cs", "MyApp.A", c => c
                 .Method("M", "()", "1", m => m.MalformedLine("7", "lots"))
@@ -340,7 +340,7 @@ public sealed class CoberturaParserTests
     {
         // 64-bit hit counts are real (soak runs; gcovr/llvm-cov/JaCoCo converters use long
         // counters and the Cobertura DTD does not bound hits). Overflow must saturate, not
-        // degrade to 0 — degrading silently flipped a covered line to a miss and deflated
+        // degrade to 0 — degrading would silently flip a covered line to a miss and deflate
         // line coverage below a gate it genuinely cleared.
         const string xml = """
                            <?xml version="1.0"?>
@@ -462,7 +462,6 @@ public sealed class CoberturaParserTests
         // Two runs cover DIFFERENT conditions of the same branched line. Coverlet exposes
         // per-branch identity (<condition number= coverage=>), so the true union is 5/6 — a
         // line-level Math.Max on the (3/6) counts wrongly reports 3/6 (the false not-hit).
-        // This is the exact case that shipped broken because no test covered split runs.
         var a = Cobertura.NewDoc()
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "50% (3/6)",
                 (1, "100%"), (2, "50%"), (3, "0%")))
@@ -522,7 +521,7 @@ public sealed class CoberturaParserTests
     public async Task Merge_MismatchedConditionNumberSets_FallsBackToLineAggregateAndWarns()
     {
         // Coverlet condition `number`s are IL branch offsets — stable only for the identical
-        // assembly build. When the two sides' number sets for a line differ, they no longer
+        // assembly build. When the two sides' number sets for a line differ, they do not
         // identify the same branches, and unioning them would invent a branch total neither
         // emitter reported. The merge must fall back to the line-level Math.Max and warn.
         var a = Cobertura.NewDoc()
@@ -548,11 +547,10 @@ public sealed class CoberturaParserTests
     [Test]
     public async Task Merge_DisjointConditionNumbersSameTotal_DoesNotInventBranchTotal()
     {
-        // The Debug-vs-Release repro: the same physical 2-way branch gets condition number 0
-        // in one build and 139 in the other, with identical totals. The old per-number union
-        // produced branchesHit=2 of branchesTotal=4 — a total NEITHER emitter ever reported,
-        // with no warning (totals matched, so BranchTotalMismatch never fired). The true
-        // union is 2/2.
+        // Debug vs. Release: the same physical 2-way branch gets condition number 0 in one
+        // build and 139 in the other, with identical totals. A per-number union would produce
+        // branchesHit=2 of branchesTotal=4 — a total NEITHER emitter reported — with no warning
+        // (totals match, so BranchTotalMismatch does not fire). The true union is 2/2.
         var a = Cobertura.NewDoc()
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (0, "100%")))
             .Parse();
@@ -625,8 +623,8 @@ public sealed class CoberturaParserTests
     public async Task Parse_OutOfRangeConditionCoverage_DropsConditionKeepsLineAggregate(string coverage)
     {
         // A condition percent outside [0,100] cannot describe a 2-way jump. Left unclamped,
-        // coverage="200%" recorded covered=4 for one condition, and a later merge recompute
-        // reported BranchesHit=4 of BranchesTotal=2 — a >100% branch rate. The bogus
+        // coverage="200%" would record covered=4 for one condition, and a later merge recompute
+        // would report BranchesHit=4 of BranchesTotal=2 — a >100% branch rate. The bogus
         // condition is dropped; the line-level aggregate stays authoritative.
         var report = Cobertura.NewDoc()
             .AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, coverage)))
@@ -808,9 +806,9 @@ public sealed class CoberturaParserTests
         await Assert.That(file.LineHits[10]).IsEqualTo(5);
     }
 
-    // ── Path identity: separator normalization and case-insensitivity ──
+    // ── Path identity: separator normalization and case-sensitivity ──
     // The normalized filename is the file's merge-identity key across Windows/Linux CI jobs;
-    // these pin the contract the ConsumeClass comment declares.
+    // these pin the contract DecodeFileName declares.
 
     [Test]
     public async Task Parse_BackslashFilename_NormalizesToForwardSlashPath()
@@ -849,8 +847,8 @@ public sealed class CoberturaParserTests
     {
         // File identity is Ordinal: case-differing filenames are genuinely distinct files on
         // the case-sensitive filesystems Cobertura's native emitters run on —
-        // linux/net/netfilter really contains both xt_TCPMSS.c and xt_tcpmss.c. The old
-        // OrdinalIgnoreCase keying fused such pairs via Math.Max, silently erasing the
+        // linux/net/netfilter really contains both xt_TCPMSS.c and xt_tcpmss.c.
+        // OrdinalIgnoreCase keying would fuse such pairs via Math.Max, silently erasing the
         // fully-uncovered file's misses and reporting 100% where the truth is 50%.
         var report = Cobertura.NewDoc()
             .AddClass("net/netfilter/xt_TCPMSS.c", c => c.Line(1, hits: 1).Line(2, hits: 1))

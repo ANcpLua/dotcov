@@ -5,8 +5,7 @@ namespace DotCov;
 /// (<c>CoberturaParser.ConsumeSource</c>), the merge's cross-convention ambiguity scan
 /// (<c>CoverageReport.WarnOnAmbiguousFileIdentity</c>), and the diff's unique-file-name
 /// pairing fallback (<c>CoverageDiff</c>). One home so the three semantics can never
-/// silently desynchronize — <see cref="FileNameOf"/> previously existed as two
-/// byte-identical private copies, both load-bearing for the same identity contract.
+/// silently desynchronize.
 /// </summary>
 internal static class PathIdentity
 {

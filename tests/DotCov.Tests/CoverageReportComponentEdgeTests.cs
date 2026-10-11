@@ -67,9 +67,9 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
     public async Task NaNThreshold_FailsNamingTheParameter_BeforeReadingAnyReport(
         string flag, string value, string expected, CancellationToken cancellationToken)
     {
-        // The CLI rejects NaN (every comparison with it is false). The component, which promises
-        // the CLI's grammar, used to read the reports and fail with "Coverage below threshold:
-        // FAIL: ... (min NaN%)" — a verdict about a threshold that does not exist.
+        // The CLI rejects NaN (every comparison with it is false). The component promises the
+        // CLI's grammar, so it fails on the parameter instead of reading the reports and issuing
+        // a verdict about a threshold that does not exist.
         WriteHalfCovered();
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", flag, value);

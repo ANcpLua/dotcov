@@ -25,9 +25,8 @@ public sealed class MethodCoverageEdgeTests
     [Test]
     public async Task ParseMethods_MethodStartingAtLineZero_ReportsZeroAsItsStartLine()
     {
-        // Line 0 is a valid line (ParserBranchTests attributes conditions to it). StartLine used
-        // 0 as its "nothing seen yet" marker, so after line 0 the next line overwrote it: a method
-        // on lines 0..2 reported StartLine 2, contradicting "lowest line number the method covers".
+        // Line 0 is a valid line (ParserBranchTests attributes conditions to it), so a method on
+        // lines 0..2 starts at 0, the lowest line number it covers.
         var report = ParseMethods("""
             <class name="X" filename="src/A.cs"><methods>
               <method name="M" signature="()"><lines>
@@ -161,8 +160,6 @@ public sealed class MethodCoverageEdgeTests
     [Test]
     public async Task ParseMethods_NullInputInTheSet_ThrowsArgumentNullException_LikeParse()
     {
-        // Parse(inputs) rejects a null element with ArgumentNullException via its single-input
-        // overload; ParseMethods(inputs) dereferenced it and threw NullReferenceException.
         var good = ReportInput.FromBytes("good", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
         ReportInput[] inputs = [good, null!];
 

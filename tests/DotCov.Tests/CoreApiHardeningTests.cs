@@ -14,8 +14,8 @@ public sealed class CoreApiHardeningTests
     [Test]
     public async Task DefaultFileCoverage_BehavesAsEmptyFile_NoNullReferences()
     {
-        // Property initializers never run for default instances — new FileCoverage[1] used to
-        // hold null LineHits/UncoveredLines and GetLineStatus threw NullReferenceException.
+        // Property initializers never run for default instances, so new FileCoverage[1] must
+        // still expose empty collections, not nulls that make GetLineStatus throw.
         var arr = new FileCoverage[1];
         var f = arr[0];
 
@@ -55,9 +55,9 @@ public sealed class CoreApiHardeningTests
     [Test]
     public async Task ParsedReport_CollectionSurfaces_AreNotTheMutableAccumulators()
     {
-        // Materialize used to hand the LineAccumulator's live Dictionary instances straight to
-        // the report: a downcast mutation desynchronized LineHits from the precomputed
-        // LinesHit/StrictlyHitLines aggregates. The construction seam must wrap read-only.
+        // Handing the LineAccumulator's live Dictionary instances straight to the report would
+        // let a downcast mutation desynchronize LineHits from the precomputed
+        // LinesHit/StrictlyHitLines aggregates, so the construction seam must wrap them read-only.
         var file = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Branch(10, "50% (1/2)"))
             .Parse().Files[0];

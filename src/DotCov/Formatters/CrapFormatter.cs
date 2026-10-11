@@ -78,7 +78,7 @@ public static class CrapFormatter
         {
             sb.AppendLine();
             sb.AppendLine($"> **No verdict:** {gate.Reason}.");
-            sb.AppendLine();   // close the blockquote — same CommonMark lazy-continuation fix as MarkdownFormatter
+            sb.AppendLine();   // close the blockquote against CommonMark lazy continuation, as MarkdownFormatter does
         }
     }
 
