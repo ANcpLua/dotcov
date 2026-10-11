@@ -23,7 +23,6 @@ public sealed class ParserBranchTests
     [Test]
     public async Task Parse_FullyCoveredBranchLine_IsAbsentFromPartialBranches()
     {
-        // Fully covered branches must not appear in the user-facing partial-branch list.
         var f = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c
                 .Branch(5, "100% (2/2)")
@@ -76,7 +75,6 @@ public sealed class ParserBranchTests
     [Test]
     public async Task Parse_ConditionWithoutCoverageAttribute_RecordsNoPhantomDetail()
     {
-        // Missing condition coverage must retain the line aggregate without inventing detail.
         const string xml = """
                            <?xml version="1.0"?>
                            <coverage><packages><package><classes>
@@ -103,7 +101,6 @@ public sealed class ParserBranchTests
     [Test]
     public async Task Parse_BranchOnLineZero_StillCollectsConditionDetail()
     {
-        // Line zero is a valid condition attribution target.
         var f = Cobertura.NewDoc()
             .AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%")))
             .Parse().Files[0];

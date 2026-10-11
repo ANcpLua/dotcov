@@ -18,7 +18,7 @@ public sealed class CrapAnalysisEdgeTests
     public async Task GenericAndNonGenericTypeOfOneName_SameMethod_StayDistinctRows()
     {
         // Result and Result<T> are different types (IL: Result, Result`1). Merging their
-        // same-signature methods unioned an uncovered complex method into a covered one —
+        // same-signature methods would union an uncovered complex method into a covered one —
         // across two files, by line number.
         var plain = Method("MyApp.Result", "Map", "(System.Int32)", complexity: 1,
             lines: [(10, 1), (11, 1)], file: "src/Result.cs");
@@ -163,7 +163,7 @@ public sealed class CrapAnalysisEdgeTests
     {
         // `record R(int X)`: Roslyn writes <Property Name="int R.X"> with complexity 0 and no
         // Accessors (it declares none), yet R.get_X has IL and a sequence point. The aggregate
-        // sums zero accessors; using it scored get_X with comp 0 and CRAP 0.0 — a value the
+        // sums zero accessors; using it would score get_X with comp 0 and CRAP 0.0 — a value the
         // formula cannot produce for real code (comp ≥ 1, as MethodCoverage states).
         var metrics = CodeMetricsReportBuilder.ParseType("MyApp", "R", m => m
             .Method("R.R(int X)", 1)
@@ -182,8 +182,8 @@ public sealed class CrapAnalysisEdgeTests
     {
         // The real shape for top-level statements: <Namespace Name="<global namespace>">,
         // <NamedType Name="Program">, <Method Name="<top-level-statements-entry-point>">.
-        // It used to match nothing, so the riskiest method went unscored while a trivial
-        // namespaced one passed the gate.
+        // Unmatched, the riskiest method would go unscored and let a trivial namespaced one
+        // pass the gate.
         using var ws = TempWorkspace.Create("dotcov-crap-toplevel-");
         var metrics = ws.Write("app.Metrics.xml", CodeMetricsReportBuilder.Create()
             .Namespace("<global namespace>", t => t.Type("Program", m => m.Method("<top-level-statements-entry-point>", 8)))
@@ -315,8 +315,8 @@ public sealed class CrapAnalysisEdgeTests
     public async Task FailingVerdict_NeverPrintsAWorstScoreThatReadsAsAtThreshold()
     {
         // comp 29, 25 of 28 lines covered: CRAP = 29 + 841·(3/28)³ = 30.034 > 30 → FAIL. Plain
-        // F1 printed "FAIL: worst CRAP 30.0 (max 30)" — at threshold, which passes. Same rule as
-        // GateResult: the figure that decided the verdict rounds toward it.
+        // F1 would print "FAIL: worst CRAP 30.0 (max 30)" — at threshold, which passes. Same rule
+        // as GateResult: the figure that decided the verdict rounds toward it.
         var lines = Enumerable.Range(1, 28).Select(l => (l, l <= 25 ? 1 : 0)).ToArray();
         var report = CrapAnalysis.Analyze([Method("MyApp.A", "Big", "()", complexity: 29, lines: lines)]);
 
@@ -352,13 +352,13 @@ public sealed class CrapAnalysisEdgeTests
     [Test]
     public async Task ToString_FailJustAboveMax_NeverPrintsTheMax()
     {
-        // Routed from hunter 4: comp 6, 12 of 95 lines → CRAP 30.0086 > 30. The formatter's
-        // offender row prints 30.1 (ceiling); the closing verdict must agree with it.
+        // comp 6, 12 of 95 lines → CRAP 30.0086 > 30. The formatter's offender row prints 30.1
+        // (ceiling); the closing verdict must agree with it.
         var hits = Enumerable.Range(1, 95).ToDictionary(l => l, l => l <= 12 ? 1 : 0);
         var report = CrapAnalysis.Analyze([new MethodCoverage("MyApp.A", "Risky", "()", "src/A.cs", 1, 95, 12, 95, 6)
             { LineHits = new ReadOnlyDictionary<int, int>(hits) }]);
 
-        var gate = report.Evaluate(30);   // CRAP 30.0086 → Fail
+        var gate = report.Evaluate(30);
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
         await Assert.That(gate.ToString()).IsEqualTo("FAIL: worst CRAP 30.1 (max 30) - 1 of 1 methods above threshold");
@@ -380,8 +380,8 @@ public sealed class CrapAnalysisEdgeTests
     [Test]
     public async Task Evaluate_NaNThreshold_IsNeverAPass()
     {
-        // No score is "at or below" NaN. The line/branch gate fails closed on NaN; this one
-        // reported PASS: "all 1 methods at or below threshold".
+        // No score is "at or below" NaN, so this gate fails closed on NaN like the line/branch
+        // gate does.
         var report = CrapAnalysis.Analyze([Method("MyApp.A", "M", "()", complexity: 2, lines: [(1, 1)])]);
 
         var gate = report.Evaluate(double.NaN);

@@ -24,7 +24,6 @@ internal sealed class CodeMetricsReportBuilder
         return this;
     }
 
-    /// <summary>One namespace holding one type with the given members.</summary>
     public static IReadOnlyList<CodeMetricsMember> ParseType(string ns, string type, Action<MemberListBuilder> members) =>
         Create().Namespace(ns, t => t.Type(type, members)).Parse();
 
@@ -70,13 +69,8 @@ internal sealed class CodeMetricsReportBuilder
     {
         public MemberListBuilder Method(string display, int complexity) => Member("Method", display, complexity, null);
 
-        public MemberListBuilder Field(string display, int complexity) => Member("Field", display, complexity, null);
-
         public MemberListBuilder Property(string display, int complexity, Action<MemberListBuilder>? accessors = null) =>
             Member("Property", display, complexity, accessors);
-
-        public MemberListBuilder Event(string display, int complexity, Action<MemberListBuilder>? accessors = null) =>
-            Member("Event", display, complexity, accessors);
 
         private MemberListBuilder Member(string element, string display, int complexity, Action<MemberListBuilder>? accessors)
         {

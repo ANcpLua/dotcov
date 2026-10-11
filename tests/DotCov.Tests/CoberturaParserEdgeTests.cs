@@ -41,8 +41,8 @@ public sealed class CoberturaParserEdgeTests
     public async Task Parse_ConditionsOfASkippedLine_DoNotAttachToThePreviousBranchedLine(string numberAttribute)
     {
         // A line whose number cannot be decoded is skipped, and so must be its nested
-        // <condition>s. They used to land on the previous branched line: line 10's honest
-        // 1/2 became a fully covered 2/2 and vanished from PartialBranches without a warning.
+        // <condition>s. Attached to the previous branched line, they would turn line 10's honest
+        // 1/2 into a fully covered 2/2 that vanishes from PartialBranches without a warning.
         var xml = Doc("", $"""
             <class name="X" filename="src/A.cs"><lines>
               <line number="10" hits="1" branch="true" condition-coverage="50% (1/2)">
@@ -99,9 +99,9 @@ public sealed class CoberturaParserEdgeTests
     [Arguments("(1/0)")]
     public async Task Parse_ConditionCoverageClaimingMoreCoveredThanTotal_IsDroppedWithAWarning(string condition)
     {
-        // "(3/2)" cannot describe a line's branches. It used to be taken verbatim, so the file
-        // reported BranchesHit 3 of BranchesTotal 2 — a 150% branch rate that clears any gate,
-        // the same invariant the per-condition range gate already protects.
+        // "(3/2)" cannot describe a line's branches. Taken verbatim, the file would report
+        // BranchesHit 3 of BranchesTotal 2 — a 150% branch rate that clears any gate, the same
+        // invariant the per-condition range gate protects.
         var xml = Doc("", $"""
             <class name="X" filename="src/A.cs"><lines>
               <line number="7" hits="1" branch="true" condition-coverage="{condition}" />
@@ -154,9 +154,9 @@ public sealed class CoberturaParserEdgeTests
     public async Task Parse_SourceTextAroundCommentsPisAndCData_IsTheWholeRoot(string source)
     {
         // A comment, processing instruction or CDATA boundary does not change an element's
-        // text. The parser used to read only the first child node: a leading comment dropped
-        // the root (every relative filename went unprefixed) and a CDATA split truncated it
-        // to "/re" — both silently re-keying every file in the report.
+        // text. Reading only the first child node would drop the root after a leading comment
+        // (every relative filename unprefixed) and truncate it to "/re" at a CDATA split — both
+        // silently re-keying every file in the report.
         var xml = Doc($"<sources>{source}</sources>",
             """<class name="X" filename="app/main.py"><lines><line number="1" hits="1" /></lines></class>""");
 
@@ -352,7 +352,7 @@ public sealed class CoberturaParserEdgeTests
     public async Task Parse_HitsBeyondTheInt64Range_SaturateInsteadOfDegradingToAMiss(string hits, int expected, int linesHit)
     {
         // Counts above int.MaxValue saturate (TryDecodeLine's contract: "only >0 matters
-        // downstream"). One past long.MaxValue used to fail the long parse, raise
+        // downstream"), even past the Int64 range, where a failed long parse must not raise
         // MalformedHits and count the executed line as a miss.
         var xml = Doc("", $"""
             <class name="X" filename="src/A.cs"><lines>

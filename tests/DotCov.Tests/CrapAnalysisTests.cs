@@ -16,7 +16,7 @@ public sealed class CrapAnalysisTests
     [Arguments(5, 0.0, 30.0)]    // 5²·1³ + 5      = 30 (comp², not comp³ — 5³+5 would be 130)
     [Arguments(5, 1.0, 5.0)]     // 5²·0³ + 5      = 5: full coverage always scores comp
     [Arguments(1, 0.0, 2.0)]     // 1²·1³ + 1      = 2: the floor for uncovered code
-    [Arguments(2, 0.0, 6.0)]     // 2²·1³ + 2      = 6: exactly the default threshold
+    [Arguments(2, 0.0, 6.0)]     // 2²·1³ + 2      = 6: exactly the stricter --max-crap 6
     [Arguments(10, 0.5, 22.5)]   // 100·0.125 + 10 = 22.5
     [Arguments(1, 1.0, 1.0)]     // the global minimum
     public async Task Score_MatchesHandComputedValues(int comp, double cov, double expected)
@@ -181,8 +181,8 @@ public sealed class CrapAnalysisTests
     {
         // Real coverlet shape for `async () => …` inside RunAsync: the lambda's state machine
         // nests INSIDE the display class — Ns.Type/<>c/<<RunAsync>b__0_0>d + MoveNext.
-        // Regression: first-'>' bracket parsing dropped this entry entirely (it appeared in
-        // neither Methods nor Unscored), turning the gate falsely green.
+        // First-'>' bracket parsing would drop this entry entirely (it would appear in neither
+        // Methods nor Unscored), turning the gate falsely green.
         var origin = Method("Probe.Lib", "RunAsync", "()", complexity: 1, lines: [(5, 1)]);
         var lambda = Method("Probe.Lib/<>c/<<RunAsync>b__0_0>d", "MoveNext", "()", complexity: 6,
             lines: [(10, 0), (11, 0), (12, 0)]);
@@ -265,8 +265,8 @@ public sealed class CrapAnalysisTests
     [Test]
     public async Task SameArityOverloads_StayDistinct_UncoveredOverloadStillFailsGate()
     {
-        // Regression: keying logical methods by ARITY merged Frob(Int32) into Frob(String),
-        // diluting the uncovered comp-20 overload's CRAP 420 to a passing 23.2.
+        // Keying logical methods by ARITY would merge Frob(Int32) into Frob(String), diluting
+        // the uncovered comp-20 overload's CRAP 420 to a passing 23.2.
         var risky = Method("MyApp.Svc", "Frob", "(System.Int32)", complexity: 20,
             lines: [(10, 0), (11, 0), (12, 0), (13, 0), (14, 0)]);
         var covered = Method("MyApp.Svc", "Frob", "(System.String)", complexity: 1,

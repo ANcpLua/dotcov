@@ -3,9 +3,8 @@ using DotCov.Tests.Infrastructure;
 namespace DotCov.Tests;
 
 /// <summary>
-/// The gate's honesty contract. Every case here was a silent pass before <see cref="GateResult"/>
-/// existed: an empty report scored 100%, a branch threshold against branchless data scored 100%,
-/// and a 0% threshold was indistinguishable from a real one. All three produce a green CI build
+/// The gate's honesty contract: an empty report, a branch threshold against branchless data,
+/// and a 0% threshold are never a pass. Scoring any of them as one produces a green CI build
 /// that has verified nothing, which is worse than a red one — it is a red one you cannot see.
 /// </summary>
 public sealed class GateResultTests
@@ -18,7 +17,7 @@ public sealed class GateResultTests
     [Test]
     public async Task EmptyReport_DoesNotPass()
     {
-        // The headline bug: no files found => "100% line, 100% branch" => gate cleared.
+        // No files found must not read as "100% line, 100% branch" and clear the gate.
         var gate = CoverageReport.Empty.Evaluate(95, 75);
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
@@ -32,8 +31,7 @@ public sealed class GateResultTests
     [Test]
     public async Task BranchThreshold_WithoutBranchData_DoesNotPass()
     {
-        // Line data present, branch data absent, --min-branch 75 requested. Previously passed
-        // because BranchRate returned 1.0 for "no branches emitted".
+        // Line data present, branch data absent, --min-branch 75 requested.
         var gate = Report(hit: 8, total: 10, bHit: 0, bTotal: 0).Evaluate(50, 75);
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
@@ -56,8 +54,8 @@ public sealed class GateResultTests
     [Test]
     public async Task BothThresholdsZero_ReportsDisabled()
     {
-        // The Paperless case: `--coverage-min-line 0 --coverage-min-branch 0` ran for months
-        // looking like a gate. A gate that cannot fail should say so rather than say "pass".
+        // `--coverage-min-line 0 --coverage-min-branch 0` looks like a gate but cannot fail,
+        // so it should say so rather than say "pass".
         var gate = Report(hit: 1, total: 100, bHit: 0, bTotal: 0).Evaluate(0, 0);
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Disabled);
@@ -79,7 +77,7 @@ public sealed class GateResultTests
     [Arguments(8, 10, 80, GateOutcome.Pass)]   // exactly at threshold clears it (binary-exact)
     [Arguments(7, 10, 80, GateOutcome.Fail)]
     // Decimal-inexact exact-threshold cases: (58.0/100)*100 computes to 57.99999999999999 in
-    // IEEE 754, so a naive `rate * 100 >= min` failed a gate that was exactly met. The
+    // IEEE 754, so a naive `rate * 100 >= min` would fail a gate that is exactly met. The
     // comparison must be epsilon-tolerant — and still fail anything genuinely below.
     [Arguments(58, 100, 58, GateOutcome.Pass)]
     [Arguments(29, 50, 58, GateOutcome.Pass)]
@@ -133,7 +131,7 @@ public sealed class GateResultTests
     [Test]
     public async Task ToString_FailingRate_RoundsTowardVerdict()
     {
-        // 1999/2500 = 79.96%. F1-rounding to nearest rendered the self-contradictory
+        // 1999/2500 = 79.96%. F1-rounding to nearest would render the self-contradictory
         // "FAIL: line 80.0% (min 80%)"; a failing dimension must floor so the printed rate
         // never reads as equal to the minimum it fell short of.
         var gate = Report(1999, 2500, 0, 0).Evaluate(80);
@@ -256,8 +254,8 @@ public sealed class GateResultTests
     [Test]
     public async Task TestCodeExclusion_CatchesTestSupport_NotOnlyDotTests()
     {
-        // ".Tests" does not match "TestSupport" - the exact gap that let shared fixtures count
-        // as product code in a real pipeline.
+        // ".Tests" does not match "TestSupport", so without a rule of its own shared fixtures
+        // would count as product code.
         var report = new CoverageReport([
             new FileCoverage("/repo/src/Product.cs", 9, 10, 0, 0),
             new FileCoverage("/repo/Paperless.Tests/ThingTests.cs", 1, 10, 0, 0),

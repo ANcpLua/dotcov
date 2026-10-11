@@ -320,7 +320,7 @@ public sealed class FalloutBuildTests : IDisposable
         }
         finally
         {
-            // Keep the regression test safe even if the runner stops killing its child.
+            // Reap the child even when the runner failed to kill it.
             if (!child.HasExited) child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync(CancellationToken.None);
         }

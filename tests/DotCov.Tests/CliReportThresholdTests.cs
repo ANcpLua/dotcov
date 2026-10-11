@@ -5,8 +5,8 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// `dotcov report --format md --threshold N` end to end: the threshold line shows the value the
-/// badge was judged against. It used to round to an integer, so 79.6 printed "Threshold: 80%"
-/// next to a ✅ for 79.7% coverage.
+/// badge was judged against, unrounded, so 79.6 never prints "Threshold: 80%" next to a ✅ for
+/// 79.7% coverage.
 /// </summary>
 public sealed class CliReportThresholdTests : IDisposable
 {

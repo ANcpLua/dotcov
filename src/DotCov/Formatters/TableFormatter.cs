@@ -74,8 +74,7 @@ public static class TableFormatter
             $"{pen.Bold(pen.Rate(totalBranches, report.BranchRate))}  " +
             $"{pen.Bold(pen.Rate(totalBranchPct, report.BranchRate))}");
 
-        // One-line trailer; markdown owns the detailed list. Stays silent when nothing
-        // is wrong so existing CLI users see no visual change for clean reports.
+        // One-line trailer; markdown owns the detailed list.
         if (report.Warnings.Count > 0)
             sb.AppendLine(pen.Dim($"Warnings: {report.Warnings.Count}"));
 

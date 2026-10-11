@@ -116,9 +116,6 @@ public enum FileChangeKind { Unchanged, Added, Removed, Modified }
 /// </summary>
 public abstract record LineDelta
 {
-    // Private constructor closes the hierarchy: derivation is restricted to the four
-    // nested sealed records below. External types literally cannot inherit, so consumers
-    // can rely on exhaustive Match/Switch dispatch with no fallback arm.
     private LineDelta(int line) => Line = line;
 
     public int Line { get; }
@@ -178,7 +175,6 @@ public abstract record LineDelta
 
 /// <summary>
 /// Result of comparing two coverage reports.
-/// Single call instead of separate Compare + Summary — more cohesive.
 /// </summary>
 public sealed class CoverageDiffResult(
     IReadOnlyList<FileDelta> files,
@@ -234,8 +230,8 @@ public static class CoverageDiff
     /// The movement from <paramref name="before"/> to <paramref name="after"/>, the one
     /// subtraction behind every delta and every Unchanged/Modified decision. Rates are ratios a
     /// double cannot hold exactly, so a raw subtraction can land a rounding error short:
-    /// 5001/10000 - 5000/10000 gave 9.999999999998899E-05, and a movement of exactly
-    /// <see cref="MovementEpsilon"/> read as noise. Snapping to a 1e-15 grid - above that
+    /// 5001/10000 - 5000/10000 gives 9.999999999998899E-05, which would read a movement of
+    /// exactly <see cref="MovementEpsilon"/> as noise. Snapping to a 1e-15 grid - above that
     /// representation error, far below the epsilon - restores exact movements without widening
     /// the threshold; adding 0.0 turns a snapped -0.0 into +0.0.
     /// </summary>
@@ -255,9 +251,8 @@ public static class CoverageDiff
     /// <see cref="PathIdentity.RootsDiffer"/>, the same predicate the merge's ambiguity scan
     /// uses), the paths agree on a whole-segment suffix of at least two segments, or the
     /// paths are equal ignoring case (a directory-casing drift). That keeps a source-root
-    /// migration, DeterministicSourcePaths turned on, or a pre-source-root snapshot diffed
-    /// against a post-source-root report reading as the same file's movement instead of a
-    /// full removed+added churn, while anything ambiguous (two candidates named
+    /// migration or DeterministicSourcePaths turned on reading as the same file's movement
+    /// instead of a full removed+added churn, while anything ambiguous (two candidates named
     /// <c>app/main.py</c>) or evidence-free (an unrelated <c>svc-b/Program.cs</c> appearing
     /// as <c>svc-a/Program.cs</c> disappears) honestly stays removed+added rather than being
     /// guessed together.
@@ -278,8 +273,8 @@ public static class CoverageDiff
             if (afterLookup.TryGetValue(path, out var a))
                 deltas.Add(Changed(path, b, a));
             else if (suffixPairs.TryGetValue(path, out var afterPath))
-                // Suffix-paired: report under the After identity — that is the convention the
-                // codebase now lives under.
+                // Suffix-paired: report under the After identity, the convention the newer
+                // report uses.
                 deltas.Add(Changed(afterPath, b, afterLookup[afterPath]));
             else
                 deltas.Add(FileDelta.Removed(path, b.LineRate));
@@ -292,7 +287,7 @@ public static class CoverageDiff
         }
 
         // OrderBy, not List.Sort: stable, so equal-delta files keep their encounter order
-        // (Before files first, then After-only) — same ordering contract as before.
+        // (Before files first, then After-only).
         return new CoverageDiffResult(
             deltas.OrderBy(static d => d.Delta).ToList(),
             before.LineRate,
@@ -390,7 +385,7 @@ public static class CoverageDiff
 
             var beforeMissed = beforeHits <= 0;
             var afterMissed = afterHits <= 0;
-            if (beforeMissed == afterMissed) continue;  // hit-state unchanged
+            if (beforeMissed == afterMissed) continue;
 
             changes.Add(afterMissed
                 ? new LineDelta.NewlyMissed(line, beforeHits, afterHits)

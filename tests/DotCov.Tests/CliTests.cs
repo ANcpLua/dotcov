@@ -171,7 +171,6 @@ public sealed class CliTests : IDisposable
     [Arguments("--max-crap 99")]
     public async Task Check_OptionItDoesNotUse_IsAnError_NotTheDefaultGate(string option)
     {
-        // Each used to be ignored, so the gate ran at the default --min-line 80 and passed.
         var (code, stdout, stderr) = await Run(["check", NinetyPercent(), .. option.Split(' ')]);
 
         await Assert.That(code).IsEqualTo(1);
@@ -182,7 +181,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Check_SecondPath_IsAnError_NotSilentlyDropped()
     {
-        // A shell glob expands to several files; only the first used to be gated.
+        // A shell glob expands to several files, and gating only the first would pass this pair.
         var covered = _ws.Write("glob/a.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1))
             .ToBytes());
@@ -200,7 +199,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Keep_WithoutExcludeGenerated_IsAnError()
     {
-        // --keep only exempts files from --exclude-generated; alone it used to change nothing silently.
+        // --keep only exempts files from --exclude-generated, so alone it would change nothing.
         var (code, _, stderr) = await Run("report", HalfCovered(), "--keep", "Program.cs");
 
         await Assert.That(code).IsEqualTo(1);
@@ -429,8 +428,8 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Check_WarningsAndMergedReports_FollowTheVerdictOnStderr()
     {
-        // check used to print neither, so a degraded input or a report left over from an earlier
-        // run could decide the gate unseen. The verdict stays the first stderr token.
+        // Warnings and the merged inputs are printed so a degraded input or a report left over
+        // from an earlier run cannot decide the gate unseen. The verdict stays the first stderr token.
         var degraded = _ws.Write("diag/a/coverage.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
             .ToBytes());
@@ -452,7 +451,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Report_Table_WritesWarningDetailsToStderr()
     {
-        // The table shows only a warning count; the details used to appear nowhere.
+        // The table shows only a warning count, so the details go to stderr.
         var path = _ws.Write("table-warn.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
             .ToBytes());
@@ -467,7 +466,7 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Diff_WarningsOfBothReports_GoToStderr()
     {
-        // diff used to drop both reports' warnings, so a degraded input changed the diff unseen.
+        // Both reports' warnings are printed so a degraded input cannot change the diff unseen.
         var before = _ws.Write("diff-warn/before.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("1", "lots").Line(2, hits: 1))
             .ToBytes());
@@ -827,7 +826,6 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Snapshot_Directory_HashesTheMergedReports()
     {
-        // The hash used to exist only for a single-file input, never for the recommended directory.
         HalfCovered("snap/a/coverage.cobertura.xml");
         BranchHalf("snap/b/coverage.cobertura.xml");
 

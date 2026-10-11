@@ -34,7 +34,7 @@ public sealed class CorePathIdentityTests
                 """;
     }
 
-    // ── <source>-root resolution (C1 / #15) ──
+    // ── <source>-root resolution ──
 
     [Test]
     public async Task Parse_RelativeFilename_ResolvesAgainstSourceRoot()
@@ -186,7 +186,7 @@ public sealed class CorePathIdentityTests
         await Assert.That(report.SourceRoots).IsEquivalentTo(["/repo/svc-a"], CollectionOrdering.Matching);
     }
 
-    // ── The monorepo fusion bug (#15): distinct files sharing a relative name ──
+    // ── Distinct files sharing a relative name ──
 
     private static string SvcDoc(string svc, string lines) =>
         Doc([$"/home/runner/work/mono/mono/services/{svc}"], "app/main.py", lines);
@@ -203,9 +203,8 @@ public sealed class CorePathIdentityTests
     [Test]
     public async Task Merge_SameRelativeNameUnderDifferentRoots_StaysTwoDistinctFiles()
     {
-        // Two DIFFERENT coverage.py files, both named app/main.py, under svc-a and svc-b.
-        // Pre-fix these fused into one entry via Math.Max: 8/10 = 80% reported, svc-b's four
-        // uncovered lines vanished, and a --min-line 70 gate passed a repo that is at 62.5%.
+        // Two DIFFERENT coverage.py files, both named app/main.py, under svc-a and svc-b:
+        // together they cover 10 of 16 lines (62.5%), which a --min-line 70 gate must fail.
         var a = ParseXml(SvcDoc("svc-a", HitLines(hit: 8, missed: 2)));
         var b = ParseXml(SvcDoc("svc-b", HitLines(hit: 2, missed: 4)));
 
@@ -221,7 +220,7 @@ public sealed class CorePathIdentityTests
         await Assert.That(merged.SourceRoots.Count).IsEqualTo(2);
     }
 
-    // ── The two-convention double-count (#14): same file, different path conventions ──
+    // ── Same file under two path conventions ──
 
     private static string CoverletDefaultDoc() =>
         Doc(["/"], "home/runner/work/app/app/src/MyApp/Calculator.cs",
@@ -300,7 +299,7 @@ public sealed class CorePathIdentityTests
         await Assert.That(CoverageReport.Merge(a, b).Warnings).IsEmpty();
     }
 
-    // ── Diff: unique-file-name pairing fallback (C1) and the migration effect ──
+    // ── Diff: unique-file-name pairing fallback ──
 
     [Test]
     public async Task Diff_SameFileUnderTwoPathConventions_ReadsUnchanged_NotRemovedPlusAdded()
@@ -320,15 +319,14 @@ public sealed class CorePathIdentityTests
     [Test]
     public async Task Diff_PreSourceRootSnapshotAgainstResolvedReport_PairsAsTheSameFile()
     {
-        // The migration effect of source-root resolution: FileCoverage.Path values change
-        // (e.g. 'src/MyApp/Calculator.cs' → '/_/src/MyApp/Calculator.cs'), so a snapshot
-        // taken before this fix carries the old keys. Diffing it against a post-fix report
-        // must pair the identities through the file-name fallback instead of reporting the
-        // whole codebase as removed+added.
-        var preFixSnapshot = new CoverageReport([new FileCoverage("src/MyApp/Calculator.cs", 1, 3, 0, 0)]);
-        var postFix = ParseXml(DeterministicDoc());   // 2/3 covered
+        // A snapshot without source-root resolution keys the file as 'src/MyApp/Calculator.cs'
+        // while the resolved report keys it as '/_/src/MyApp/Calculator.cs'. The diff must pair
+        // the identities through the file-name fallback instead of reporting the whole codebase
+        // as removed+added.
+        var unresolvedSnapshot = new CoverageReport([new FileCoverage("src/MyApp/Calculator.cs", 1, 3, 0, 0)]);
+        var resolved = ParseXml(DeterministicDoc());   // 2/3 covered
 
-        var result = CoverageDiff.Compare(preFixSnapshot, postFix);
+        var result = CoverageDiff.Compare(unresolvedSnapshot, resolved);
 
         var d = await Assert.That(result.Files).HasSingleItem();
         await Assert.That(d.Change).IsEqualTo(FileChangeKind.Modified);
@@ -372,7 +370,7 @@ public sealed class CorePathIdentityTests
         await Assert.That(result.Added).HasSingleItem();
     }
 
-    // ── Ordinal keying with normalized keys (C2) ──
+    // ── Ordinal keying with normalized keys ──
 
     [Test]
     public async Task Merge_CaseDistinctFilenames_StayDistinctAcrossReports()
@@ -424,14 +422,12 @@ public sealed class CorePathIdentityTests
         await Assert.That(filtered.SourceRoots).IsEquivalentTo(["/repo"], CollectionOrdering.Matching);
     }
 
-    // ── run-004 regression pins ──
-
     [Test]
     public async Task Merge_HandBuiltUnnormalizedRoots_DedupesByNormalizedIdentity()
     {
         // Parser-path roots are already normalized; hand-built reports are not. A raw-spelling
-        // union kept both c:\repo and C:/repo/, so every later merge saw "different" roots
-        // and re-flagged ambiguity forever.
+        // union would keep both c:\repo and C:/repo/, so every later merge would see
+        // "different" roots and re-flag ambiguity.
         var a = new CoverageReport([]) { SourceRoots = [@"c:\repo"] };
         var b = new CoverageReport([]) { SourceRoots = ["C:/repo/"] };
 

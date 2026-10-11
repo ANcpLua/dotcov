@@ -97,10 +97,6 @@ public sealed class CoberturaParserAsyncTests
         await Assert.That(partial.Total).IsEqualTo(2);
     }
 
-    // A malformed condition string is NOT ignored quietly — the parser emits a
-    // MalformedConditionCoverage warning. That contract (including BranchesTotal == 0)
-    // is pinned by CoberturaParserTests.Parse_MalformedConditionString_EmitsWarning.
-
     [Test]
     public async Task ParseAsync_LineWithoutNumber_IsSkipped()
     {

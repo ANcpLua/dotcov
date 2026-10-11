@@ -106,8 +106,8 @@ public sealed class CrapFormatterEdgeTests
     [Test]
     public async Task Json_InfiniteMax_RendersDisabledGateWithNullMax()
     {
-        // An infinite --max-crap is the documented DISABLED gate. JSON has no Infinity, and
-        // Utf8JsonWriter threw on it, so `dotcov crap --max-crap Infinity --format json` died.
+        // An infinite --max-crap is the documented DISABLED gate. JSON has no Infinity and
+        // Utf8JsonWriter throws on it, so the maximum renders as null.
         var gate = JustAboveThirty.Evaluate(double.PositiveInfinity);
 
         var json = CrapFormatter.FormatJson(JustAboveThirty, gate);

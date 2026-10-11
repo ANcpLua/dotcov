@@ -155,7 +155,7 @@ public sealed class CorpusTests
     {
         // svc-a app/main.py 8/10 and svc-b app/main.py 2/6 are DIFFERENT files. Rooting each
         // key against its report's <source> keeps them distinct: 10/16 lines = 62.5%, never
-        // the silently-fused 8/10 that discarding the roots produced.
+        // the silently-fused 8/10 that discarding the roots would produce.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/monorepo"));
 
         await Assert.That(report.Files.Count).IsEqualTo(2);

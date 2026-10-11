@@ -259,7 +259,7 @@ public sealed class MarkdownFormatterTests
     public async Task FormatDiff_UnmeasuredFile_DeltaCellIsDashNotBareSign()
     {
         // A zero-line file has null rates on both sides, so its delta is null too — every
-        // cell must follow the dash convention (the delta cell used to render "%").
+        // cell must follow the dash convention.
         var diff = CoverageDiff.Compare(
             new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]),
             new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
@@ -269,13 +269,12 @@ public sealed class MarkdownFormatterTests
         await Assert.That(md).Contains("| `empty.cs` | - | - | - | Unchanged |");
     }
 
-    // ── Warnings section: additive — silent when empty, structured when populated ──
+    // ── Warnings section: silent when empty, structured when populated ──
 
     [Test]
     public async Task Format_NoWarnings_OmitsWarningsSection()
     {
-        // Default reports should render identically to pre-warnings output; absence of
-        // the `### Warnings` heading is the clean-report signal.
+        // Absence of the `### Warnings` heading is the clean-report signal.
         var md = MarkdownFormatter.Format(Reports.Mixed);
 
         await Assert.That(md).DoesNotContain("### Warnings");

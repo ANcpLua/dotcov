@@ -80,7 +80,7 @@ public sealed class CodeMetricsReaderEdgeTests
     public async Task TupleReturnType_NameAndArityComeFromTheParameterList(string display, string name, int arity)
     {
         // A tuple return type opens the display with a top-level '(' that is a TYPE, not the
-        // parameter list; it used to be taken as the list, leaving an empty member name.
+        // parameter list; taking it as the list would leave an empty member name.
         var m = await One(ParseMethod(display));
 
         await Assert.That(m.MemberName).IsEqualTo(name);
@@ -146,7 +146,7 @@ public sealed class CodeMetricsReaderEdgeTests
     public async Task CheckedExplicitConversion_NormalizesToOpCheckedExplicit()
     {
         // `explicit operator checked int` compiles to op_CheckedExplicit; mapping it to
-        // op_Explicit silently merged it with the unchecked conversion of the same arity.
+        // op_Explicit would silently merge it with the unchecked conversion of the same arity.
         var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m
             .Method("GlobalThing.explicit operator int(GlobalThing b)", 1)
             .Method("GlobalThing.explicit operator checked int(GlobalThing b)", 4));

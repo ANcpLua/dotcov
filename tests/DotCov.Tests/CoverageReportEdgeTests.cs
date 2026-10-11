@@ -97,7 +97,7 @@ public sealed class CoverageReportEdgeTests
     public async Task Merge_CountOnlyRecordWithItself_KeepsItsCounts()
     {
         // The positional constructor builds a record from counts alone. Reconciling it with
-        // itself erased it: the merge rebuilt counts from (empty) per-line data, 0/0, NoData.
+        // itself must keep those counts, not rebuild them from the (empty) per-line data as 0/0.
         var report = Reports.Single("src/A.cs", hit: 5, total: 10, bHit: 3, bTotal: 4);
 
         var merged = CoverageReport.Merge(report, report);
@@ -125,8 +125,8 @@ public sealed class CoverageReportEdgeTests
     [Test]
     public async Task Merge_LineDataWithCountOnlyRecord_NeverDropsTheUnbackedLines()
     {
-        // 2 of 2 lines with per-line data plus a count-only 0 of 50 used to merge to 2/2 and
-        // PASS at 80: the 50 lines the count-only side vouches for vanished.
+        // 2 of 2 lines with per-line data plus a count-only 0 of 50 merge to 2/50: the 50 lines
+        // the count-only side vouches for stay counted, so the gate fails at 80.
         var withLines = new CoverageReport([new FileCoverage("src/A.cs", 2, 2, 0, 0)
         {
             LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1 }
@@ -205,7 +205,7 @@ public sealed class CoverageReportEdgeTests
     [Test]
     public async Task Merge_ParserBuiltReports_AreUnchangedByTheCountFallback()
     {
-        // Guard: per-line data on both sides merges exactly as before - union of lines,
+        // Per-line data on both sides never takes the count fallback: union of lines,
         // per-condition union, and a poisoned line keeps only its raw aggregate, even though
         // one side's own count (2 covered, from its condition overlay) is higher.
         var a = Cobertura.NewDoc().AddClass("src/W.cs", c => c
@@ -276,7 +276,8 @@ public sealed class CoverageReportEdgeTests
     {
         // NaN is neither "> 0" (so the branch NoData check does not fire) nor "<= 0" (so the
         // branch dimension is judged): with no branch data the verdict must still be a
-        // non-pass, never an exception. The Fallout adapter's threshold parser accepts "NaN".
+        // non-pass, never an exception. Evaluate is public, so NaN reaches it even though the
+        // CLI and Fallout threshold parsers reject it.
         var report = Reports.Single("src/A.cs", hit: 9, total: 10);
 
         var gate = report.Evaluate(80, double.NaN);

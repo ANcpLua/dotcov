@@ -2,9 +2,9 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// The pattern contract: only <c>filename</c> and <c>**/filename</c>, split on the literal
-/// <c>**/</c> prefix and never on the host's directory separator. Any directory component
-/// used to be silently discarded, so <c>coverage/*.xml</c> matched the wrong scope and flowed
-/// into the gate as NoData — the most invisible misconfiguration.
+/// <c>**/</c> prefix and never on the host's directory separator. Any other directory component
+/// is rejected: discarding it would let <c>coverage/*.xml</c> match the wrong scope and reach
+/// the gate as NoData, the most invisible misconfiguration.
 /// </summary>
 public sealed class ReportPatternTests
 {

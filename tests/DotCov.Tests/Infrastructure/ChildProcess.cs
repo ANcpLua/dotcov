@@ -32,7 +32,7 @@ internal static class ChildProcess
     }
 }
 
-/// <summary>A finished child process. <see cref="Output"/> is stdout followed by stderr.</summary>
+/// <summary>A finished child process.</summary>
 internal sealed record ChildRun(int ExitCode, string StdOut, string StdErr)
 {
     public string Output => StdOut + StdErr;

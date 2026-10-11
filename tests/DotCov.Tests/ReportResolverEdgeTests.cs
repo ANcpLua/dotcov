@@ -5,8 +5,8 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// Report discovery must mean the same thing on every host: a pattern's file-name portion
-/// matches case-insensitively everywhere, as it already did on Windows and macOS, so the
-/// same artifact tree resolves to the same reports on a Linux CI runner.
+/// matches case-insensitively on every OS, so the same artifact tree resolves to the same
+/// reports on a Linux CI runner as on Windows and macOS.
 /// </summary>
 public sealed class ReportResolverEdgeTests : IDisposable
 {
@@ -19,8 +19,8 @@ public sealed class ReportResolverEdgeTests : IDisposable
     [Test]
     public async Task Resolve_DefaultPattern_FindsCapitalizedCoberturaName()
     {
-        // ReportGenerator writes its merged Cobertura output as "Cobertura.xml". A case-
-        // sensitive match left it unfound on Linux only - a silent NoData on one platform.
+        // ReportGenerator writes its merged Cobertura output as "Cobertura.xml"; a case-sensitive
+        // match would miss it on Linux only, a silent NoData on one platform.
         var report = _ws.Write("merged/Cobertura.xml", Doc("a.cs"));
 
         var input = await Assert.That(ReportResolver.Resolve(_ws.Root)).HasSingleItem();

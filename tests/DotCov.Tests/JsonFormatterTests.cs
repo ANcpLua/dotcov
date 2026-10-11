@@ -44,7 +44,7 @@ public sealed class JsonFormatterTests
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
         await Assert.That(summary.GetProperty("hasBranchData").GetBoolean()).IsFalse();
-        // Null values are omitted (DefaultIgnoreCondition.WhenWritingNull) — that's the contract.
+        // A null rate is omitted, not written as null — that's the contract.
         await Assert.That(summary.TryGetProperty("branchRate", out _)).IsFalse();
     }
 
@@ -106,7 +106,7 @@ public sealed class JsonFormatterTests
     {
         // totalBranches/coveredBranches are part of the wire contract — asserted by value
         // so the writer statements cannot be deleted wholesale. WriteSummary is shared, so
-        // this also pins the snapshot and diff summary paths.
+        // this also pins the snapshot summary path.
         var json = JsonFormatter.Format(Reports.Mixed);
         var summary = JsonDocument.Parse(json).RootElement.GetProperty("summary");
 
@@ -306,8 +306,7 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatDiff(diff);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        // path and after asserted by value: existing tests index files positionally and read
-        // "before" only, leaving both writer statements deletable.
+        // path and after asserted by value, so neither writer statement can be deleted unnoticed.
         await Assert.That(file.GetProperty("path").GetString()).IsEqualTo("a.cs");
         await Assert.That(file.GetProperty("after").GetDouble()).IsEqualTo(80.0);
         await Assert.That(file.GetProperty("change").GetString()).IsEqualTo("modified");
@@ -421,8 +420,7 @@ public sealed class JsonFormatterTests
     [Test]
     public async Task Format_NoWarnings_OmitsWarningsField()
     {
-        // Empty Warnings → null → field absent. Same contract as `lineChanges` /
-        // `uncoveredLines`. Consumers can detect a clean report with TryGetProperty.
+        // Empty Warnings → field absent, so consumers can detect a clean report with TryGetProperty.
         var json = JsonFormatter.Format(Reports.Mixed);
         var root = JsonDocument.Parse(json).RootElement;
 

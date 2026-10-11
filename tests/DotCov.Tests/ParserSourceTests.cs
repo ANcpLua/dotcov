@@ -11,21 +11,17 @@ public sealed class ParserSourceTests
     }
 
     /// <summary>One-class document with optional <c>&lt;source&gt;</c> roots (raw, unescaped).</summary>
-    private static string Doc(
-        string sources,
-        string filename,
-        string lines = """<line number="1" hits="1" branch="false" />""") =>
+    private static string Doc(string sources, string filename) =>
         $"""
          <?xml version="1.0"?>
          <coverage>{sources}<packages><package><classes>
-           <class name="X" filename="{filename}"><lines>{lines}</lines></class>
+           <class name="X" filename="{filename}"><lines><line number="1" hits="1" branch="false" /></lines></class>
          </classes></package></packages></coverage>
          """;
 
     [Test]
     public async Task Parse_EmptySourceElement_DoesNotSwallowTheFollowingRoot()
     {
-        // An empty source must not consume the next root and lose its filename prefix.
         var report = ParseXml(Doc("<sources><source/><source>/repo</source></sources>", "app/main.py"));
 
         await Assert.That(report.SourceRoots.Single()).IsEqualTo("/repo");
@@ -35,7 +31,6 @@ public sealed class ParserSourceTests
     [Test]
     public async Task Parse_CommentInsideSource_IsNotARoot()
     {
-        // Comments inside a source element are not filesystem paths.
         var report = ParseXml(Doc(
             "<sources><source><!--ci checkout--></source></sources>", "app/main.py"));
 

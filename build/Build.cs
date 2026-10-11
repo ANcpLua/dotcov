@@ -93,7 +93,7 @@ class Build : FalloutBuild
             Directory.CreateDirectory(directory);
             var path = directory / "snapshot.json";
             // A detached HEAD (pull-request checkouts, bisect, worktrees) has no branch, and a null
-            // argument crashed the target; without --branch the CLI stamps 'unknown' and warns.
+            // argument would crash the target; without --branch the CLI stamps 'unknown' and warns.
             List<string> args = ["snapshot", Input, "--commit", repository.Commit, "--project", "dotcov"];
             if (repository.Branch is { } branch)
                 args.AddRange(["--branch", branch]);
@@ -115,10 +115,9 @@ class Build : FalloutBuild
         Log.Information("Test results: {Path}", ResultsDirectory);
     }
 
-    // A Cobertura package is one measured assembly. coverlet can drop an assembly without failing
-    // (coverlet.MTP 10.1.0 excluded DotCov.dll while this gate passed on the other two), so every
-    // src/ project needs a package before the thresholds count. Runs before `check` so a failure
-    // never leaves a PASS summary behind; a missing input stays `check`'s to report.
+    // A Cobertura package is one measured assembly. coverlet can drop an assembly without failing,
+    // so every src/ project needs a package before the thresholds count. Runs before `check` so a
+    // failure never leaves a PASS summary behind; a missing input stays `check`'s to report.
     private void AssertEverySourceProjectMeasured()
     {
         var source = RootDirectory / "src";

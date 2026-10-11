@@ -59,9 +59,8 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Arguments("snapshot")]
     public async Task EmptyPath_IsAMissingPathError_NotAnUnhandledException(string command)
     {
-        // `dotcov check "$COVERAGE_DIR"` with the variable unset passes "". The resolver's
-        // ArgumentException used to escape RunAsync: an unhandled crash (exit 134 on Linux)
-        // with a stack trace instead of the documented exit 1 for a missing path.
+        // `dotcov check "$COVERAGE_DIR"` with the variable unset passes "". It gets the
+        // documented exit 1 for a missing path, not an unhandled crash with a stack trace.
         var (code, stdout, stderr) = await Run(command, "");
 
         await AssertOneLineError(code, stdout, stderr, "error: missing path");
@@ -85,7 +84,6 @@ public sealed class DotCovCliEdgeTests : IDisposable
     public async Task Snapshot_IdentityFlagWithoutValue_IsAnError_NotStampedTrue()
     {
         // An unquoted, empty `--commit $GIT_SHA` reaches dotcov as `--commit --branch main`.
-        // The commit used to be stamped "true" with no warning — and uploaded that way.
         var (code, stdout, stderr) = await Run(
             "snapshot", HalfCovered(), "--commit", "--branch", "main", "--project", "app");
 
@@ -95,7 +93,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Test]
     public async Task Report_TrailingPatternWithoutValue_IsAnError_NotASilentEmptyReport()
     {
-        // `--pattern` alone used to scan for a file literally named "true": an empty report, exit 0.
+        // Taken as a value, the "true" placeholder would scan for a file literally named "true".
         HalfCovered("dir/coverage.cobertura.xml");
 
         var (code, stdout, stderr) = await Run("report", _ws.PathOf("dir"), "--pattern");
@@ -145,8 +143,8 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Test]
     public async Task Check_FileFlag_IsAnError_NotASilentReplacementOfThePath()
     {
-        // `--file` is in no help text, yet it used to be accepted — and to replace the path
-        // given positionally, so this run gated the passing report instead of the failing one.
+        // `--file` is in no help text. Accepting it would replace the positional path, so this
+        // run would gate the passing report instead of the failing one.
         var failing = HalfCovered("failing.cobertura.xml");
         var passing = _ws.Write("passing.cobertura.xml", Cobertura.NewDoc().AddClass("src/B.cs", c => c.Line(1, hits: 1)));
 
@@ -177,8 +175,8 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Arguments("--Exclude-Generated=true")]
     public async Task ValuelessFlagWithEqualsValue_AdvisesTheFlagAlone(string option)
     {
-        // The error used to say "Write '--exclude-generated false'", and doing so failed again
-        // with "Unexpected argument 'false'": these flags never take a value.
+        // These flags never take a value: advice to write '--exclude-generated false' would
+        // fail again with "Unexpected argument 'false'".
         var flag = option[..option.IndexOf('=')];
 
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "40", option);
@@ -259,8 +257,8 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Test]
     public async Task Crap_JsonFormat_PassingGate_WritesOnlyTheJsonDocument()
     {
-        // The pass verdict line used to follow the document on stdout ("}PASS: worst CRAP ..."),
-        // so `dotcov crap --format json > crap.json` wrote invalid JSON exactly when the gate passed.
+        // `dotcov crap --format json > crap.json` must be valid JSON on a pass too: no verdict
+        // line may follow the document on stdout.
         var path = _ws.Write("safe.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/S.cs", "MyApp.S", c => c.Method("Safe", "()", "1", m => m.Line(1, hits: 1))));
 
@@ -278,9 +276,8 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Test]
     public async Task Check_BranchNoData_PrintsNoLineOffenderList()
     {
-        // A branch threshold on a lines-only report is NODATA, not a line failure. The offender
-        // list used to follow anyway — "files below line threshold" under a "no verdict" gate —
-        // because the report's line rate happened to sit below --min-line.
+        // A branch threshold on a lines-only report is NODATA, not a line failure, so no
+        // offender list follows even though the line rate sits below --min-line.
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "90", "--min-branch", "50");
 
         await Assert.That(code).IsEqualTo(1);

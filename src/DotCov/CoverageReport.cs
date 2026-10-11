@@ -9,7 +9,7 @@ public readonly record struct BranchDetail(int Line, int Covered, int Total);
 /// conditional branches were not all exercised is <see cref="Partial"/> — distinct from
 /// <see cref="Hit"/> (fully exercised) and <see cref="Miss"/> (not executed at all).
 /// Used for the strict coverage view; the canonical <see cref="FileCoverage.LineRate"/>
-/// keeps treating partials as hit to stay aligned with the Cobertura source-of-truth.
+/// treats partials as hit to stay aligned with the Cobertura source-of-truth.
 /// </summary>
 public enum LineStatus { Miss, Partial, Hit }
 
@@ -166,7 +166,7 @@ public readonly record struct FileCoverage(
     /// Merge-state twin of <see cref="BranchesByLine"/>: the raw line-level union with NO
     /// condition-derived overlay applied. <see cref="MergeWith"/> folds these — never the
     /// presented values — because an overlaid aggregate baked into merge state cannot be
-    /// un-maxed when a later report poisons the line's condition identity, which made the
+    /// un-maxed when a later report poisons the line's condition identity, which would make the
     /// merged result depend on fold order. Unset (null field) for hand-built records, where
     /// the presented map IS the raw map; <see cref="FromLineData"/> sets it whenever an
     /// overlay changed the presentation.
@@ -194,8 +194,8 @@ public readonly record struct FileCoverage(
     /// <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> warning and permanently
     /// poison the line's condition identity: the merged entry becomes an <em>empty</em>
     /// dictionary (real entries are never empty), an absorbing sentinel no later merge may
-    /// union or resurrect detail through — otherwise the merged aggregate depended on the
-    /// order reports were folded in. A poisoned line contributes only its raw line-level
+    /// union or resurrect detail through — otherwise the merged aggregate would depend on the
+    /// order reports are folded in. A poisoned line contributes only its raw line-level
     /// aggregate. Detail present on only one side is carried forward unchanged so a later
     /// merge can still union it; the line aggregate never regresses below what the
     /// line-level union observed.
@@ -258,10 +258,10 @@ public readonly record struct FileCoverage(
 
     /// <summary>
     /// Single pass over <paramref name="lineHits"/> that bins each executed line into the
-    /// strictly-hit or partially-hit bucket. Replaces three independent walks of the same
-    /// dict (one per call to <c>StrictlyHitLines</c>, <c>PartiallyHitLines</c>, and
-    /// <c>CoverageReport.StrictLineRate</c>) with one — the difference is observable on
-    /// 50 MB+ reports where every walk costs millions of <see cref="LineStatus"/> lookups.
+    /// strictly-hit or partially-hit bucket, so <c>StrictlyHitLines</c>, <c>PartiallyHitLines</c>,
+    /// and <c>CoverageReport.StrictLineRate</c> share one walk of the dict instead of three — the
+    /// difference is observable on 50 MB+ reports where every walk costs millions of
+    /// <see cref="LineStatus"/> lookups.
     /// <para>
     /// Public so external callers hand-building a <see cref="FileCoverage"/> from raw
     /// dicts can fill <see cref="StrictlyHitLines"/> + <see cref="PartiallyHitLines"/>
@@ -316,12 +316,11 @@ public readonly record struct FileCoverage(
     /// different compile targets, e.g. Release vs. Debug builds in different CI jobs), and
     /// one <see cref="CoverageWarningKind.ConditionIdentityMismatch"/> per line whose
     /// per-condition number sets disagree (same cause; the per-condition union is skipped
-    /// for that line because the numbers no longer identify the same branches).
+    /// for that line because the numbers do not identify the same branches).
     /// <para>
-    /// Tuple return is the only signature: callers who don't care about warnings
-    /// discard with <c>var (merged, _) = a.MergeWith(b)</c>. The convenience overload
-    /// returning just <c>FileCoverage</c> was removed to keep the divergence-is-observable
-    /// contract from being silently bypassed.
+    /// Tuple return is the only signature, so the divergence-is-observable contract cannot be
+    /// silently bypassed: callers who don't care about warnings discard with
+    /// <c>var (merged, _) = a.MergeWith(b)</c>.
     /// </para>
     /// <para>
     /// Counts not backed by per-line data: a record built from counts alone (the positional
@@ -395,8 +394,8 @@ public readonly record struct FileCoverage(
         //
         // Folded over the RAW line-level maps, not the presented ones: keywise Math.Max over
         // raw values is associative, and the condition-derived overlay is applied only at
-        // presentation time (FromLineData). Persisting the overlay into merge state made the
-        // outcome fold-order-dependent — an overlaid Math.Max survives a later condition-
+        // presentation time (FromLineData). Persisting the overlay into merge state would make
+        // the outcome fold-order-dependent — an overlaid Math.Max survives a later condition-
         // identity poisoning and cannot be un-maxed.
         var mergedBranches = new Dictionary<int, (int Covered, int Total)>(RawBranchesByLine);
 
@@ -437,8 +436,8 @@ public readonly record struct FileCoverage(
         // neither emitter reported (the same invariant Materialize enforces within a single
         // report). A mismatch warns and POISONS the line with the empty-dict sentinel: an
         // absorbing marker no later merge may union or resurrect detail through. Without it,
-        // a mismatched middle report was forgotten while a later one-sided carry resurrected
-        // detail, making the fold order decide the merged aggregate.
+        // a mismatched middle report would be forgotten while a later one-sided carry
+        // resurrected detail, making the fold order decide the merged aggregate.
         var mergedConditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
         foreach (var (line, mine) in ConditionsByLine)
         {
@@ -498,7 +497,7 @@ public readonly record struct FileCoverage(
     /// <summary>
     /// Shared construction tail for the parser's <c>Materialize</c> and <see cref="MergeWith"/>:
     /// derives the uncovered list, branch aggregates, partial branches, and strict classification
-    /// from the raw dicts — one walk of the algorithm instead of two hand-synchronized copies.
+    /// from the raw dicts, so parse and merge can never derive them differently.
     /// Wraps the dicts read-only so internal accumulator state never escapes mutable behind the
     /// <c>IReadOnly*</c> surface (a downcast mutation would silently desynchronize
     /// <see cref="LineHits"/> from the precomputed aggregates). The count floors (zero for the
@@ -615,8 +614,8 @@ public sealed class CoverageReport
     /// <summary>
     /// Ratio of hit lines across the report, or <c>null</c> when it carries no line data at all —
     /// an empty report, a glob that matched nothing, a test step that produced no Cobertura.
-    /// Returning 1.0 there (as this once did) renders "we measured nothing" as "we measured
-    /// everything", which passes any gate. Null forces the caller to distinguish the two.
+    /// Returning 1.0 there would render "we measured nothing" as "we measured everything",
+    /// which passes any gate. Null forces the caller to distinguish the two.
     /// </summary>
     public double? LineRate => TotalLines is 0 ? null : (double)TotalLinesHit / TotalLines;
 
@@ -723,10 +722,10 @@ public sealed class CoverageReport
     {
         // Ordinal, matching the parser's file keying: case-differing paths are distinct files
         // on the case-sensitive filesystems the format's native emitters run on, and fusing
-        // them silently erased the less-covered file's misses.
+        // them would silently erase the less-covered file's misses.
         var merged = new Dictionary<string, FileCoverage>(StringComparer.Ordinal);
         // Carry forward whatever the two sides already observed; new divergences from
-        // the per-file MergeWithWarnings calls below are appended in order.
+        // the per-file MergeWith calls below are appended in order.
         var warnings = new List<CoverageWarning>(a.Warnings.Count + b.Warnings.Count);
         warnings.AddRange(a.Warnings);
         warnings.AddRange(b.Warnings);
@@ -788,8 +787,6 @@ public sealed class CoverageReport
             .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal)
             .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
 
-        // Hoisted out of the foreach header: a capturing lambda there is compiled with a
-        // per-call delegate cache whose hit branch no input can take.
         var aOnly = a.Files.Select(static f => f.Path).Where(p => !bPaths.Contains(p));
         foreach (var pa in aOnly)
         {
@@ -805,8 +802,8 @@ public sealed class CoverageReport
 }
 
 /// <summary>
-/// Well-known exclusion patterns from BuildCoverage.cs — battle-tested.
-/// Generated code, build output, migrations, and host bootstrap files inflate coverage numbers.
+/// Well-known exclusion patterns. Generated code, build output, migrations, and host bootstrap
+/// files inflate coverage numbers.
 /// </summary>
 public static class ExclusionRules
 {
@@ -820,10 +817,10 @@ public static class ExclusionRules
         // No "d__" rule: coverlet emits async state-machine *class names* (<Method>d__0) but the
         // <class filename=> is the plain source file, and Exclude matches on Path (the filename) —
         // so a "d__" path rule is structurally dead (matches nothing). The state machine's branches
-        // fuse into the real file; suppress them via coverlet config ([ExcludeFromCodeCoverage] /
-        // runsettings), which removes them at the source, not via a path filter that can't fire.
-        // Anchored to the exact filename: the bare substring "GlobalUsings" also swallowed real
-        // product code in any directory whose *name* contains it (src/GlobalUsingsGenerator/…),
+        // fuse into the real file; coverlet's exclude-by-attribute setting for
+        // CompilerGeneratedAttribute removes them at the source, which a path filter can't do.
+        // Anchored to the exact filename: the bare substring "GlobalUsings" would also swallow
+        // real product code in any directory whose *name* contains it (src/GlobalUsingsGenerator/…),
         // silently flipping a failing gate to PASS. The auto-generated coverlet artifact
         // ({Project}.GlobalUsings.g.cs under obj/) is already caught by ".g.cs" and "/obj/".
         "/GlobalUsings.cs",

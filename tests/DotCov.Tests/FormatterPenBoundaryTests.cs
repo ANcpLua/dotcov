@@ -14,7 +14,7 @@ public sealed class FormatterPenBoundaryTests
     [Test]
     public async Task MovementEpsilon_MatchesTheLiteralUsedByTheBoundaryTheory()
     {
-        // InlineData needs compile-time constants, so the theory below uses literals; this
+        // [Arguments] needs compile-time constants, so the theory below uses literals; this
         // pin makes a change to the constant fail loudly here instead of silently defusing
         // the boundary cases.
         var epsilon = CoverageDiff.MovementEpsilon;

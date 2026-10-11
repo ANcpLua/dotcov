@@ -75,7 +75,7 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_InfiniteThreshold_IsDisabled_Exits1()
     {
-        // Nothing exceeds an infinite threshold; it used to PASS a gate that could not fail.
+        // Nothing exceeds an infinite threshold, so the gate cannot fail and must not report a pass.
         var (code, _, stderr) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "Infinity");
 
         await Assert.That(code).IsEqualTo(1);

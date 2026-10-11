@@ -80,8 +80,6 @@ public sealed class TableFormatterTests
     [Test]
     public async Task Format_FileWithBranches_PopulatesBranchCell()
     {
-        // The populated arm of the branch-cell convention: a file that carries branch data
-        // renders hit/total, never the no-data dash.
         var output = TableFormatter.Format(Reports.Mixed);
         var calcRow = output.Split('\n').Single(l => l.Contains("Calculator.cs"));
 
@@ -244,8 +242,7 @@ public sealed class TableFormatterTests
     [Test]
     public async Task FormatDiff_ZeroDelta_RowAndTotalUseSamePlusZeroCell()
     {
-        // One sign policy everywhere: zero renders '+0.0%' in per-file rows and TOTAL alike
-        // (previously the row showed '    0.0%' while TOTAL showed '+   0.0%').
+        // One sign policy everywhere: zero renders '+0.0%' in per-file rows and TOTAL alike.
         var diff = CoverageDiff.Compare(
             Reports.Single("same.cs", hit: 5, total: 10),
             Reports.Single("same.cs", hit: 5, total: 10));
@@ -335,7 +332,6 @@ public sealed class TableFormatterTests
     [Test]
     public async Task FormatDiff_MultipleLinesAndFilesAffected_TrailerUsesPluralForBoth()
     {
-        // Pluralization branches: both "lines"/"line" and "files"/"file" toggle on count.
         var before = new CoverageReport([
             new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1 } },
             new FileCoverage("b.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [20] = 1 } }
@@ -448,7 +444,6 @@ public sealed class TableFormatterTests
     [Test]
     public async Task Format_NoWarnings_OmitsTrailerLine()
     {
-        // Default-path clean output stays untouched.
         var output = TableFormatter.Format(Reports.Mixed);
 
         await Assert.That(output).DoesNotContain("Warnings:");

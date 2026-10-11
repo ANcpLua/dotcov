@@ -50,8 +50,8 @@ public static class ReportResolver
             RecurseSubdirectories = pattern.Recursive,
             AttributesToSkip = FileAttributes.None,
             IgnoreInaccessible = false,
-            // PlatformDefault matched case-sensitively on Linux only, so the same pattern found
-            // "Cobertura.xml" on Windows and macOS and silently missed it on a Linux runner.
+            // PlatformDefault matches case-sensitively on Linux only, so the same pattern would find
+            // "Cobertura.xml" on Windows and macOS and silently miss it on a Linux runner.
             MatchCasing = MatchCasing.CaseInsensitive
         };
 

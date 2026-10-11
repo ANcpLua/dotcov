@@ -39,7 +39,7 @@ public sealed class CrapFormatterTests
         await Assert.That(output).Contains("MyApp.A.Worst");
         await Assert.That(output).DoesNotContain("MyApp.A.Low");
         await Assert.That(output).Contains("2 more methods below");
-        await Assert.That(gate.ScoredMethods).IsEqualTo(3);   // the gate is computed over the full set
+        await Assert.That(gate.ScoredMethods).IsEqualTo(3);
     }
 
     [Test]
