@@ -49,7 +49,7 @@ public sealed class CoreParserRobustnessTests
     }
 
     [Test]
-    public void ParseDirectory_OneMalformedFileAmongSeveral_PropagatesXmlException()
+    public void ParseDirectory_OneMalformedFileAmongSeveral_ThrowsReportParseException()
     {
         // A malformed file inside the aggregate propagates as a ReportParseException rather
         // than being skipped — a broken artifact must not silently shrink the merged report.

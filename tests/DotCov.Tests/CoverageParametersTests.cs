@@ -148,13 +148,6 @@ public sealed class GitHubStepSummaryTests : IDisposable
     public void Dispose() => _ws.Dispose();
 
     [Test]
-    public async Task TryAppend_NullOrEmptyPath_ReturnsFalse()
-    {
-        await Assert.That(GitHubStepSummary.TryAppend(null, "# md")).IsFalse();
-        await Assert.That(GitHubStepSummary.TryAppend("", "# md")).IsFalse();
-    }
-
-    [Test]
     public async Task TryAppend_WritablePath_Appends()
     {
         var path = _ws.PathOf("summary.md");

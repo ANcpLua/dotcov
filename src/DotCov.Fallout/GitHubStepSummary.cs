@@ -11,9 +11,8 @@ internal static class GitHubStepSummary
 
     public static string? ConfiguredPath => Environment.GetEnvironmentVariable(Variable) is { Length: > 0 } path ? path : null;
 
-    public static bool TryAppend(string? path, string markdown)
+    public static bool TryAppend(string path, string markdown)
     {
-        if (string.IsNullOrEmpty(path)) return false;
         try
         {
             File.AppendAllText(path, markdown);
