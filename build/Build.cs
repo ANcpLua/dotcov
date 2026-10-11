@@ -1,3 +1,5 @@
+using System.Xml;
+using DotCov;
 using DotCov.Tool;
 using Fallout.Common;
 using Fallout.Common.Git;
@@ -54,9 +56,13 @@ class Build : FalloutBuild
         .Executes(() => RunTests(coverage: true));
 
     Target Coverage => d => d
-        .Description("Collect coverage and enforce line/branch thresholds")
+        .Description("Collect coverage, require every src project in it, and enforce line/branch thresholds")
         .DependsOn(CollectCoverage)
-        .Executes(() => RunDotCov(["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"]));
+        .Executes(async () =>
+        {
+            AssertEverySourceProjectMeasured();
+            await RunDotCov(["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"]);
+        });
 
     Target Report => d => d
         .Description("Collect and display coverage; --format selects table/json/md")
@@ -99,6 +105,39 @@ class Build : FalloutBuild
         DotNet($"test --project {TestProject} -c {Configuration} -p:Coverage={(coverage ? "true" : "false")} --results-directory {ResultsDirectory} --treenode-filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
             workingDirectory: RootDirectory);
         Log.Information("Test results: {Path}", ResultsDirectory);
+    }
+
+    // A Cobertura package is one measured assembly. coverlet can drop an assembly without failing
+    // (coverlet.MTP 10.1.0 excluded DotCov.dll while this gate passed on the other two), so every
+    // src/ project needs a package before the thresholds count. Runs before `check` so a failure
+    // never leaves a PASS summary behind; a missing input stays `check`'s to report.
+    private void AssertEverySourceProjectMeasured()
+    {
+        var source = RootDirectory / "src";
+        if (!source.DirectoryExists() || !Path.Exists(Input))
+            return;
+
+        var measured = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var input in ReportResolver.Resolve(Input))
+        {
+            using var reader = XmlReader.Create(input.OpenStream(), new XmlReaderSettings { CloseInput = true, DtdProcessing = DtdProcessing.Ignore });
+            try
+            {
+                while (reader.ReadToFollowing("package"))
+                    measured.Add(reader.GetAttribute("name") ?? "");
+            }
+            catch (XmlException ex)
+            {
+                Assert.Fail($"{input.SourceName}: {ex.Message}", ex);
+            }
+        }
+
+        var missing = source.GlobFiles("*/*.csproj")
+            .Select(project => project.NameWithoutExtension)
+            .Where(name => !measured.Contains(name))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.True(missing.Length is 0, $"Coverage report has no package for: {string.Join(", ", missing)}");
     }
 
     private static async Task RunDotCov(string[] args, TextWriter? output = null)

@@ -44,6 +44,30 @@ public sealed class RepositoryBuildTests : IDisposable
     }
 
     [Test]
+    public async Task Coverage_SourceProjectMissingFromReport_FailsBeforeTheThresholds(CancellationToken cancellationToken)
+    {
+        _workspace.Write("src/Tests/Tests.csproj", "<Project />");
+        _workspace.Write("src/Dropped/Dropped.csproj", "<Project />");
+
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40");
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("Coverage report has no package for: Dropped");
+        await Assert.That(run.Output).DoesNotContain("PASS:");
+    }
+
+    [Test]
+    public async Task Coverage_EverySourceProjectMeasured_ReachesTheThresholds(CancellationToken cancellationToken)
+    {
+        _workspace.Write("src/Tests/Tests.csproj", "<Project />");
+
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40");
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(run.Output).Contains("PASS:");
+    }
+
+    [Test]
     public async Task Report_InvalidFormat_FailsInsteadOfDiscardingTheCliExitCode(CancellationToken cancellationToken)
     {
         var run = await Run(cancellationToken, "Report", "--reports", HalfCovered(), "--format", "invalid");
