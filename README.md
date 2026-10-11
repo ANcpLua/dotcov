@@ -30,6 +30,47 @@ Pass a report file or a fresh run directory. A directory search finds `**/*cober
 no merge step. Merged reports are listed on stderr. Use a fresh directory for each run to
 avoid stale reports. Below threshold it lists offending files and exits `1`.
 
+## TypeScript and Python
+
+DotCov reads Cobertura reports from other languages. Run the project's test runner to collect
+coverage, then use `dotcov check` or the [badge action](#badge) with the report file.
+`dotcov test` collects coverage from .NET tests only.
+
+For TypeScript with Jest, enable its V8 coverage provider and Cobertura reporter:
+
+```bash
+npm test -- --coverage --coverageProvider=v8 --coverageReporters=cobertura
+dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
+```
+
+For Python with coverage.py and pytest installed, select your package as the coverage source:
+
+```bash
+python -m coverage run --branch --source=your_package -m pytest
+python -m coverage xml -o coverage.xml
+dotcov check coverage.xml --min-line 90 --min-branch 90
+```
+
+Pass the XML file directly to the badge action's `reports` input. This also avoids directory
+search defaults: `coverage.xml` does not match `**/*cobertura*.xml`.
+DotCov checks line and branch percentages separately; coverage.py's displayed total combines them.
+
+CI runs the full suites of two pinned upstream projects on Linux, Windows, and macOS:
+
+| Language | Real project | Coverage producer | Checks |
+|---|---|---|---|
+| TypeScript | [ts-deepmerge 7.0.3](https://github.com/voodoocreation/ts-deepmerge/tree/305a05831a462fb2c353d3cbbff55a0733286f8c) | Jest 29 / V8 / Istanbul reporters | Native JSON counts versus DotCov, per file and overall; line/branch gate failures; green/red badge publication |
+| Python | [ItsDangerous 2.2.0](https://github.com/pallets/itsdangerous/tree/096c8d42545d3b68ea21a4f890fb2b2d8979c0bd) | coverage.py 7.10.4 | The same checks using coverage.py's native JSON as the reference |
+
+Reports are generated from each real test run and retained as CI artifacts. See the
+[consumer test notes](.github/tests/README.md) for measured counts and reproduction details.
+
+Some Istanbul Babel-based Cobertura exports omit branches on lines without statement entries.
+For example, ts-deepmerge's Babel report declares 23 branches but exports only 17 in its line
+entries. DotCov computes coverage from those entries and cannot recover omitted branches.
+The V8 configuration tested above preserves this project's native counts; verify your producer's
+export when comparing coverage numbers across tools.
+
 ## Packages
 
 | Package | For | Install |
@@ -89,8 +130,8 @@ resolution disabled, and a 50,000,000-character cap per file (`--max-chars`; `0`
 `check` and `test` write their verdict as a badge with `--badge-dir <dir>`: `coverage-badge.svg`
 and `coverage-badge.json`, for every outcome. The colour is the gate's outcome: green for `PASS`,
 red for `FAIL`, grey for `NODATA`, yellow for `DISABLED`. The message is the line rate, and the
-branch rate too when `--min-branch` is above `0` (`100.0% / 98.5%`), rounded down like the
-verdict when it falls short. A branch rate below its minimum turns the badge red even at
+branch rate too when `--min-branch` is above `0` (`100.0% / 98.5%`), rounded down when that rate
+falls short of its threshold. A branch rate below its minimum turns the badge red even at
 `100.0%` lines.
 
 This repository enforces 100% line and branch coverage in CI without publishing a badge branch.

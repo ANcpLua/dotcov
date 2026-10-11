@@ -26,6 +26,9 @@ description: >-
    The `badge-action` Linux/Windows/macOS matrix invokes the composite action with
    its default tool installation against a local bare origin; preserve that isolation
    and its publication dependency so validation never recreates GitHub's `badges` branch.
+   The `consumer-coverage` matrix runs pinned TypeScript/Python upstream suites
+   on all three hosts, compares native JSON and DotCov counts, and publishes only
+   to a local origin. Keep the report comparisons and release dependency intact.
 3. Preserve the observable contracts:
    - Publication depends on build, tests, and both package groups. Keep the
      `nuget` environment and trusted-publishing authentication intact.
