@@ -62,6 +62,20 @@ CI runs the full suites of two pinned upstream projects on Linux, Windows, and m
 | TypeScript | [ts-deepmerge 7.0.3](https://github.com/voodoocreation/ts-deepmerge/tree/305a05831a462fb2c353d3cbbff55a0733286f8c) | Jest 29 / V8 / Istanbul reporters | Native JSON counts versus DotCov, per file and overall; line/branch gate failures; green/red badge publication |
 | Python | [ItsDangerous 2.2.0](https://github.com/pallets/itsdangerous/tree/096c8d42545d3b68ea21a4f890fb2b2d8979c0bd) | coverage.py 7.10.4 | The same checks using coverage.py's native JSON as the reference |
 
+A second matrix verifies projects that **publish coverage badges in their READMEs**. It checks
+out the commit recorded by Coveralls and compares fresh coverage with that published result:
+
+| Language | Project and pinned README | Published reference | DotCov match |
+|---|---|---|---|
+| TypeScript | [compare-versions 6.1.1](https://github.com/omichelsen/compare-versions/blob/98e81116ef4197b42dca8c3fde8d1e8166e2a81f/README.md) | [Coveralls build 68651498](https://coveralls.io/builds/68651498) | 100%; 245/245 lines, 88/88 branches; 339 tests |
+| Python | [pydash 8.1.0](https://github.com/dgilland/pydash/blob/f46de3669742c075e5379c1e193c86c1c2c70dc2/README.rst) | [Coveralls build 81442862](https://coveralls.io/builds/81442862) | 100%; 2,607/2,607 lines in the published Python 3.12 run; 2,274 tests |
+
+These checks also run on Linux, Windows, and macOS and publish a matching DotCov badge to a
+local test origin. The saved service records bind the reference percentages to the source
+commits, so later changes to a moving upstream badge cannot change the expected result.
+Pydash collects line coverage only; the existing consumer matrix separately verifies Python
+branch coverage and failing gates.
+
 Reports are generated from each real test run and retained as CI artifacts. See the
 [consumer test notes](.github/tests/README.md) for measured counts and reproduction details.
 

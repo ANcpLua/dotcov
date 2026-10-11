@@ -1,0 +1,18 @@
+2026-08-29T20:15:44.4046389Z _______________ coverage: platform linux, python 3.12.14-final-0 _______________
+2026-08-29T20:15:44.4046910Z Name                                                                   Stmts   Miss  Cover   Missing
+2026-08-29T20:15:44.4048096Z .tox/py312/lib/python3.12/site-packages/pydash/__init__.py                14      0   100%
+2026-08-29T20:15:44.4049069Z .tox/py312/lib/python3.12/site-packages/pydash/arrays.py                 448      0   100%
+2026-08-29T20:15:44.4050417Z .tox/py312/lib/python3.12/site-packages/pydash/chaining/__init__.py        2      0   100%
+2026-08-29T20:15:44.4051475Z .tox/py312/lib/python3.12/site-packages/pydash/chaining/all_funcs.py      17      0   100%
+2026-08-29T20:15:44.4052600Z .tox/py312/lib/python3.12/site-packages/pydash/chaining/chaining.py       71      0   100%
+2026-08-29T20:15:44.4053257Z .tox/py312/lib/python3.12/site-packages/pydash/collections.py            171      0   100%
+2026-08-29T20:15:44.4053880Z .tox/py312/lib/python3.12/site-packages/pydash/exceptions.py               4      0   100%
+2026-08-29T20:15:44.4054486Z .tox/py312/lib/python3.12/site-packages/pydash/functions.py              316      0   100%
+2026-08-29T20:15:44.4055334Z .tox/py312/lib/python3.12/site-packages/pydash/helpers.py                148      0   100%
+2026-08-29T20:15:44.4055954Z .tox/py312/lib/python3.12/site-packages/pydash/numerical.py              150      0   100%
+2026-08-29T20:15:44.4056551Z .tox/py312/lib/python3.12/site-packages/pydash/objects.py                372      0   100%
+2026-08-29T20:15:44.4057156Z .tox/py312/lib/python3.12/site-packages/pydash/predicates.py             189      0   100%
+2026-08-29T20:15:44.4057754Z .tox/py312/lib/python3.12/site-packages/pydash/strings.py                409      0   100%
+2026-08-29T20:15:44.4058355Z .tox/py312/lib/python3.12/site-packages/pydash/utilities.py              296      0   100%
+2026-08-29T20:15:44.4059546Z TOTAL                                                                   2607      0   100%
+2026-08-29T20:15:44.4061363Z ============================= 2274 passed in 9.17s =============================

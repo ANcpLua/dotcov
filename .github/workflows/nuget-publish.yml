@@ -269,6 +269,94 @@ jobs:
           retention-days: 7
           include-hidden-files: true
 
+  # Compare fresh measurements with the published coverage behind upstream README badges.
+  # Historical service evidence is pinned alongside each source SHA; moving badges are not an oracle.
+  readme-badge-coverage:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        target: [compare-versions, pydash]
+        include:
+          - target: compare-versions
+            repository: omichelsen/compare-versions
+            revision: 98e81116ef4197b42dca8c3fde8d1e8166e2a81f
+          - target: pydash
+            repository: dgilland/pydash
+            revision: f46de3669742c075e5379c1e193c86c1c2c70dc2
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.revision }}
+          path: .readme-consumer
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12.14'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: matrix.target == 'compare-versions'
+        with:
+          node-version: '20.15.1'
+      - name: Install upstream locked TypeScript dependencies
+        if: matrix.target == 'compare-versions'
+        working-directory: .readme-consumer
+        run: npm ci --ignore-scripts
+      - name: Install the published Python coverage toolchain
+        if: matrix.target == 'pydash'
+        run: |
+          python -m pip install -r .github/tests/readme-badges/requirements.txt
+          python -m pip install --no-build-isolation --no-deps -e .readme-consumer
+      - name: Build the current DotCov CLI
+        run: dotnet build src/DotCov.Tool/DotCov.Tool.csproj -c Release
+      - name: Reproduce coverage at the README badge's recorded commit
+        env:
+          COVERAGE_TARGET: ${{ matrix.target }}
+        run: >-
+          python .github/tests/readme_badge_coverage.py measure "$COVERAGE_TARGET"
+          --project .readme-consumer --output .readme-badge-results
+          --tool src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+      - name: Prepare a local badge origin
+        run: |
+          git init --bare .readme-badge-results/origin.git
+          git remote set-url origin "$PWD/.readme-badge-results/origin.git"
+      - name: Publish the matching line-coverage badge
+        id: badge
+        uses: ./.github/actions/badge
+        with:
+          reports: .readme-badge-results/coverage.xml
+          min-line: '100'
+          min-branch: '0'
+          command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+      - name: Compare the action badge with the published upstream percentage
+        env:
+          BADGE_CODE: ${{ steps.badge.outputs.exit-code }}
+          BADGE_DIRECTORY: ${{ steps.badge.outputs.directory }}
+        run: python .github/tests/readme_badge_coverage.py badge --output .readme-badge-results
+      - name: Retain README badge comparison evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: readme-badge-${{ matrix.target }}-${{ matrix.os }}
+          path: |
+            .readme-badge-results/*.xml
+            .readme-badge-results/*.json
+            .readme-badge-results/*.svg
+            .readme-badge-results/cli-badge/coverage-badge.*
+            .github/tests/readme-badges/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
   # RID failure fails the whole job and gates `publish` (no partial/broken RID set ships).
@@ -328,7 +416,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, build, test, badge-action, consumer-coverage, pack-tool-native, pack-rest]
+    needs: [version, build, test, badge-action, consumer-coverage, readme-badge-coverage, pack-tool-native, pack-rest]
     if: needs.version.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     environment: nuget

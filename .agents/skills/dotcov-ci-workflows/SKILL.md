@@ -26,6 +26,9 @@ description: >-
    The `badge-action` Linux/Windows/macOS matrix invokes the composite action with
    its default tool installation against a local bare origin; preserve that isolation
    and its publication dependency so validation never recreates GitHub's `badges` branch.
+   The `readme-badge-coverage` matrix additionally compares pinned README badge evidence
+   with fresh measurements of the exact upstream commits. Preserve its evidence files,
+   local badge origins, and release dependency.
    The `consumer-coverage` matrix runs pinned TypeScript/Python upstream suites
    on all three hosts, compares native JSON and DotCov counts, and publishes only
    to a local origin. Keep the report comparisons and release dependency intact.
