@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using DotCov.Tests.Infrastructure;
-using TUnit.Core.Enums;
 
 namespace DotCov.Tests;
 
@@ -9,10 +8,9 @@ namespace DotCov.Tests;
 /// Runs the composite action's script (<c>.github/actions/badge/badge.sh</c>) as a real bash
 /// process against a local bare repository standing in for <c>origin</c>, with this build's dotcov:
 /// the orphan bootstrap, publishing only when the badge's contents change, the exit-code policy,
-/// and that the consumer's clone keeps its branches and config. Linux and macOS only: on Windows,
-/// <c>bash</c> on PATH can be WSL's rather than Git's.
+/// and that the consumer's clone keeps its branches and config. Windows uses Git Bash,
+/// matching the composite action's shell rather than a possible WSL bash on PATH.
 /// </summary>
-[RunOn(OS.Linux | OS.MacOs)]
 [Category("Integration")]
 [Timeout(60_000)]
 public sealed class BadgeActionTests : IDisposable
@@ -21,6 +19,7 @@ public sealed class BadgeActionTests : IDisposable
     private readonly string _origin;
     private readonly string _clone;
     private readonly string _report;
+    private string _bash = "bash";
 
     public BadgeActionTests()
     {
@@ -169,6 +168,15 @@ public sealed class BadgeActionTests : IDisposable
 
     private async Task Init(CancellationToken cancellationToken)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            // Git's exec path is <installation>/mingw64/libexec/git-core. Resolve its own
+            // Bash instead of PATH's bash.exe, which can belong to WSL.
+            var execPath = await Git(cancellationToken, _ws.Root, "--exec-path");
+            _bash = Path.GetFullPath(Path.Combine(execPath, "..", "..", "..", "bin", "bash.exe"));
+            if (!File.Exists(_bash))
+                throw new FileNotFoundException("Badge action tests require Git for Windows' Bash.", _bash);
+        }
         await Git(cancellationToken, _origin, "init", "--quiet", "--bare");
         await Git(cancellationToken, _clone, "init", "--quiet");
         await Git(cancellationToken, _clone, "remote", "add", "origin", _origin);
@@ -187,7 +195,9 @@ public sealed class BadgeActionTests : IDisposable
 
         var outputs = _ws.PathOf("github-output");
         File.WriteAllText(outputs, "");
-        var start = Start("bash", _clone, Path.Combine(AppContext.BaseDirectory, "BadgeAction", "badge.sh"));
+        var start = Start(_bash, _clone, ShellPath(Path.Combine(AppContext.BaseDirectory, "BadgeAction", "badge.sh")));
+        if (OperatingSystem.IsWindows())
+            start.Environment["PATH"] = Path.GetDirectoryName(_bash) + Path.PathSeparator + start.Environment["PATH"];
         start.Environment["RUNNER_TEMP"] = _ws.CreateDirectory("runner-temp");
         start.Environment["GITHUB_OUTPUT"] = outputs;
         start.Environment["GITHUB_SHA"] = "0123456789abcdef";
@@ -210,9 +220,9 @@ public sealed class BadgeActionTests : IDisposable
     {
         var directory = AppContext.BaseDirectory;
         var wrapper = _ws.Write("dotcov", $"""
-            exec dotnet exec --depsfile '{Path.Combine(directory, "DotCov.Tests.deps.json")}' --runtimeconfig '{Path.Combine(directory, "DotCov.Tests.runtimeconfig.json")}' '{Path.Combine(directory, "DotCov.Tool.dll")}' "$@"
+            exec dotnet exec --depsfile '{ShellPath(Path.Combine(directory, "DotCov.Tests.deps.json"))}' --runtimeconfig '{ShellPath(Path.Combine(directory, "DotCov.Tests.runtimeconfig.json"))}' '{ShellPath(Path.Combine(directory, "DotCov.Tool.dll"))}' "$@"
             """);
-        return $"bash {wrapper}";
+        return $"bash {ShellPath(wrapper)}";
     }
 
     private static async Task<string> Git(CancellationToken cancellationToken, string directory, params string[] args)
@@ -220,8 +230,10 @@ public sealed class BadgeActionTests : IDisposable
         var run = await ChildProcess.RunAsync(Start("git", directory, args), cancellationToken);
         if (run.ExitCode is not 0)
             throw new InvalidOperationException($"git {string.Join(' ', args)} exited {run.ExitCode}: {run.Output}");
-        return run.StdOut.TrimEnd('\n');
+        return run.StdOut.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
     }
+
+    private static string ShellPath(string path) => path.Replace('\\', '/');
 
     private static ProcessStartInfo Start(string fileName, string directory, params string[] args)
     {
@@ -234,7 +246,7 @@ public sealed class BadgeActionTests : IDisposable
         };
         foreach (var arg in args) start.ArgumentList.Add(arg);
         // The host's git identity and config must not leak in: the script supplies its own identity.
-        start.Environment["GIT_CONFIG_GLOBAL"] = "/dev/null";
+        start.Environment["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
         start.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
         start.Environment["NO_COLOR"] = "1";
         // The outer test platform's handshake variables would reach dotcov's own process.

@@ -95,7 +95,8 @@ verdict when it falls short. A branch rate below its minimum turns the badge red
 
 This repository enforces 100% line and branch coverage in CI without publishing a badge branch.
 The badge action below is optional for consumers who want to publish coverage in their own repository.
-It creates a `badges` branch on first use:
+It runs on Linux, Windows (Git Bash), and macOS runners with .NET installed; CI exercises
+installation, publishing, and a failing gate on all three. It creates a `badges` branch on first use:
 
 ```yaml
 permissions:
