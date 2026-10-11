@@ -1,0 +1,13 @@
+# Coverage, pytest, pytest-cov and typing-extensions match pydash's published Python 3.12 run.
+coverage==7.16.0
+pytest==9.1.1
+pytest-cov==7.1.0
+typing-extensions==4.16.0
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+colorama==0.4.6; sys_platform == 'win32'
+# Build the pinned source locally without a floating isolated build environment.
+setuptools==80.9.0
+wheel==0.45.1

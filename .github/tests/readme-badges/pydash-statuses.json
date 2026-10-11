@@ -1,0 +1,41 @@
+{
+  "sha": "f46de3669742c075e5379c1e193c86c1c2c70dc2",
+  "statuses": [
+    {
+      "context": "Coveralls - 3.10",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/jobs/187016256"
+    },
+    {
+      "context": "Coveralls - 3.11",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/jobs/187016259"
+    },
+    {
+      "context": "Coveralls - 3.14",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/jobs/187016257"
+    },
+    {
+      "context": "Coveralls - 3.13",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/jobs/187016258"
+    },
+    {
+      "context": "Coveralls - 3.12",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/jobs/187016260"
+    },
+    {
+      "context": "coverage/coveralls (push)",
+      "description": "Coverage remained the same at 100.0%",
+      "state": "success",
+      "target_url": "https://coveralls.io/builds/81442862"
+    }
+  ]
+}

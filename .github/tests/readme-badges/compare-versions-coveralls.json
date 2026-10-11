@@ -1,0 +1,19 @@
+{
+  "id": 68651498,
+  "repo_name": "omichelsen/compare-versions",
+  "branch": "main",
+  "url": null,
+  "badge_url": "https://s3.amazonaws.com/assets.coveralls.io/badges/coveralls_100.svg",
+  "calculated_at": "2024-07-15T17:46:20Z",
+  "created_at": "2024-07-15T17:46:19Z",
+  "commit_sha": "98e81116ef4197b42dca8c3fde8d1e8166e2a81f",
+  "updated_at": "2024-07-15T17:47:22Z",
+  "coverage_change": 0.0,
+  "covered_percent": 100.0,
+  "covered_lines": 245,
+  "missed_lines": 0,
+  "relevant_lines": 245,
+  "covered_branches": 88,
+  "missed_branches": 0,
+  "relevant_branches": 88
+}

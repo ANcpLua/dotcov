@@ -1,0 +1,19 @@
+{
+  "id": 81442862,
+  "repo_name": "dgilland/pydash",
+  "branch": "master",
+  "url": null,
+  "badge_url": "https://s3.amazonaws.com/assets.coveralls.io/badges/coveralls_100.svg",
+  "calculated_at": "2026-08-29T20:16:15Z",
+  "created_at": "2026-08-29T20:15:46Z",
+  "commit_sha": "f46de3669742c075e5379c1e193c86c1c2c70dc2",
+  "updated_at": "2026-08-29T20:17:20Z",
+  "coverage_change": 0.0,
+  "covered_percent": 100.0,
+  "covered_lines": 13033,
+  "missed_lines": 0,
+  "relevant_lines": 13033,
+  "covered_branches": 0,
+  "missed_branches": 0,
+  "relevant_branches": 0
+}

@@ -63,3 +63,54 @@ python .github/tests/consumer_coverage.py measure python \
 
 For the Python command, use the interpreter where the pinned requirements and ItsDangerous
 are installed. The badge phase is exercised by GitHub's composite-action runner in CI.
+
+## Published README badge comparisons
+
+`readme_badge_coverage.py` and the `readme-badge-coverage` matrix add an independent,
+published baseline to the fresh producer comparisons above. Both targets embed a coverage
+badge in the README at the exact tested revision:
+
+| Target | Source commit | Published coverage behind the README badge |
+|---|---|---|
+| [compare-versions 6.1.1](https://github.com/omichelsen/compare-versions/blob/98e81116ef4197b42dca8c3fde8d1e8166e2a81f/README.md) | `98e81116ef4197b42dca8c3fde8d1e8166e2a81f` | [Coveralls build 68651498](https://coveralls.io/builds/68651498.json): 100%; 245/245 lines and 88/88 branches |
+| [pydash 8.1.0](https://github.com/dgilland/pydash/blob/f46de3669742c075e5379c1e193c86c1c2c70dc2/README.rst) | `f46de3669742c075e5379c1e193c86c1c2c70dc2` | [Coveralls build 81442862](https://coveralls.io/builds/81442862.json) and [Python 3.12 job 187016260](https://coveralls.io/jobs/187016260.json): 100% |
+
+The evidence in [readme-badges](readme-badges/) was retrieved on 2026-10-11. Coveralls
+records identify the repository, commit SHA, measured percentage, counts, and badge image.
+Author names, emails, and commit messages were omitted from the saved build responses.
+`targets.json` records the original endpoints and exact README image markup. CI verifies
+that markup still exists in the pinned checkout, checks `git rev-parse HEAD` against the
+service record, and compares exact fractions before checking the badge display. Both
+historical Coveralls records point to the saved `coveralls-100.svg`. Pydash's README uses
+a legacy Shields wrapper for that Coveralls result; the reference is the linked service's
+commit-specific result, not a request to the moving Shields endpoint.
+
+Compare-versions uses its original c8/Mocha coverage provider, npm lockfile, and Node 20
+(pinned here to 20.15.1). All 339 tests run. Its fresh native JSON, Cobertura/DotCov totals,
+and historical Coveralls line and branch totals must agree exactly.
+
+Pydash uses Python 3.12 and the coverage.py 7.16.0 / pytest 9.1.1 / pytest-cov 7.1.0
+versions recorded in its published [Python 3.12 CI job](https://github.com/dgilland/pydash/actions/runs/33272967265/job/99154667022).
+That upstream job ran Python 3.12.14. CI selects the available Python 3.12 patch release on
+each host (setup-python does not distribute 3.12.14 on Windows or macOS); exact count
+comparisons remain mandatory. Its 2,274 unit tests and doctests run with upstream's targets, source configuration,
+exclusions, and 100% gate. CI installs the package editable so per-file paths refer to the
+checkout. Only output locations and verbosity differ from upstream's test command.
+The saved upstream log excerpt contains the original coverage table and test summary
+(with terminal color escapes removed). Fresh per-file counts must also match that table:
+2,607/2,607 lines across 14 files. GitHub's saved job metadata and commit statuses connect
+the log and the Python 3.12 Coveralls job to the same SHA.
+
+Pydash's overall Coveralls build aggregates five Python environments with separate installed
+paths (13,033/13,033 lines). The matrix compares its published 100% percentage and the exact
+Python 3.12 per-file counts; it does not compare one environment's line count with the
+five-environment sum. Upstream did not collect branch coverage, and the test preserves this
+line-only mode. The existing ItsDangerous tests continue to verify Python branches and
+negative gates.
+
+All six new jobs also execute DotCov's 100% gate and the real composite badge action,
+assert a `100.0%` green line-coverage badge, and compare the published JSON/SVG bytes in a
+local bare origin. The jobs gate releases and retain the reports and reference evidence as
+artifacts. They read saved historical service evidence so external badge changes or service
+outages do not change the baseline. Updating a target requires refreshing its commit,
+README markup, service evidence, dependencies, and measured results together.

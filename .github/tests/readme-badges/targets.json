@@ -1,0 +1,21 @@
+{
+  "compare-versions": {
+    "repository": "omichelsen/compare-versions",
+    "commit": "98e81116ef4197b42dca8c3fde8d1e8166e2a81f",
+    "readme": "README.md",
+    "badge_markup": "[![Coverage Status](https://coveralls.io/repos/omichelsen/compare-versions/badge.svg?branch=main&service=github)](https://coveralls.io/github/omichelsen/compare-versions?branch=main)",
+    "build_url": "https://coveralls.io/builds/68651498.json",
+    "tests": 339
+  },
+  "pydash": {
+    "repository": "dgilland/pydash",
+    "commit": "f46de3669742c075e5379c1e193c86c1c2c70dc2",
+    "readme": "README.rst",
+    "badge_markup": ".. |coveralls| image:: http://img.shields.io/coveralls/dgilland/pydash/master.svg?style=flat-square\n    :target: https://coveralls.io/r/dgilland/pydash",
+    "build_url": "https://coveralls.io/builds/81442862.json",
+    "status_url": "https://api.github.com/repos/dgilland/pydash/commits/f46de3669742c075e5379c1e193c86c1c2c70dc2/status",
+    "job_url": "https://coveralls.io/jobs/187016260.json",
+    "upstream_job_url": "https://api.github.com/repos/dgilland/pydash/actions/jobs/99154667022",
+    "tests": 2274
+  }
+}
