@@ -104,8 +104,10 @@ jobs:
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
 
-  # Exercise the composite action itself, including its default tool installation, on every
-  # supported host. The origin is a local bare repository: no GitHub badge branch or write token.
+  # Exercise the composite action and its default installer against this checkout's portable
+  # package. A release candidate is not on NuGet yet. Native packages are packed separately;
+  # the local-only feed prevents an already-published version from masking this checkout.
+  # Badge pushes go to a local bare repository: no GitHub badge branch or write token.
   badge-action:
     strategy:
       fail-fast: false
@@ -120,6 +122,22 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
+      - name: Pack the candidate for the default tool installer
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/badge-nuget-cache
+        run: |
+          echo "NUGET_PACKAGES=$NUGET_PACKAGES" >> "$GITHUB_ENV"
+          V=$(dotnet msbuild src/DotCov.Tool/DotCov.Tool.csproj -nologo -getProperty:VersionPrefix)
+          FEED="$RUNNER_TEMP/badge-packages"
+          dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release -r any \
+            -p:PublishAot=false -p:Version="$V" -p:ToolPackageRuntimeIdentifiers=any -o "$FEED"
+          dotnet pack src/DotCov.Tool/DotCov.Tool.csproj -c Release \
+            -p:Version="$V" -p:ToolPackageRuntimeIdentifiers=any -o "$FEED"
+          # Configure only this disposable job's subsequent tool installs. Packing restores
+          # dependencies before this file exists; the action itself keeps its default inputs.
+          test ! -e NuGet.Config
+          printf '%s\n' '<configuration><packageSources><clear /></packageSources></configuration>' > NuGet.Config
+          dotnet nuget add source "$FEED" --name candidate --configfile NuGet.Config
       - name: Set up isolated badge origin and Cobertura report
         run: |
           git init --bare "$RUNNER_TEMP/badge-origin.git"
