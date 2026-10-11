@@ -9,9 +9,9 @@
     "./agents/coverage-hunter/agent.md": {
       "kind": "agent",
       "id": "agent_01C8Lx1XdheZidWfHtXt58vy",
-      "version": "1",
-      "hash": "6348f37858d889bba994e82e610fe149",
-      "remote_hash": "113c0527053a628ba4704279baba2304"
+      "version": "2",
+      "hash": "8c85a499d32aa1c7921cd136ff8a565f",
+      "remote_hash": "5e122d0a09a6ae581a1857276755dcd5"
     },
     "./agents/coverage-hunter/environment.yaml": {
       "kind": "environment",

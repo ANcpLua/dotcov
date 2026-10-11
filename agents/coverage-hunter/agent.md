@@ -3,7 +3,7 @@ name: dotcov coverage hunter
 description: Raises dotcov's line and branch coverage to 100% and hands back a patch with a report.
 model:
   id: claude-opus-5-5
-  effort: high
+  effort: max
 tools:
   - type: agent_toolset_20260401
     default_config:
