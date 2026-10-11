@@ -316,6 +316,9 @@ jobs:
         run: |
           python -m pip install -r .github/tests/readme-badges/requirements.txt
           python -m pip install --no-build-isolation --no-deps -e .readme-consumer
+      - name: Verify deterministic pydash timing and failure detection
+        if: matrix.target == 'pydash'
+        run: python -m pytest .github/tests/test_pydash_clock.py -q
       - name: Build the current DotCov CLI
         run: dotnet build src/DotCov.Tool/DotCov.Tool.csproj -c Release
       - name: Reproduce coverage at the README badge's recorded commit

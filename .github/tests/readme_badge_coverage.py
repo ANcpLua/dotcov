@@ -75,15 +75,22 @@ def measure(args):
                                        value["branches"]["covered"], value["branches"]["total"])
                  for path, value in native.items()}
     else:
-        # These are upstream tasks.py's test targets, doctests, source selection,
-        # and type-check-only test exclusion. Keep its own 100% gate enabled.
-        run([sys.executable, "-m", "pytest", "src/pydash", "tests", "--cov=pydash",
+        # Keep upstream's tests, assertions, source selection and 100% gate. The
+        # plugin supplies deterministic time only to its two debounce tests.
+        plugin_path = str(Path(__file__).resolve().parent)
+        env = {**os.environ, "COVERAGE_FILE": str(output / ".coverage"),
+               "PYTHONPATH": os.pathsep.join(filter(None, [plugin_path, os.environ.get("PYTHONPATH")]))}
+        run([sys.executable, "-m", "pytest", "-p", "pydash_clock", "src/pydash", "tests", "--cov=pydash",
              "--ignore=tests/pytest_mypy_testing", "-q",
              f"--cov-report=json:{output / 'coverage-native.json'}",
-             f"--cov-report=xml:{report}", f"--junitxml={output / 'tests.xml'}"], cwd=root)
+             f"--cov-report=xml:{report}", f"--junitxml={output / 'tests.xml'}"], cwd=root, env=env)
+        run(["git", "diff", "--exit-code", "HEAD", "--", "src", "tests", "pyproject.toml"], cwd=root)
         suites = ET.parse(output / "tests.xml").getroot().findall("testsuite")
         assert sum(int(suite.attrib["tests"]) for suite in suites) == config["tests"]
         assert all(int(suite.attrib[key]) == 0 for suite in suites for key in ["failures", "errors", "skipped"])
+        timed = [case.attrib["name"] for suite in suites for case in suite.findall("testcase")
+                 if case.find("properties/property[@name='dotcov-clock'][@value='deterministic']") is not None]
+        assert sorted(timed) == ["test_debounce", "test_debounce_max_wait"], timed
         native = read_json(output / "coverage-native.json")
         assert not native["meta"]["branch_coverage"], "Match upstream's line-only collection"
         files = {file_key(path, root): (value["summary"]["covered_lines"], value["summary"]["num_statements"], 0, 0)
