@@ -533,60 +533,19 @@ public sealed class CliTests : IDisposable
         await Assert.That(stderr).Contains("Upload failed");
     }
 
-    // ── ParseArgs mapping ──
+    // ── Positional arguments ──
 
     [Test]
-    public async Task ParseArgs_EmptyArgv_IsHelp()
+    public async Task Diff_ThirdPositional_IsRejected()
     {
-        var (command, options) = DotCovCli.ParseArgs([]);
+        // diff takes exactly before and after; a further path is reported, never dropped.
+        var path = HalfCovered();
 
-        await Assert.That(command).IsEqualTo("help");
-        await Assert.That(options).IsEmpty();
-    }
+        var (code, stdout, stderr) = await Run("diff", path, path, "extra");
 
-    [Test]
-    public async Task ParseArgs_PositionalMapsToFile()
-    {
-        var (command, options) = DotCovCli.ParseArgs(["report", "cov.xml"]);
-
-        await Assert.That(command).IsEqualTo("report");
-        await Assert.That(options["file"]).IsEqualTo("cov.xml");
-    }
-
-    [Test]
-    public async Task ParseArgs_DiffMapsPositionalsToBeforeAfter()
-    {
-        var (_, options) = DotCovCli.ParseArgs(["diff", "a.xml", "b.xml", "extra"]);
-
-        await Assert.That(options["before"]).IsEqualTo("a.xml");
-        await Assert.That(options["after"]).IsEqualTo("b.xml");
-        await Assert.That(options["arg2"]).IsEqualTo("extra");
-    }
-
-    [Test]
-    public async Task ParseArgs_FlagWithValue_AndValuelessFlags()
-    {
-        var (_, options) = DotCovCli.ParseArgs(
-            ["check", "cov.xml", "--min-line", "80", "--exclude-generated", "--github-summary"]);
-
-        await Assert.That(options["file"]).IsEqualTo("cov.xml");
-        await Assert.That(options["min-line"]).IsEqualTo("80");
-        await Assert.That(options["exclude-generated"]).IsEqualTo("true");
-        // Trailing flag with no value is recorded as "true", not dropped.
-        await Assert.That(options["github-summary"]).IsEqualTo("true");
-    }
-
-    [Test]
-    public async Task ParseArgs_BooleanFlagBeforePositional_DoesNotSwallowPath()
-    {
-        // Standard flag-before-path ordering: a valueless flag must not consume the path.
-        var (_, options) = DotCovCli.ParseArgs(
-            ["report", "--exclude-generated", "cov.xml", "--github-summary", "--format", "json"]);
-
-        await Assert.That(options["file"]).IsEqualTo("cov.xml");
-        await Assert.That(options["exclude-generated"]).IsEqualTo("true");
-        await Assert.That(options["github-summary"]).IsEqualTo("true");
-        await Assert.That(options["format"]).IsEqualTo("json");
+        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith("error: Unexpected argument 'extra' for 'diff'.");
     }
 
     [Test]
@@ -841,7 +800,7 @@ public sealed class CliTests : IDisposable
     // ── Documented CLI contract ──
 
     [Test]
-    public async Task Help_DocumentsExitCodesAndNewFlags()
+    public async Task Help_DocumentsExitCodesAndFlags()
     {
         var (code, stdout, _) = await Run("help");
 

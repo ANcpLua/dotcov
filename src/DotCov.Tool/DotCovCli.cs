@@ -725,16 +725,11 @@ public static partial class DotCovCli
     static readonly HashSet<string> ValuelessFlags =
         new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "github-summary" };
 
-    public static (string command, Dictionary<string, string> options) ParseArgs(string[] raw)
-    {
-        var (command, options, _) = Parse(raw);
-        return (command, options);
-    }
-
     /// <summary>
-    /// <see cref="ParseArgs"/> plus an error for each flag the dictionary misrepresents: one that
-    /// got no value (recorded as "true", so an unknown name can still be reported by name) and
-    /// one named like the slot a path is filed under, which would replace that path.
+    /// Maps argv to the command and its options, plus an error for each flag the dictionary
+    /// misrepresents: one that got no value (recorded as "true", so an unknown name can still be
+    /// reported by name) and one named like the slot a path is filed under, which would replace
+    /// that path.
     /// </summary>
     static (string Command, Dictionary<string, string> Options, List<string> Malformed) Parse(string[] raw)
     {

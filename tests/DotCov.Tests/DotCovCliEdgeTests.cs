@@ -128,16 +128,6 @@ public sealed class DotCovCliEdgeTests : IDisposable
         await AssertOneLineError(code, stdout, stderr, "error: Unknown option '--verbose' for 'check'.");
     }
 
-    [Test]
-    public async Task ParseArgs_FlagFollowedByFlag_StillRecordsTheFirstFlag()
-    {
-        // The public parser keeps every flag it saw, so an unknown one can be named.
-        var (_, options) = DotCovCli.ParseArgs(["snapshot", "cov.xml", "--verbose", "--branch", "main"]);
-
-        await Assert.That(options.ContainsKey("verbose")).IsTrue();
-        await Assert.That(options["branch"]).IsEqualTo("main");
-    }
-
     // ── A path is positional: the slot it is filed under is not a flag ──
 
     [Test]

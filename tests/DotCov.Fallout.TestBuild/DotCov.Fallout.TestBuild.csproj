@@ -7,7 +7,6 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>DotCov.Fallout.TestBuild</RootNamespace>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CS0649;CS0169</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
