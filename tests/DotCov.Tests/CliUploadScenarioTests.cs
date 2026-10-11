@@ -34,23 +34,29 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
     }
 
     [Test]
-    [Arguments("40", HttpStatusCode.Created, 0, "PASS:")]
-    [Arguments("80", HttpStatusCode.Created, 1, "FAIL:")]
-    [Arguments("40", HttpStatusCode.InternalServerError, 1, "PASS:")]
-    [Arguments("80", HttpStatusCode.InternalServerError, 1, "FAIL:")]
+    [Arguments("40", HttpStatusCode.Created, 0, "PASS:", false)]
+    [Arguments("80", HttpStatusCode.Created, 1, "FAIL:", false)]
+    [Arguments("40", HttpStatusCode.InternalServerError, 5, "PASS:", false)]
+    [Arguments("80", HttpStatusCode.InternalServerError, 1, "FAIL:", false)]
+    [Arguments("0", HttpStatusCode.Created, 4, "DISABLED:", false)]
+    [Arguments("0", HttpStatusCode.InternalServerError, 4, "DISABLED:", false)]
+    [Arguments("40", HttpStatusCode.Created, 3, "NODATA:", true)]
+    [Arguments("40", HttpStatusCode.InternalServerError, 3, "NODATA:", true)]
     public async Task Check_GateAndUploadOutcomes_PreserveTheExitContract(
-        string threshold, HttpStatusCode status, int expectedCode, string verdict, CancellationToken cancellationToken)
+        string threshold, HttpStatusCode status, int expectedCode, string verdict, bool empty, CancellationToken cancellationToken)
     {
         endpoint.RespondWith(status);
 
-        var (code, output, error) = await Run("check", Report(), "--min-line", threshold);
+        var (code, output, error) = await Run("check", empty ? _workspace.CreateDirectory("empty") : Report(), "--min-line", threshold);
         var request = await endpoint.Received.WaitAsync(cancellationToken);
 
         await Assert.That(code).IsEqualTo(expectedCode).Because(error);
         await Assert.That(output + error).Contains(verdict);
         await Assert.That(error).Contains(status == HttpStatusCode.Created ? "Uploaded to" : "Upload failed");
         using var json = JsonDocument.Parse(request.Body);
-        await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
+        await Assert.That(json.RootElement.GetProperty("files").GetArrayLength()).IsEqualTo(empty ? 0 : 1);
+        if (!empty)
+            await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
     }
 
     [Test]
@@ -63,7 +69,7 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
             "--branch", "main", "--project", "dotcov");
         var request = await endpoint.Received.WaitAsync(cancellationToken);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(error).Contains("Upload failed");
         await Assert.That(error).DoesNotContain("Unhandled exception");
         await Assert.That(request.Body).IsEqualTo(output);

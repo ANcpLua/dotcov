@@ -73,17 +73,17 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
-    public async Task Crap_InfiniteThreshold_IsDisabled_Exits1()
+    public async Task Crap_InfiniteThreshold_IsDisabled_Exits4()
     {
         // Nothing exceeds an infinite threshold, so the gate cannot fail and must not report a pass.
         var (code, _, stderr) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "Infinity");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(4);
         await Assert.That(stderr).StartsWith("DISABLED:");
     }
 
     [Test]
-    public async Task Crap_NoMethodDetail_Nodata_Exits1()
+    public async Task Crap_NoMethodDetail_Nodata_Exits3()
     {
         var noMethods = _ws.Write("plain.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/C.cs", c => c.Line(1, hits: 1))
@@ -91,7 +91,7 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, _, stderr) = await Run("crap", noMethods);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr).StartsWith("NODATA:");
     }
 
@@ -100,7 +100,7 @@ public sealed class CliCrapTests : IDisposable
     {
         var (code, _, stderr) = await Run("crap", NoComplexity());
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr).StartsWith("NODATA:");
         await Assert.That(stderr).Contains("--metrics");
     }
@@ -138,13 +138,13 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
-    public async Task Crap_EmptyDirectory_Nodata_Exits1()
+    public async Task Crap_EmptyDirectory_Nodata_Exits3()
     {
         var dir = _ws.CreateDirectory("empty");
 
         var (code, _, stderr) = await Run("crap", dir);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr).StartsWith("NODATA:");
     }
 
@@ -155,39 +155,39 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, _, stderr) = await Run("crap", _ws.PathOf("bad"));
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith($"error: {bad}: ");
         await Assert.That(stderr).DoesNotContain($"{bad}: {bad}");
     }
 
     [Test]
-    public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits1()
+    public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits5()
     {
         // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.
         AtDefaultThreshold();
 
         var (code, _, stderr) = await Run("crap", _ws.Root, "--pattern", "sub/dir/coverage.xml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error:");
         await Assert.That(stderr).Contains("Unsupported pattern");
     }
 
     [Test]
-    public async Task Crap_MissingPath_Error_Exits1()
+    public async Task Crap_MissingPath_Error_Exits5()
     {
         var (code, _, stderr) = await Run("crap", _ws.PathOf("nope.xml"));
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error:");
     }
 
     [Test]
-    public async Task Crap_NoArgs_Usage_Exits1()
+    public async Task Crap_NoArgs_Usage_Exits5()
     {
         var (code, _, stderr) = await Run("crap");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error: missing path. Usage: dotcov crap");
     }
 
@@ -196,20 +196,20 @@ public sealed class CliCrapTests : IDisposable
     [Arguments("--top", "0")]
     [Arguments("--top", "-3")]
     [Arguments("--format", "yaml")]
-    public async Task Crap_InvalidFlagValue_Exits1(string flag, string value)
+    public async Task Crap_InvalidFlagValue_Exits5(string flag, string value)
     {
         var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), flag, value);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains("Invalid");
     }
 
     [Test]
-    public async Task Crap_MissingMetricsFile_Error_Exits1()
+    public async Task Crap_MissingMetricsFile_Error_Exits5()
     {
         var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", "/nonexistent/metrics.xml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error: No metrics file at");
     }
 

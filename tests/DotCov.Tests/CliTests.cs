@@ -77,22 +77,22 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Check_ZeroThresholds_Disabled_Exits1()
+    public async Task Check_ZeroThresholds_Disabled_Exits4()
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "0");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(4);
         await Assert.That(stderr).Contains("DISABLED");
     }
 
     [Test]
-    public async Task Check_EmptyDirectory_NoData_Exits1()
+    public async Task Check_EmptyDirectory_NoData_Exits3()
     {
         var empty = _ws.CreateDirectory("empty");
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr).Contains("NODATA");
     }
 
@@ -145,11 +145,11 @@ public sealed class CliTests : IDisposable
     [Arguments("check")]
     [Arguments("diff")]
     [Arguments("snapshot")]
-    public async Task MissingPathArgument_PrintsUsage_Exits1(string command)
+    public async Task MissingPathArgument_PrintsUsage_Exits5(string command)
     {
         var (code, _, stderr) = await Run(command);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith($"error: missing path. Usage: dotcov {command}");
     }
 
@@ -173,7 +173,7 @@ public sealed class CliTests : IDisposable
     {
         var (code, stdout, stderr) = await Run(["check", NinetyPercent(), .. option.Split(' ')]);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).DoesNotContain("PASS");
         await Assert.That(stderr).StartsWith($"error: Unknown option '{option.Split(' ')[0]}' for 'check'.");
     }
@@ -191,7 +191,7 @@ public sealed class CliTests : IDisposable
 
         var (code, stdout, stderr) = await Run("check", covered, uncovered, "--min-line", "80");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).DoesNotContain("PASS");
         await Assert.That(stderr).StartsWith($"error: Unexpected argument '{uncovered}' for 'check'.");
     }
@@ -202,7 +202,7 @@ public sealed class CliTests : IDisposable
         // --keep only exempts files from --exclude-generated, so alone it would change nothing.
         var (code, _, stderr) = await Run("report", HalfCovered(), "--keep", "Program.cs");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated.");
     }
 
@@ -217,7 +217,7 @@ public sealed class CliTests : IDisposable
         // Only test forwards what follows '--'; anywhere else it would be dropped unread.
         var (code, stdout, stderr) = await Run(command, HalfCovered(), "--", "-c", "Release");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith($"error: Unknown option '--' for '{command}'.");
     }
@@ -227,7 +227,7 @@ public sealed class CliTests : IDisposable
     {
         var (code, stdout, stderr) = await Run("test", "--filter", "Slow");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith("error: Unknown option '--filter' for 'test'. Pass dotnet test arguments after '--'.");
     }
@@ -237,7 +237,7 @@ public sealed class CliTests : IDisposable
     {
         var (code, stdout, stderr) = await Run("test", "App.Tests.csproj", "-c", "Release");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith("error: Unexpected argument '-c' for 'test'. Pass dotnet test arguments after '--'.");
     }
@@ -249,7 +249,7 @@ public sealed class CliTests : IDisposable
     {
         var (code, stdout, stderr) = await Run("test", flag, value);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         // No echoed "> dotnet test" line: nothing was started.
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith($"error: Invalid {flag} value: '{value}'");
@@ -260,45 +260,45 @@ public sealed class CliTests : IDisposable
     [Test]
     [Arguments("--threshold", "abc")]
     [Arguments("--threshold", "NaN")]
-    public async Task Report_InvalidThreshold_Exits1(string flag, string value)
+    public async Task Report_InvalidThreshold_Exits5(string flag, string value)
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), flag, value);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains($"Invalid --threshold value: '{value}'");
     }
 
     [Test]
     [MatrixDataSource]
-    public async Task Check_InvalidThreshold_Exits1_AndNamesValue(
+    public async Task Check_InvalidThreshold_Exits5_AndNamesValue(
         [Matrix("--min-line", "--min-branch")] string flag,
         [Matrix("eighty", "NaN", "5%")] string value)
     {
         var (code, _, stderr) = await Run("check", HalfCovered(), flag, value);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith($"error: Invalid {flag} value: '{value}'");
     }
 
     // ── --format validation ──
 
     [Test]
-    public async Task Report_InvalidFormat_Exits1()
+    public async Task Report_InvalidFormat_Exits5()
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--format", "yaml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains("Invalid --format value: 'yaml'");
     }
 
     [Test]
-    public async Task Diff_InvalidFormat_Exits1()
+    public async Task Diff_InvalidFormat_Exits5()
     {
         var path = HalfCovered();
 
         var (code, _, stderr) = await Run("diff", path, path, "--format", "jsn");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains("Invalid --format value: 'jsn'");
     }
 
@@ -334,25 +334,25 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Report_MalformedXml_FriendlyError_Exits1()
+    public async Task Report_MalformedXml_FriendlyError_Exits5()
     {
         var path = _ws.Write("truncated.xml", "<coverage><packages><package");
 
         var (code, _, stderr) = await Run("report", path);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains(path);
     }
 
     [Test]
-    public async Task Report_EmptyFile_FriendlyError_Exits1()
+    public async Task Report_EmptyFile_FriendlyError_Exits5()
     {
         var path = _ws.Write("empty.xml", "");
 
         var (code, _, stderr) = await Run("report", path);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
     }
 
@@ -369,33 +369,33 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Report_NonexistentPath_FriendlyError_Exits1()
+    public async Task Report_NonexistentPath_FriendlyError_Exits5()
     {
         var (code, _, stderr) = await Run("report", "/no/such/path.xml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains("/no/such/path.xml");
     }
 
     [Test]
-    public async Task Diff_NonexistentSecondPath_FriendlyError_Exits1()
+    public async Task Diff_NonexistentSecondPath_FriendlyError_Exits5()
     {
         var (code, _, stderr) = await Run("diff", HalfCovered(), "/no/such/after.xml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains("/no/such/after.xml");
     }
 
     [Test]
-    public async Task Snapshot_MalformedXml_FriendlyError_Exits1()
+    public async Task Snapshot_MalformedXml_FriendlyError_Exits5()
     {
         var path = _ws.Write("bad.xml", "<coverage>");
 
         var (code, _, stderr) = await Run("snapshot", path);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
     }
 
@@ -407,7 +407,7 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", _ws.PathOf("scan"));
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains(bad);
     }
@@ -484,22 +484,22 @@ public sealed class CliTests : IDisposable
     // ── Upload failures ──
 
     [Test]
-    public async Task Report_UploadMalformedUrl_FriendlyError_Exits1()
+    public async Task Report_UploadMalformedUrl_FriendlyError_Exits5()
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "notaurl");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error: Upload failed: notaurl");
         await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
 
     [Test]
-    public async Task Snapshot_UploadConnectionRefused_Exits1_AfterWritingJson()
+    public async Task Snapshot_UploadConnectionRefused_Exits5_AfterWritingJson()
     {
         var (code, stdout, stderr) = await Run(
             "snapshot", HalfCovered(), "--commit", "abc123", "--upload", "http://127.0.0.1:1/x");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).Contains("abc123");
         // The missing --branch/--project warning follows; the upload error leads.
         await Assert.That(stderr).StartsWith("error: Upload failed: http://127.0.0.1:1/x");
@@ -507,7 +507,7 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Check_PassingGate_UploadFailure_Exits1()
+    public async Task Check_PassingGate_UploadFailure_Exits5()
     {
         // Two reports merge, so stderr also lists them; the upload error still leads.
         HalfCovered("up/a/coverage.cobertura.xml");
@@ -516,7 +516,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(
             "check", _ws.PathOf("up"), "--min-line", "40", "--upload", "http://127.0.0.1:1/x");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error: Upload failed");
     }
 
@@ -543,7 +543,7 @@ public sealed class CliTests : IDisposable
 
         var (code, stdout, stderr) = await Run("diff", path, path, "extra");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith("error: Unexpected argument 'extra' for 'diff'.");
     }
@@ -568,7 +568,7 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", _ws.PathOf("once"));
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains($"error: {bad}:");
         await Assert.That(stderr).DoesNotContain($"{bad}: {bad}:");
     }
@@ -618,7 +618,7 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Report_InvalidPattern_FriendlyError_Exits1()
+    public async Task Report_InvalidPattern_FriendlyError_Exits5()
     {
         // An invalid --pattern is rejected at the option boundary as a one-line CLI error,
         // never a stack trace.
@@ -626,7 +626,7 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("report", dir, "--pattern", "sub/coverage.xml");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains("Unsupported pattern");
     }
@@ -634,13 +634,13 @@ public sealed class CliTests : IDisposable
     // ── --max-chars ──
 
     [Test]
-    public async Task Report_MaxChars_BelowDocumentSize_FriendlyError_Exits1()
+    public async Task Report_MaxChars_BelowDocumentSize_FriendlyError_Exits5()
     {
         var path = HalfCovered();
 
         var (code, _, stderr) = await Run("report", path, "--max-chars", "10");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await AssertFriendlyError(stderr);
         await Assert.That(stderr).Contains(path);
         await Assert.That(stderr).Contains("MaxCharactersInDocument");
@@ -658,11 +658,11 @@ public sealed class CliTests : IDisposable
     [Arguments("abc")]
     [Arguments("-1")]
     [Arguments("1.5")]
-    public async Task Report_InvalidMaxChars_Exits1_AndNamesValue(string value)
+    public async Task Report_InvalidMaxChars_Exits5_AndNamesValue(string value)
     {
         var (code, _, stderr) = await Run("report", HalfCovered(), "--max-chars", value);
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains($"Invalid --max-chars value: '{value}'");
     }
 
@@ -675,7 +675,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run(
             "check", HalfCovered(), "--min-line", "40", "--max-chars", "10");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).StartsWith("error:");
         await Assert.That(stderr).DoesNotContain("FAIL");
     }
@@ -718,7 +718,7 @@ public sealed class CliTests : IDisposable
 
         var (code, _, stderr) = await Run("check", empty, "--min-line", "80");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr).Contains("NODATA");
         await Assert.That(stderr).DoesNotContain("files below line threshold");
     }
@@ -739,13 +739,13 @@ public sealed class CliTests : IDisposable
     // ── Unsupported upload scheme ──
 
     [Test]
-    public async Task Report_UploadUnsupportedScheme_FriendlyError_Exits1()
+    public async Task Report_UploadUnsupportedScheme_FriendlyError_Exits5()
     {
         // HttpClient throws NotSupportedException for non-http(s) schemes before any
         // connection is attempted — must be a one-liner, not an unhandled crash.
         var (code, _, stderr) = await Run("report", HalfCovered(), "--upload", "ftp://example.invalid/x");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stderr).Contains("Upload failed: ftp://example.invalid/x");
         await Assert.That(stderr).DoesNotContain("Unhandled exception");
     }
@@ -806,7 +806,11 @@ public sealed class CliTests : IDisposable
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).Contains("Exit codes:");
+        await Assert.That(stdout).Contains("1  FAIL:");
         await Assert.That(stdout).Contains("2  unknown command");
+        await Assert.That(stdout).Contains("3  NODATA:");
+        await Assert.That(stdout).Contains("4  DISABLED:");
+        await Assert.That(stdout).Contains("5  error:");
         await Assert.That(stdout).Contains("--pattern");
         await Assert.That(stdout).Contains("--max-chars");
     }

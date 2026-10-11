@@ -73,7 +73,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
 
         var (code, _, _) = await Run("check", empty, "--min-line", "80", "--github-summary");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(await File.ReadAllTextAsync(SummaryPath)).Contains("## Coverage Report ⚠️");
     }
 

@@ -32,7 +32,7 @@ default. For generic names such as gcovr's `coverage.xml`, select the filename e
 ## Commands
 
 ```bash
-dotcov report   TestResults/ --format table|json|md              # parse and render
+dotcov report   TestResults/ --format table                      # also json or md
 dotcov check    TestResults/ --min-line 80 --exclude-generated   # CI gate, exit 1 if below
 dotcov crap     TestResults/ --max-crap 6                        # per-method risk gate
 dotcov diff     before.xml after.xml --format md                 # compare two reports
@@ -57,31 +57,32 @@ It passes the coverage options of the runner `dotnet test` uses in the current d
 Microsoft.Testing.Platform the test project needs `Microsoft.Testing.Extensions.CodeCoverage`
 (TUnit includes it); on VSTest, `Microsoft.NET.Test.Sdk` brings the Code Coverage collector.
 Arguments after `--` go to `dotnet test` unchanged. Its output goes to stdout, so stderr still
-starts with the verdict. A failed test run exits `1` with `error:` and no coverage verdict.
+starts with the verdict. A failed test run exits `5` with `error:` and no coverage verdict.
 
 ## Exit codes
 
 The gate commands `check`, `crap`, and `test` return `0` only for a measured pass. Their outcomes and
-shared CLI errors are listed below. Branch on the first stderr token, not the message text:
+shared CLI errors have distinct exit codes:
 
 | Token | Meaning | Exit |
 |---|---|---|
 | `PASS:` | met the threshold | 0 |
 | `FAIL:` | below the threshold | 1 |
-| `NODATA:` | the gate lacks the data needed to evaluate | 1 |
-| `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 1 |
-| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
+| `NODATA:` | the gate lacks the data needed to evaluate | 3 |
+| `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 4 |
+| `error:` | missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 5 |
 | — | unknown command | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
-They do not require measured coverage or enforce thresholds. `report --threshold` affects
+A non-passing gate keeps its code if upload also fails.
+Reporting commands do not enforce thresholds. `report --threshold` affects
 presentation, not the exit code. Use `check` when CI must require measured coverage.
 
 An existing directory with no matching reports is valid empty input for reporting commands;
 a missing path or malformed report is an error. An empty `report` displays `no data` in
 Markdown and `-` for percentages in the table. Its JSON has `files: []`, zero totals, and no
 `lineRate` or `branchRate` fields. These represent missing measurements, not 0% coverage.
-For that same empty directory, `check --min-line 1` returns `NODATA:` and exits `1`.
+For that same empty directory, `check --min-line 1` returns `NODATA:` and exits `3`.
 
 ## Deciding what to test next
 

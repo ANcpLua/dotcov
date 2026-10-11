@@ -26,7 +26,7 @@ public sealed class DotCovCliTestCommandEdgeTests : IDisposable
 
         var run = await Dotcov(cancellationToken, "test", "missing.csproj");
 
-        await Assert.That(run.ExitCode).IsEqualTo(1);
+        await Assert.That(run.ExitCode).IsEqualTo(5);
         // No echoed "> dotnet test" line: nothing was started.
         await Assert.That(run.StdOut).IsEmpty();
         await Assert.That(run.StdErr).StartsWith("error: ");

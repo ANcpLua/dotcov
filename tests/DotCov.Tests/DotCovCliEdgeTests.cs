@@ -44,7 +44,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
 
     private static async Task AssertOneLineError(int code, string stdout, string stderr, string expectedStart)
     {
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(5);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith(expectedStart);
         await Assert.That(stderr).DoesNotContain("   at ");
@@ -60,7 +60,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
     public async Task EmptyPath_IsAMissingPathError_NotAnUnhandledException(string command)
     {
         // `dotcov check "$COVERAGE_DIR"` with the variable unset passes "". It gets the
-        // documented exit 1 for a missing path, not an unhandled crash with a stack trace.
+        // documented exit 5 for a missing path, not an unhandled crash with a stack trace.
         var (code, stdout, stderr) = await Run(command, "");
 
         await AssertOneLineError(code, stdout, stderr, "error: missing path");
@@ -270,7 +270,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
         // offender list follows even though the line rate sits below --min-line.
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "90", "--min-branch", "50");
 
-        await Assert.That(code).IsEqualTo(1);
+        await Assert.That(code).IsEqualTo(3);
         await Assert.That(stdout).IsEmpty();
         await Assert.That(stderr).StartsWith("NODATA: line 50.0% (min 90%), branch n/a (min 50%)");
         await Assert.That(stderr).DoesNotContain("files below line threshold");
