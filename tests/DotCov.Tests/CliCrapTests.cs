@@ -168,7 +168,7 @@ public sealed class CliCrapTests : IDisposable
 
         var (code, _, stderr) = await Run("crap", _ws.Root, "--pattern", "sub/dir/coverage.xml");
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         await Assert.That(stderr).StartsWith("error:");
         await Assert.That(stderr).Contains("Unsupported pattern");
     }
@@ -183,11 +183,11 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
-    public async Task Crap_NoArgs_Usage_Exits5()
+    public async Task Crap_NoArgs_Usage_Exits2()
     {
         var (code, _, stderr) = await Run("crap");
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         await Assert.That(stderr).StartsWith("error: missing path. Usage: dotcov crap");
     }
 
@@ -196,11 +196,11 @@ public sealed class CliCrapTests : IDisposable
     [Arguments("--top", "0")]
     [Arguments("--top", "-3")]
     [Arguments("--format", "yaml")]
-    public async Task Crap_InvalidFlagValue_Exits5(string flag, string value)
+    public async Task Crap_InvalidFlagValue_Exits2(string flag, string value)
     {
         var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), flag, value);
 
-        await Assert.That(code).IsEqualTo(5);
+        await Assert.That(code).IsEqualTo(2);
         await Assert.That(stderr).Contains("Invalid");
     }
 

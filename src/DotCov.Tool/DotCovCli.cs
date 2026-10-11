@@ -12,13 +12,15 @@ namespace DotCov.Tool;
 /// </summary>
 public static partial class DotCovCli
 {
+    /// <summary>Exit code for invalid command-line usage.</summary>
+    public const int UsageExitCode = 2;
     /// <summary>Exit code for an unrecognized command.</summary>
-    public const int UnknownCommandExitCode = 2;
+    public const int UnknownCommandExitCode = UsageExitCode;
     /// <summary>Exit code when a gate lacks the measurements it needs.</summary>
     public const int NoDataExitCode = 3;
     /// <summary>Exit code when all thresholds are disabled.</summary>
     public const int DisabledExitCode = 4;
-    /// <summary>Exit code for invalid input, IO, upload, badge, or test-run failures.</summary>
+    /// <summary>Exit code for report, IO, upload, badge, or test-run failures.</summary>
     public const int ErrorExitCode = 5;
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
@@ -53,12 +55,12 @@ public static partial class DotCovCli
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
             await stderr.WriteLineAsync($"error: {ex.Message}");
-            return ErrorExitCode;
+            return ex is UsageError ? UsageExitCode : ErrorExitCode;
         }
     }
 
     static bool IsExpectedFailure(Exception ex) =>
-        ex is CliError or XmlException or IOException or UnauthorizedAccessException;
+        ex is UsageError or CliError or XmlException or IOException or UnauthorizedAccessException;
 
     // Not async: each arm hands back its command's Task, so a synchronous command's exception
     // still surfaces inside RunAsync's try, and the switch stays one branch per command.
@@ -80,7 +82,7 @@ public static partial class DotCovCli
         command switch
         {
             "version" => Version(stdout),
-            "help" or "--help" or "-h" => Help(stdout),
+            "help" => Help(stdout),
             _ => UnknownCommand(command, stdout, stderr)
         };
 
@@ -89,19 +91,19 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
-            return ErrorExitCode;
+            return UsageExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
+        if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
 
         double? threshold = null;
         if (opts.TryGetValue("threshold", out var raw))
         {
-            if (!TryParsePercent("threshold", raw, stderr, out var parsed)) return ErrorExitCode;
+            if (!TryParsePercent("threshold", raw, stderr, out var parsed)) return UsageExitCode;
             threshold = parsed;
         }
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -131,17 +133,17 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
-            return ErrorExitCode;
+            return UsageExitCode;
         }
 
         if (!TryParsePercent("min-line", opts.GetValueOrDefault("min-line", "80"), stderr, out var minLine))
-            return ErrorExitCode;
+            return UsageExitCode;
 
         if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
-            return ErrorExitCode;
+            return UsageExitCode;
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
-        if (!TryGetBadgeDir(opts, stderr)) return ErrorExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
+        if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -219,19 +221,19 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             stderr.WriteLine("error: missing path. Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
-            return ErrorExitCode;
+            return UsageExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
+        if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
 
         // Default 30 — the original CRAP threshold (crap4j). A fully covered method scores its
         // own complexity, so a lower default fails well-tested code on complexity alone;
         // --max-crap 6 opts into that stricter gate.
         if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "30"), stderr, out var maxCrap))
-            return ErrorExitCode;
+            return UsageExitCode;
 
-        if (!TryGetTop(opts, stderr, out var top)) return ErrorExitCode;
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
+        if (!TryGetTop(opts, stderr, out var top)) return UsageExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var inputs = ResolveInputs(path, pattern);
         var parsed = CoberturaParser.ParseMethods(inputs, maxChars);
@@ -307,12 +309,12 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
         {
             stderr.WriteLine("error: missing path. Usage: dotcov diff <before> <after> [--format table|json|md]");
-            return ErrorExitCode;
+            return UsageExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
+        if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars);
         var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars);
@@ -335,10 +337,10 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
-            return ErrorExitCode;
+            return UsageExitCode;
         }
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -405,7 +407,7 @@ public static partial class DotCovCli
               test     [<project>] [--min-line N] [--min-branch N]        Run dotnet test with coverage into
                        [-- <dotnet test arguments>]                       a fresh TestResults/<run>, then
                                                                           report and gate it like check
-              version                                                     Show version
+              version, --version                                          Show version
 
             Shared flags (a flag the command does not use is an error, never ignored):
               --exclude-generated       Skip generated files, migrations, GlobalUsings.cs, Program.cs
@@ -437,10 +439,10 @@ public static partial class DotCovCli
             Exit codes:
               0  success; check, crap, and test require a measured pass
               1  FAIL: below a threshold
-              2  unknown command
+              2  usage error: unknown command/flag, invalid value, missing/extra argument
               3  NODATA: missing measurements
               4  DISABLED: no active threshold
-              5  error: invalid input, parse/IO/size-cap error, upload or badge write failure,
+              5  error: supplied path unavailable, parse/IO/size-cap error, upload or badge write failure,
                  failed test run
             A non-passing gate keeps its exit code even if an upload or badge write also fails.
 
@@ -469,6 +471,9 @@ public static partial class DotCovCli
     /// <summary>An expected CLI failure whose message is already user-ready (path included).</summary>
     sealed class CliError(string message, Exception? inner = null) : Exception(message, inner);
 
+    /// <summary>An invalid invocation, identified independently of diagnostic wording.</summary>
+    sealed class UsageError(string message) : Exception(message);
+
     // Mirror of the library defaults — these are the values the help text and READMEs document.
     const long DefaultMaxChars = 50_000_000;
 
@@ -479,11 +484,6 @@ public static partial class DotCovCli
     /// </summary>
     static IReadOnlyList<ReportInput> ResolveInputs(string path, ReportPattern pattern)
     {
-        // An empty argument (an unset shell variable) names no path; the resolver would reject
-        // it with an ArgumentException meant for programming errors, not with a CLI error.
-        if (path.Length is 0)
-            throw new CliError("missing path: the path argument is empty.");
-
         try
         {
             return ReportResolver.Resolve(path, pattern);
@@ -565,10 +565,9 @@ public static partial class DotCovCli
         pattern = ReportPattern.Default;
         maxChars = DefaultMaxChars;
 
-        // A CliError rather than a stderr line: the pattern only matters once a directory is
-        // scanned, and the "error:" prefix is the documented discriminator for could-not-run.
+        // Invalid option syntax is a usage error, independent of whether the input exists.
         if (opts.TryGetValue("pattern", out var rawPattern) && !ReportPattern.TryParse(rawPattern, out pattern!))
-            throw new CliError($"Unsupported pattern '{rawPattern}': only 'filename' and '**/filename' are supported.");
+            throw new UsageError($"Unsupported pattern '{rawPattern}': only 'filename' and '**/filename' are supported.");
 
         if (opts.TryGetValue("max-chars", out var raw) &&
             // NumberStyles.None: digits only — a sign or separator makes the value invalid,
@@ -705,12 +704,9 @@ public static partial class DotCovCli
             await stderr.WriteLineAsync($"error: Upload failed: {url} ({response.StatusCode})");
             return ErrorExitCode;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or NotSupportedException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            // InvalidOperationException/UriFormatException: malformed or relative URL.
-            // TaskCanceledException: the 30-second timeout above.
-            // NotSupportedException: documented HttpClient behavior for non-http(s) schemes
-            // (e.g. ftp://) — thrown before any connection is attempted.
+            // Transport failure or the 30-second timeout; URL syntax was validated before IO.
             await stderr.WriteLineAsync($"error: Upload failed: {url} ({ex.Message})");
             return ErrorExitCode;
         }
@@ -721,6 +717,8 @@ public static partial class DotCovCli
     // a gate cannot pass on defaults nobody asked for. help and version take none.
     static readonly Dictionary<string, HashSet<string>> AcceptedOptions = new(StringComparer.Ordinal)
     {
+        ["help"] = [],
+        ["version"] = [],
         ["report"] = Accept("file", "format", "threshold", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
         ["check"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload", "badge-dir"),
         ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", "exclude-generated", "keep", "pattern", "max-chars", "github-summary"),
@@ -738,21 +736,26 @@ public static partial class DotCovCli
         if (!AcceptedOptions.TryGetValue(command, out var accepted)) return;
 
         if (forwarded is not null && command is not "test")
-            throw new CliError($"Unknown option '--' for '{command}'.");
+            throw new UsageError($"Unknown option '--' for '{command}'.");
 
         foreach (var (key, value) in options)
         {
-            if (accepted.Contains(key)) continue;
+            if (accepted.Contains(key))
+            {
+                if (value.Length is 0 && (IsPathSlot(command, key) || key.Equals("metrics", StringComparison.OrdinalIgnoreCase)))
+                    throw new UsageError("missing path: the path argument is empty.");
+                continue;
+            }
 
             // Parse files every path beyond the ones a command takes as "arg<N>".
             if (key.StartsWith("arg", StringComparison.Ordinal) &&
                 int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
-                throw new CliError(command is "test"
+                throw new UsageError(command is "test"
                     ? $"Unexpected argument '{value}' for 'test'. Pass dotnet test arguments after '--'."
                     : $"Unexpected argument '{value}' for '{command}'. To merge several reports, pass their directory.");
 
             var equalsSign = key.IndexOf('=');
-            throw new CliError(equalsSign > 0
+            throw new UsageError(equalsSign > 0
                 // A valueless flag written with a value: the space-separated form would fail
                 // again, its value becoming a stray positional argument.
                 ? ValuelessFlags.Contains(key[..equalsSign])
@@ -765,11 +768,15 @@ public static partial class DotCovCli
 
         // What the dictionary cannot show: a flag that got no value, or one spelled like a path.
         if (malformed.Count > 0)
-            throw new CliError(malformed[0]);
+            throw new UsageError(malformed[0]);
+
+        if (options.TryGetValue("upload", out var url) &&
+            (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
+            throw new UsageError($"Invalid --upload value: '{url}' (expected an absolute http(s) URL).");
 
         // --keep only exempts files from --exclude-generated; on its own it would change nothing.
         if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated"))
-            throw new CliError("--keep only applies together with --exclude-generated.");
+            throw new UsageError("--keep only applies together with --exclude-generated.");
     }
 
     // Flags that never take a value. Recorded as "true" the moment the token is seen, so a
@@ -788,7 +795,7 @@ public static partial class DotCovCli
     {
         if (raw.Length is 0) return ("help", [], []);
 
-        var command = raw[0];
+        var command = raw[0] switch { "--version" => "version", "--help" or "-h" => "help", _ => raw[0] };
         var parsed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var malformed = new List<string>();
         string? pendingKey = null;
@@ -820,6 +827,8 @@ public static partial class DotCovCli
             }
             else
             {
+                if (raw[i].StartsWith('-'))
+                    malformed.Add($"Unknown option '{raw[i]}' for '{command}'.");
                 var key = positional switch
                 {
                     0 => command is "diff" ? "before" : "file",
