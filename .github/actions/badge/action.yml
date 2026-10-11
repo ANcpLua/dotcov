@@ -2,13 +2,21 @@ name: dotcov coverage badge
 description: >-
   Gate Cobertura coverage with dotcov check, render the verdict as coverage-badge.svg and
   coverage-badge.json, and publish both to a branch. Run it after your tests; publishing needs
-  `permissions: contents: write` and a checkout with persisted credentials.
+  `permissions: contents: write` and a checkout with persisted credentials. Or publish a badge
+  your build's gate already rendered, with badge-directory.
 author: ANcpLua
 
 inputs:
   reports:
-    description: Cobertura report file or directory, as `dotcov check` takes it.
-    required: true
+    description: Cobertura report file or directory, as `dotcov check` takes it. Required unless badge-directory is set.
+    default: ''
+  badge-directory:
+    description: >-
+      Publish the coverage-badge.svg and coverage-badge.json a gate already wrote here, from
+      `dotcov check --badge-dir` or the Fallout component's `--coverage-badge-directory`, instead
+      of running dotcov. That gate owns the verdict: the gate inputs are ignored, and the step
+      fails only when the files are missing or cannot be published.
+    default: ''
   pattern:
     description: Report file name to scan a directory for ('filename' or '**/filename'). Empty uses dotcov's default.
     default: ''
@@ -34,7 +42,7 @@ inputs:
     default: 'true'
   version:
     description: dotcov.tool version to install.
-    default: '1.6.0'
+    default: '1.6.1'
   command:
     description: >-
       Command that runs dotcov instead of installing it, split on whitespace, e.g.
@@ -43,7 +51,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: Exit code of `dotcov check` (0 PASS, 1 FAIL, 3 NODATA, 4 DISABLED, 5 error).
+    description: Exit code of `dotcov check` (0 PASS, 1 FAIL, 3 NODATA, 4 DISABLED, 5 error); empty with badge-directory.
     value: ${{ steps.badge.outputs.exit-code }}
   directory:
     description: Directory holding coverage-badge.svg and coverage-badge.json; empty when none was written.
@@ -57,6 +65,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/badge.sh"
       env:
         DOTCOV_REPORTS: ${{ inputs.reports }}
+        DOTCOV_BADGE_DIRECTORY: ${{ inputs.badge-directory }}
         DOTCOV_PATTERN: ${{ inputs.pattern }}
         DOTCOV_MIN_LINE: ${{ inputs.min-line }}
         DOTCOV_MIN_BRANCH: ${{ inputs.min-branch }}

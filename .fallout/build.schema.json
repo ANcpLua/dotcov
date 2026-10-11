@@ -111,6 +111,10 @@
   "allOf": [
     {
       "properties": {
+        "BadgeDirectory": {
+          "type": "string",
+          "description": "Directory Coverage writes coverage-badge.svg and coverage-badge.json to, for every outcome"
+        },
         "Before": {
           "type": "string",
           "description": "Baseline Cobertura file or directory for Diff"

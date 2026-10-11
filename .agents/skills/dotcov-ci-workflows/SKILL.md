@@ -31,12 +31,16 @@ description: >-
    - Coverage uses the shared project settings described in the
      [test guide](../../../tests/CLAUDE.md). Consume reports from the intended
      run only; missing measurements cannot produce a passing badge or gate.
-   - The badge comes from the badge action's gate over the same reports and
-     thresholds as the coverage gate, and still runs when that gate failed, so a
-     drop turns it red. Badge writes remain restricted to Ubuntu pushes to `main`.
+   - The coverage gate (`fallout Coverage --badge-directory`) draws the badge,
+     NODATA when a src project is missing from the report; its thresholds live
+     in `build/Build.cs` only. The badge action publishes that directory and
+     still runs when the gate failed, so a drop turns the badge red. Badge
+     writes remain restricted to Ubuntu pushes to `main`.
      Preserve same-repository checks before privileged auto-merge or branch
      deletion; a branch prefix alone does not establish trust.
-4. Validate affected local behavior through the documented Fallout targets.
+4. Run `actionlint` and `shellcheck .github/actions/badge/badge.sh`; the
+   `build` job runs both and fails on any finding. Validate affected local
+   behavior through the documented Fallout targets.
    Inspect trigger, dependency, and permission changes separately: local tests
    do not exercise GitHub event handling. Report untested event paths explicitly.
 
