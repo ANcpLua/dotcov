@@ -91,13 +91,15 @@ public readonly record struct GateResult(
     /// 1999/2500 against a minimum of 80 renders <c>79.9%</c>, not the self-contradictory
     /// <c>FAIL: line 80.0% (min 80%)</c>.
     /// </remarks>
-    public override string ToString()
-    {
-        var line = FormatRate(LineRate, LineBelowThreshold);
-        var branch = FormatRate(BranchRate, BranchBelowThreshold);
-        return Invariant($"{Outcome.ToString().ToUpperInvariant()}: line {line} (min {MinLinePercent}%), ") +
-               Invariant($"branch {branch} (min {MinBranchPercent}%) - {Reason}");
-    }
+    public override string ToString() =>
+        Invariant($"{Outcome.ToString().ToUpperInvariant()}: line {LineRateText} (min {MinLinePercent}%), ") +
+        Invariant($"branch {BranchRateText} (min {MinBranchPercent}%) - {Reason}");
+
+    /// <summary>The line rate as <see cref="ToString"/> prints it: one decimal, floored when it missed its minimum, <c>n/a</c> when unmeasured.</summary>
+    internal string LineRateText => FormatRate(LineRate, LineBelowThreshold);
+
+    /// <summary>The branch rate as <see cref="ToString"/> prints it.</summary>
+    internal string BranchRateText => FormatRate(BranchRate, BranchBelowThreshold);
 
     private static string FormatRate(double? rate, bool belowThreshold)
     {

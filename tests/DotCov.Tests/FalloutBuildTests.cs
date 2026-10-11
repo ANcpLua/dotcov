@@ -259,6 +259,82 @@ public sealed class FalloutBuildTests : IDisposable
         await Assert.That(run.Output).Contains("Coverage gate passed");
     }
 
+    // ── Badge ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    [Arguments("40", false, true, "50.0%", "brightgreen")]
+    [Arguments("80", false, false, "50.0%", "red")]
+    [Arguments("0", false, false, "disabled", "yellow")]
+    [Arguments("80", true, false, "no data", "lightgrey")]
+    public async Task BadgeDirectory_WritesTheGateBadge_ForEveryOutcome(
+        string minLine, bool empty, bool passes, string message, string color, CancellationToken cancellationToken)
+    {
+        if (empty) _ws.Write("TestResults/coverage.cobertura.xml", Cobertura.NewDoc()); else WriteHalfCovered();
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", minLine, "--coverage-badge-directory", "out/badge");
+
+        await Assert.That(run.ExitCode is 0).IsEqualTo(passes).Because(run.Output);
+        await AssertBadge(_ws.PathOf("out/badge"), message, color);
+    }
+
+    [Test]
+    public async Task BadgeDirectory_Absolute_IsUsedAsGiven(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+        var directory = _ws.PathOf("elsewhere/badge");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-badge-directory", directory);
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await AssertBadge(directory, "50.0%", "brightgreen");
+    }
+
+    [Test]
+    public async Task BadgeDirectory_Unset_WritesNoBadge(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(Directory.EnumerateFiles(_ws.Root, "coverage-badge.*", SearchOption.AllDirectories)).IsEmpty();
+    }
+
+    [Test]
+    public async Task BadgeDirectory_Unwritable_FailsAPassingGate(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+        _ws.Write("blocked", "a file where the directory should go");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-badge-directory", "blocked");
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("Coverage gate passed, but its badge could not be written:");
+        await Assert.That(run.Output).DoesNotContain("Coverage gate passed: PASS");
+    }
+
+    [Test]
+    public async Task BadgeDirectory_Unwritable_KeepsTheFailingVerdict(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+        _ws.Write("blocked", "a file where the directory should go");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "80", "--coverage-badge-directory", "blocked");
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("Could not write coverage badge to blocked:");
+        await Assert.That(run.Output).Contains("Coverage below threshold: FAIL: line 50.0% (min 80%)");
+    }
+
+    private static async Task AssertBadge(string directory, string message, string color)
+    {
+        var svg = await File.ReadAllTextAsync(Path.Combine(directory, "coverage-badge.svg"));
+        var json = await File.ReadAllTextAsync(Path.Combine(directory, "coverage-badge.json"));
+
+        await Assert.That(svg).Contains($">{message}</text>");
+        await Assert.That(json).IsEqualTo($$"""{"schemaVersion":1,"label":"Coverage","message":"{{message}}","color":"{{color}}"}""");
+    }
+
     // ── Target graph ──────────────────────────────────────────────────────────
 
     [Test]

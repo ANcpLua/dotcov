@@ -49,11 +49,11 @@ library API, and the Fallout component's parameters and outcomes.
 | Command | Effect |
 |---|---|
 | `dotcov report <path>` | Parse and render as `table`, `json`, or `md`; `--threshold N` highlights files below N% |
-| `dotcov check <path>` | CI gate on `--min-line` (default `80`) and `--min-branch` (default `0`) |
+| `dotcov check <path>` | CI gate on `--min-line` (default `80`) and `--min-branch` (default `0`); `--badge-dir <dir>` writes the verdict as a [badge](#badge) |
 | `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `30`), `--top N`, `--metrics <file>` |
 | `dotcov diff <before> <after>` | Per-file deltas plus lines that flipped in files the change never touched |
 | `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the reports it read |
-| `dotcov test [<project>]` | Runs `dotnet test` with Microsoft Code Coverage into a fresh `TestResults/<run>`, then reports and gates it like `check`; arguments after `--` go to `dotnet test` |
+| `dotcov test [<project>]` | Runs `dotnet test` with Microsoft Code Coverage into a fresh `TestResults/<run>`, then reports and gates it like `check`, `--badge-dir` included; arguments after `--` go to `dotnet test` |
 
 `<path>` is a file or a directory. `--github-summary` appends the markdown block to
 `$GITHUB_STEP_SUMMARY` on pass **and** fail, `--upload <url>` POSTs the JSON payload to an
@@ -74,7 +74,7 @@ errors are listed below.
 | `FAIL:` | Below a threshold | 1 |
 | `NODATA:` | The gate lacks the data needed to evaluate | 3 |
 | `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 4 |
-| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 5 |
+| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload or badge write failure, failed test run | 5 |
 | — | Unknown command | 2 |
 
 Use `check` when CI must require measured coverage. Branch on the exit code. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
@@ -83,6 +83,52 @@ host, never `62,0%`.
 
 Parsing is streaming `XmlReader`: no full-DOM load, DTDs ignored (never processed), external
 resolution disabled, and a 50,000,000-character cap per file (`--max-chars`; `0` disables it).
+
+## Badge
+
+`check` and `test` write their verdict as a badge with `--badge-dir <dir>`: `coverage-badge.svg`
+and `coverage-badge.json`, for every outcome. The colour is the gate's outcome: green for `PASS`,
+red for `FAIL`, grey for `NODATA`, yellow for `DISABLED`. The message is the line rate, and the
+branch rate too when `--min-branch` is above `0` (`100.0% / 98.5%`), rounded down like the
+verdict when it falls short. A branch rate below its minimum turns the badge red even at
+`100.0%` lines.
+
+In GitHub Actions, one step after your tests gates the reports and publishes the badge to a
+`badges` branch, which it creates on first use:
+
+```yaml
+permissions:
+  contents: write
+
+steps:
+  # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
+  - uses: ANcpLua/dotcov/.github/actions/badge@v1.6.0
+    with:
+      reports: TestResults
+      min-line: 80
+      min-branch: 60
+      # Publish from main only; pull requests render and gate without pushing.
+      publish: ${{ github.ref == 'refs/heads/main' }}
+```
+
+Then show it in your README:
+
+```markdown
+![Coverage](https://raw.githubusercontent.com/<owner>/<repo>/badges/coverage-badge.svg)
+```
+
+To render it through shields.io instead, use
+`https://img.shields.io/endpoint?url=<raw url of coverage-badge.json>`.
+
+The step commits only when the badge's contents change, then fails unless the gate passed.
+`fail-on-gate: false` keeps `FAIL`, `NODATA` and `DISABLED` green; an error such as an unreadable
+report still fails. The other inputs are `pattern`, `args` (further `dotcov check` flags, such as
+`--exclude-generated`), `branch`, `version` (the `DotCov.Tool` version to install), and `command`
+(run a dotcov you built instead); see [action.yml](.github/actions/badge/action.yml).
+
+A private repository cannot serve the image from its own branch: GitHub's image proxy fetches
+README images without credentials, and shields.io cannot read the JSON either. A badge hosted
+publicly renders, but shows your coverage number to anyone.
 
 ## Contributing
 
@@ -97,5 +143,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.5.0.md) ·
+[Release notes](docs/releases/1.6.0.md) ·
 [MIT](LICENSE)

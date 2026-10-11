@@ -26,6 +26,8 @@ public static partial class DotCovCli
         if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
             return ErrorExitCode;
 
+        if (!TryGetBadgeDir(opts, stderr)) return ErrorExitCode;
+
         // A fresh directory per run, so the gate reads this run's reports and nothing an earlier
         // run left behind. Created up front: a run that writes no report is NODATA, not a
         // missing path.
