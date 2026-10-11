@@ -135,6 +135,9 @@ def verify_badges(args):
 
 
 if __name__ == "__main__":
+    # Jest emits Unicode on Windows even when Python inherits a legacy code page.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     measurement = commands.add_parser("measure")

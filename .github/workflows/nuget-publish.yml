@@ -267,6 +267,7 @@ jobs:
             .consumer-results/cli-*/coverage-badge.*
           if-no-files-found: error
           retention-days: 7
+          include-hidden-files: true
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
