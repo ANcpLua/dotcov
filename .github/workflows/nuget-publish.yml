@@ -319,6 +319,11 @@ jobs:
       - name: Verify deterministic pydash timing and failure detection
         if: matrix.target == 'pydash'
         run: python -m pytest .github/tests/test_pydash_clock.py -q
+      - name: Verify real pydash timer threads and concurrency
+        if: matrix.target == 'pydash'
+        run: >-
+          python -m pytest .github/tests/test_pydash_threads.py -q
+          --junitxml=.readme-thread-results/tests.xml
       - name: Build the current DotCov CLI
         run: dotnet build src/DotCov.Tool/DotCov.Tool.csproj -c Release
       - name: Reproduce coverage at the README badge's recorded commit
@@ -355,6 +360,7 @@ jobs:
             .readme-badge-results/*.json
             .readme-badge-results/*.svg
             .readme-badge-results/cli-badge/coverage-badge.*
+            .readme-thread-results/*.xml
             .github/tests/readme-badges/
           if-no-files-found: error
           include-hidden-files: true

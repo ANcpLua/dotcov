@@ -74,7 +74,8 @@ These checks also run on Linux, Windows, and macOS and publish a matching DotCov
 local test origin. The saved service records bind the reference percentages to the source
 commits, so later changes to a moving upstream badge cannot change the expected result.
 Pydash collects line coverage only; the existing consumer matrix separately verifies Python
-branch coverage and failing gates.
+branch coverage and failing gates. Pydash also runs separate real-thread tests on all three
+hosts for timer cancellation, callback locking, concurrent callers, and maximum wait.
 
 Reports are generated from each real test run and retained as CI artifacts. See the
 [consumer test notes](.github/tests/README.md) for measured counts and reproduction details.
