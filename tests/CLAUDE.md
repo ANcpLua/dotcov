@@ -79,6 +79,10 @@ den Repository-Wrapper ebenfalls als echten Prozess: Parameter, Eingaben und Exi
 - Geteilte Fixtures nur für bewusst gemeinsam genutzten, parallel sicheren Zustand.
   Für einfache zustandslose Objekte keine künstliche asynchrone Initialisierung einführen.
 - Temp-Verzeichnisse über `TempWorkspace`, Kindprozesse über `ChildProcess`.
+- `BadgeActionTests` laufen auch unter Windows und wählen dort explizit Git for Windows' Bash
+  statt eines möglichen WSL-Bash auf PATH. Die `badge-action`-CI-Matrix prüft zusätzlich die
+  Composite Action mit dem veröffentlichten Tool auf Linux, Windows und macOS; Pushes gehen
+  ausschließlich an ein lokales Bare-Repository.
 
 ## Isolation messen
 

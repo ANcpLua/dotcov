@@ -72,7 +72,7 @@ public static partial class Ansi
 
     [SupportedOSPlatform("windows")]
     [ExcludeFromCodeCoverage(Justification =
-        "Windows-only Win32 console interop; the guard branches are unreachable on the Linux/macOS CI matrix.")]
+        "Windows-only Win32 console interop; the guard branches are unreachable in Linux/macOS coverage runs.")]
     private static void EnableWindowsVt()
     {
         const int StdOutputHandle = -11;
@@ -86,19 +86,16 @@ public static partial class Ansi
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [SupportedOSPlatform("windows")]
-    [ExcludeFromCodeCoverage]
     private static partial IntPtr GetStdHandle(int nStdHandle);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
-    [ExcludeFromCodeCoverage]
     private static partial bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]
-    [ExcludeFromCodeCoverage]
     private static partial bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 
     #endregion

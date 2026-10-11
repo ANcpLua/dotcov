@@ -23,6 +23,9 @@ description: >-
    the distinction between PR/main validation and release-triggered packing
    and publication. DotCov's Linux/Windows test matrix applies to ordinary CI;
    Fallout upstream's release-only cross-platform policy does not apply here.
+   The `badge-action` Linux/Windows/macOS matrix invokes the composite action with
+   its default tool installation against a local bare origin; preserve that isolation
+   and its publication dependency so validation never recreates GitHub's `badges` branch.
 3. Preserve the observable contracts:
    - Publication depends on build, tests, and both package groups. Keep the
      `nuget` environment and trusted-publishing authentication intact.
