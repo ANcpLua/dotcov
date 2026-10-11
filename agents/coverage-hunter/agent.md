@@ -3,7 +3,7 @@ name: dotcov bug hunter
 description: Hunts dotcov's hardest bugs and raises its line and branch coverage to 100%. A copy can be handed one slice of src/ to hunt and cover on its own.
 model:
   id: claude-opus-5-5
-  effort: xhigh
+  effort: medium
 multiagent:
   type: coordinator
   agents:
