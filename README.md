@@ -68,6 +68,7 @@ out the commit recorded by Coveralls and compares fresh coverage with that publi
 | Language | Project and pinned README | Published reference | DotCov match |
 |---|---|---|---|
 | TypeScript | [compare-versions 6.1.1](https://github.com/omichelsen/compare-versions/blob/98e81116ef4197b42dca8c3fde8d1e8166e2a81f/README.md) | [Coveralls build 68651498](https://coveralls.io/builds/68651498) | 100%; 245/245 lines, 88/88 branches; 339 tests |
+| TypeScript async | [peek-readable 5.4.2](https://github.com/Borewit/peek-readable/blob/9cef754de7baad45e43195bbb35bd9bbf30abbc9/README.md) | [Coveralls build 71980502](https://coveralls.io/builds/71980502) | 205/209 lines, 54/57 branches; all 29 tests, real timers |
 | Python | [pydash 8.1.0](https://github.com/dgilland/pydash/blob/f46de3669742c075e5379c1e193c86c1c2c70dc2/README.rst) | [Coveralls build 81442862](https://coveralls.io/builds/81442862) | 100%; 2,607/2,607 lines in the published Python 3.12 run; 2,274 tests |
 
 These checks also run on Linux, Windows, and macOS and publish a matching DotCov badge to a
@@ -76,6 +77,15 @@ commits, so later changes to a moving upstream badge cannot change the expected 
 Pydash collects line coverage only; the existing consumer matrix separately verifies Python
 branch coverage and failing gates. Pydash also runs separate real-thread tests on all three
 hosts for timer cancellation, callback locking, concurrent callers, and maximum wait.
+
+
+Peek-readable tests asynchronous stream reads, delayed delivery through native Node timers,
+and cancellation of pending reads. Its clocks, timers, source, and test assertions remain
+unchanged. Exact published counts are mandatory; both line and branch 100% gates must fail
+on its real misses, with red action badges. Its passing DotCov badge is `98.1% / 94.7%`.
+Coveralls combines lines and branches into `97.37%` (displayed as `97%`); CI checks that
+calculation separately instead of treating different metrics as the same percentage.
+DotCov's own 100% line and branch requirement remains unchanged.
 
 Reports are generated from each real test run and retained as CI artifacts. See the
 [consumer test notes](.github/tests/README.md) for measured counts and reproduction details.

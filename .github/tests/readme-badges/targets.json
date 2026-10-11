@@ -17,5 +17,16 @@
     "job_url": "https://coveralls.io/jobs/187016260.json",
     "upstream_job_url": "https://api.github.com/repos/dgilland/pydash/actions/jobs/99154667022",
     "tests": 2274
+  },
+  "peek-readable": {
+    "repository": "Borewit/peek-readable",
+    "commit": "9cef754de7baad45e43195bbb35bd9bbf30abbc9",
+    "readme": "README.md",
+    "badge_markup": "[![Coverage Status](https://coveralls.io/repos/github/Borewit/peek-readable/badge.svg?branch=master)](https://coveralls.io/github/Borewit/peek-readable?branch=master)",
+    "build_url": "https://coveralls.io/builds/71980502.json",
+    "upstream_run_url": "https://github.com/Borewit/peek-readable/actions/runs/13037934077",
+    "tests": 29,
+    "min_line": "98.086",
+    "min_branch": "94.736"
   }
 }
