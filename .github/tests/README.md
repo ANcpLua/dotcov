@@ -67,12 +67,13 @@ are installed. The badge phase is exercised by GitHub's composite-action runner 
 ## Published README badge comparisons
 
 `readme_badge_coverage.py` and the `readme-badge-coverage` matrix add an independent,
-published baseline to the fresh producer comparisons above. Both targets embed a coverage
+published baseline to the fresh producer comparisons above. All three targets embed a coverage
 badge in the README at the exact tested revision:
 
 | Target | Source commit | Published coverage behind the README badge |
 |---|---|---|
 | [compare-versions 6.1.1](https://github.com/omichelsen/compare-versions/blob/98e81116ef4197b42dca8c3fde8d1e8166e2a81f/README.md) | `98e81116ef4197b42dca8c3fde8d1e8166e2a81f` | [Coveralls build 68651498](https://coveralls.io/builds/68651498.json): 100%; 245/245 lines and 88/88 branches |
+| [peek-readable 5.4.2](https://github.com/Borewit/peek-readable/blob/9cef754de7baad45e43195bbb35bd9bbf30abbc9/README.md) | `9cef754de7baad45e43195bbb35bd9bbf30abbc9` | [Coveralls build 71980502](https://coveralls.io/builds/71980502.json): 205/209 lines, 54/57 branches; 97.36842105263158% combined |
 | [pydash 8.1.0](https://github.com/dgilland/pydash/blob/f46de3669742c075e5379c1e193c86c1c2c70dc2/README.rst) | `f46de3669742c075e5379c1e193c86c1c2c70dc2` | [Coveralls build 81442862](https://coveralls.io/builds/81442862.json) and [Python 3.12 job 187016260](https://coveralls.io/jobs/187016260.json): 100% |
 
 The evidence in [readme-badges](readme-badges/) was retrieved on 2026-10-11. Coveralls
@@ -80,14 +81,50 @@ records identify the repository, commit SHA, measured percentage, counts, and ba
 Author names, emails, and commit messages were omitted from the saved build responses.
 `targets.json` records the original endpoints and exact README image markup. CI verifies
 that markup still exists in the pinned checkout, checks `git rev-parse HEAD` against the
-service record, and compares exact fractions before checking the badge display. Both
-historical Coveralls records point to the saved `coveralls-100.svg`. Pydash's README uses
+service record, and compares exact counts before checking the badge display. Compare-versions
+and pydash point to the saved `coveralls-100.svg`; peek-readable points to `coveralls-97.svg`. Pydash's README uses
 a legacy Shields wrapper for that Coveralls result; the reference is the linked service's
 commit-specific result, not a request to the moving Shields endpoint.
 
 Compare-versions uses its original c8/Mocha coverage provider, npm lockfile, and Node 20
 (pinned here to 20.15.1). All 339 tests run. Its fresh native JSON, Cobertura/DotCov totals,
 and historical Coveralls line and branch totals must agree exactly.
+
+Peek-readable 5.4.2 uses its immutable Yarn 4.6.0 lockfile, TypeScript 5.7.3,
+c8 10.1.3, Mocha 11.1.0, and Node 20 (pinned to 20.18.2). The same upstream TypeScript
+build produces the JavaScript measured by its original report. All 29 tests run with zero
+failures or skips. Native JSON and DotCov must agree per file across all six compiled source
+files, and their totals must equal Coveralls' **205/209 lines and 54/57 branches** exactly.
+The saved build also links the source commit to the original GitHub Actions run.
+
+The full suite exercises promise-based Node and Web stream reads, end-of-stream and error
+handling, a real 500 ms Node stream delivery, and cancellation of a pending read. No timer,
+clock, callback, test assertion, or coverage report is replaced or rewritten. The upstream
+Web BYOB helper can deliver immediately despite receiving a delay argument; the native
+timer requirement deliberately applies to the Node stream cases, not to that helper.
+`peek_real_timers.cjs` is an observing Mocha hook outside the upstream coverage scope. It
+checks timer and clock identities around every test and uses `async_hooks` to require a
+real timer from the upstream stream helper and an executed callback before the delayed-read
+test completes. CI retains the audit JSON. Three isolated negative controls prove the hook
+rejects a replaced clock, a test without a native timer, and a timer that was not awaited;
+the controls contribute no coverage and do not modify the measured upstream suite.
+
+Coveralls includes branches in this project's headline: `(205 + 54) / (209 + 57)` gives
+97.36842105263158%, displayed as a 97% badge. Its published line and branch rates are
+98.08612440191388% and 94.73684210526316%. DotCov's badge displays these separately as
+`98.1% / 94.7%`; CI verifies both formats using the same published counts. The only tolerance
+is 1e-12 percentage points for Coveralls' serialized floating-point combined percentage;
+all four integer counts must match exactly. DotCov JSON's two-decimal display is checked
+separately from the exact fractions.
+
+The baseline CLI/action gates use 98.086% lines and 94.736% branches (published rates rounded
+down to three decimals), in addition to exact count equality. Independent 100% line and
+100% branch gates must reject the real misses. The real composite action must publish the
+passing green badge and both failing red badges with exit 1 and failed step outcomes.
+All three publications go to a local bare repository; exact JSON/SVG bytes and the three
+commits are checked. `continue-on-error` applies only to these expected failing actions;
+the following verification steps require their failures and cannot silently accept them.
+DotCov's own 100% line/branch gate and the other targets' gates are unchanged.
 
 Pydash uses Python 3.12 and the coverage.py 7.16.0 / pytest 9.1.1 / pytest-cov 7.1.0
 versions recorded in its published [Python 3.12 CI job](https://github.com/dgilland/pydash/actions/runs/33272967265/job/99154667022).
@@ -142,9 +179,9 @@ five-environment sum. Upstream did not collect branch coverage, and the test pre
 line-only mode. The existing ItsDangerous tests continue to verify Python branches and
 negative gates.
 
-All six new jobs also execute DotCov's 100% gate and the real composite badge action,
-assert a `100.0%` green line-coverage badge, and compare the published JSON/SVG bytes in a
-local bare origin. The jobs gate releases and retain the reports and reference evidence as
+The six compare-versions/pydash jobs also execute DotCov's 100% gate and the real composite
+badge action, assert a `100.0%` green line-coverage badge, and compare the published JSON/SVG
+bytes in a local bare origin. Together with the three peek-readable jobs, all nine jobs gate releases and retain the reports and reference evidence as
 artifacts. They read saved historical service evidence so external badge changes or service
 outages do not change the baseline. Updating a target requires refreshing its commit,
 README markup, service evidence, dependencies, and measured results together.

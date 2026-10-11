@@ -1,0 +1,19 @@
+{
+  "id": 71980502,
+  "repo_name": "Borewit/peek-readable",
+  "branch": "v5.4.2",
+  "url": "https://github.com/Borewit/peek-readable/actions/runs/13037934077",
+  "badge_url": "https://s3.amazonaws.com/assets.coveralls.io/badges/coveralls_97.svg",
+  "calculated_at": "2025-01-29T18:28:33Z",
+  "created_at": "2025-01-29T18:28:10Z",
+  "commit_sha": "9cef754de7baad45e43195bbb35bd9bbf30abbc9",
+  "updated_at": "2025-01-29T18:29:37Z",
+  "coverage_change": 0.0,
+  "covered_percent": 97.36842105263158,
+  "covered_lines": 205,
+  "missed_lines": 4,
+  "relevant_lines": 209,
+  "covered_branches": 54,
+  "missed_branches": 3,
+  "relevant_branches": 57
+}

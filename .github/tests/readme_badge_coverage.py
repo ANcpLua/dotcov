@@ -1,7 +1,7 @@
 """Reproduce coverage behind pinned upstream README badges, using saved public evidence."""
 
 import argparse
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 import json
 import os
 from pathlib import Path
@@ -29,11 +29,21 @@ def reference(target, root):
     assert published["repo_name"] == config["repository"]
     assert config["build_url"] == f"https://coveralls.io/builds/{published['id']}.json"
     assert published["relevant_lines"] > 0
-    percent = Decimal(str(published["covered_percent"]))
-    assert percent == Decimal(100) * published["covered_lines"] / published["relevant_lines"]
-    assert published["badge_url"] == "https://s3.amazonaws.com/assets.coveralls.io/badges/coveralls_100.svg"
-    texts = list(ET.parse(EVIDENCE / "coveralls-100.svg").getroot().itertext())
-    assert f"{percent.normalize():f}%" in texts, texts
+    percent = Decimal(100) * published["covered_lines"] / published["relevant_lines"]
+    published_percent = Decimal(str(published["covered_percent"]))
+    if target == "peek-readable":
+        # Coveralls includes branches in this project's headline percentage.
+        # Counts remain exact; only its serialized floating-point ratio is rounded.
+        combined = (Decimal(100) * (published["covered_lines"] + published["covered_branches"])
+                    / (published["relevant_lines"] + published["relevant_branches"]))
+        assert abs(published_percent - combined) < Decimal("1e-12")
+        assert published["url"] == config["upstream_run_url"]
+    else:
+        assert percent == published_percent
+    badge_percent = published_percent.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    assert published["badge_url"] == f"https://s3.amazonaws.com/assets.coveralls.io/badges/coveralls_{badge_percent}.svg"
+    texts = list(ET.parse(EVIDENCE / f"coveralls-{badge_percent}.svg").getroot().itertext())
+    assert f"{badge_percent}%" in texts, texts
     if target == "pydash":
         statuses = read_json(EVIDENCE / "pydash-statuses.json")
         assert statuses["sha"] == commit
@@ -58,16 +68,34 @@ def measure(args):
     config, published, percent = reference(args.target, root)
     output.mkdir(parents=True, exist_ok=False)
     report = output / "coverage.xml"
-    if args.target == "compare-versions":
+    if args.target in ("compare-versions", "peek-readable"):
         # Same c8/Mocha provider and locked dependencies as the published run.
         # Additional reporters expose the measurement; no source or test is changed.
+        env, hooks = os.environ.copy(), []
+        if args.target == "peek-readable":
+            for project in ("lib", "test"):
+                run(["node", root / "node_modules/typescript/bin/tsc", "-p", project], cwd=root)
+            env["DOTCOV_TIMER_AUDIT"] = str(output / "real-timers.json")
+            hooks = ["--require", Path(__file__).resolve().parent / "peek_real_timers.cjs"]
         run(["node", root / "node_modules/c8/bin/c8.js", "--reporter=lcov",
              "--reporter=cobertura", "--reporter=json-summary", f"--reports-dir={output}",
-             root / "node_modules/mocha/bin/mocha.js", "--reporter=json",
-             f"--reporter-option=output={output / 'tests.json'}"], cwd=root)
+             f"--temp-directory={output / 'v8'}",
+             root / "node_modules/mocha/bin/mocha.js", *hooks, "--reporter=json",
+             f"--reporter-option=output={output / 'tests.json'}"], cwd=root, env=env)
+        run(["git", "diff", "--exit-code", "HEAD"], cwd=root)
         tests = read_json(output / "tests.json")["stats"]
         assert tests["passes"] == tests["tests"] == config["tests"], tests
         assert tests["failures"] == tests["pending"] == 0, tests
+        if args.target == "peek-readable":
+            audit = read_json(output / "real-timers.json")
+            assert audit["testsChecked"] == config["tests"], audit
+            assert audit["nativeTimers"] is True, audit
+            assert [case["title"] for case in audit["timedTests"]] == [
+                "Matrix Node.js StreamReader Handle delayed read handle delay",
+                "Matrix Node.js StreamReader Handle delayed read abort async operation",
+            ], audit
+            assert all(case["scheduled"] > 0 for case in audit["timedTests"]), audit
+            assert audit["timedTests"][0]["fired"] > 0, audit
         (output / "cobertura-coverage.xml").rename(report)
         native = read_json(output / "coverage-summary.json")
         native.pop("total")
@@ -113,20 +141,43 @@ def measure(args):
     total = tuple(sum(value[index] for value in files.values()) for index in range(4))
     summary = actual["summary"]
     assert tuple(summary[key] for key in ["coveredLines", "totalLines", "coveredBranches", "totalBranches"]) == total
-    assert summary["hasBranchData"] == (args.target == "compare-versions")
-    if args.target == "compare-versions":
+    assert summary["hasBranchData"] == (args.target != "pydash")
+    if args.target != "pydash":
         assert total == tuple(published[key] for key in
                               ["covered_lines", "relevant_lines", "covered_branches", "relevant_branches"])
     # Compare the exact fraction, not a rounded display that could conceal misses.
     assert total[1] > 0 and Decimal(100) * total[0] / total[1] == percent
-    assert Decimal(str(summary["lineRate"])) == percent
-    text = run(["dotnet", tool, "check", report, "--min-line", percent,
-                "--min-branch", 100 if total[3] else 0, "--badge-dir", output / "cli-badge"])
-    assert "PASS:" in text
-    expected = {"target": args.target, "commit": config["commit"], "publishedPercent": str(percent),
-                "counts": total, "files": len(files), "publishedReport": config["build_url"]}
+    if args.target == "peek-readable":
+        assert Decimal(str(summary["lineRate"])) == percent.quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+        branch_percent = Decimal(100) * total[2] / total[3]
+        assert Decimal(str(summary["branchRate"])) == branch_percent.quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+        # Exact native/published integer equality above is mandatory. These gates
+        # additionally exercise the CLI at the baseline, to three decimal places.
+        minimum_line = percent.quantize(Decimal(".001"), rounding=ROUND_DOWN)
+        minimum_branch = branch_percent.quantize(Decimal(".001"), rounding=ROUND_DOWN)
+        assert str(minimum_line) == config["min_line"]
+        assert str(minimum_branch) == config["min_branch"]
+        messages = {"pass": f"{percent:.1f}% / {branch_percent:.1f}%",
+                    "line-fail": f"{percent.quantize(Decimal('.1'), rounding=ROUND_DOWN):.1f}% / {branch_percent:.1f}%",
+                    "branch-fail": f"{percent:.1f}% / {branch_percent.quantize(Decimal('.1'), rounding=ROUND_DOWN):.1f}%"}
+        for phase, line, branch, code in [("pass", minimum_line, minimum_branch, 0),
+                                          ("line-fail", 100, minimum_branch, 1),
+                                          ("branch-fail", minimum_line, 100, 1)]:
+            text = run(["dotnet", tool, "check", report, "--min-line", line, "--min-branch", branch,
+                        "--badge-dir", output / f"cli-{phase}"], expected=code)
+            assert ("PASS:" if code == 0 else "FAIL:") in text
+        badge_details = {"badgeMessages": messages}
+    else:
+        assert Decimal(str(summary["lineRate"])) == percent
+        text = run(["dotnet", tool, "check", report, "--min-line", percent,
+                    "--min-branch", 100 if total[3] else 0, "--badge-dir", output / "cli-badge"])
+        assert "PASS:" in text
+        badge_details = {"badgeMessages": {"pass": f"{percent:.1f}%"}}
+    expected = {"target": args.target, "commit": config["commit"],
+                "publishedPercent": str(published["covered_percent"]), "linePercent": str(percent),
+                "counts": total, "files": len(files), "publishedReport": config["build_url"], **badge_details}
     (output / "expected.json").write_text(json.dumps(expected, indent=2), encoding="utf-8")
-    print(f"README MATCH: {args.target}@{config['commit']}: published {percent}%, DotCov {summary['lineRate']}%; "
+    print(f"README MATCH: {args.target}@{config['commit']}: published line {percent}%, DotCov {summary['lineRate']}%; "
           f"lines {total[0]}/{total[1]}, branches {total[2]}/{total[3]}")
 
 
@@ -134,22 +185,27 @@ def badge(args):
     output = args.output.resolve()
     expected = read_json(output / "expected.json")
     directory = Path(os.environ["BADGE_DIRECTORY"])
-    assert os.environ["BADGE_CODE"] == "0"
+    passing = args.phase == "pass"
+    assert os.environ["BADGE_CODE"] == ("0" if passing else "1")
+    if not passing:
+        assert expected["target"] == "peek-readable"
+        assert os.environ["BADGE_OUTCOME"] == "failure"
     value = read_json(directory / "coverage-badge.json")
-    assert value["color"] == "brightgreen", value
-    assert value["message"] == f"{Decimal(expected['publishedPercent']):.1f}%", value
+    assert value["color"] == ("brightgreen" if passing else "red"), value
+    assert value["message"] == expected["badgeMessages"][args.phase], value
     svg = ET.parse(directory / "coverage-badge.svg").getroot()
-    assert "PASS" in svg.attrib["aria-label"]
+    assert ("PASS" if passing else "FAIL") in svg.attrib["aria-label"]
     origin = output / "origin.git"
-    assert run(["git", "--git-dir", origin, "rev-list", "--count", "badges"]).strip() == "1"
+    count = {"pass": "1", "line-fail": "2", "branch-fail": "3"}[args.phase]
+    assert run(["git", "--git-dir", origin, "rev-list", "--count", "badges"]).strip() == count
     assert run(["git", "--git-dir", origin, "ls-tree", "--name-only", "badges"]).splitlines() == [
         "coverage-badge.json", "coverage-badge.svg"]
     for suffix in ["json", "svg"]:
         name = f"coverage-badge.{suffix}"
         published = subprocess.check_output(["git", "--git-dir", str(origin), "show", f"badges:{name}"])
         assert published == (directory / name).read_bytes()
-        (output / f"published-{name}").write_bytes(published)
-    print(f"README BADGE MATCH: {expected['target']}: published {value['message']} to the local origin")
+        (output / f"published-{args.phase}-{name}").write_bytes(published)
+    print(f"README BADGE MATCH: {expected['target']} {args.phase}: published {value['message']} to the local origin")
 
 
 if __name__ == "__main__":
@@ -164,5 +220,6 @@ if __name__ == "__main__":
     measurement.add_argument("--output", type=Path, required=True)
     verification = commands.add_parser("badge")
     verification.add_argument("--output", type=Path, required=True)
+    verification.add_argument("--phase", choices=["pass", "line-fail", "branch-fail"], default="pass")
     args = parser.parse_args()
     (measure if args.command == "measure" else badge)(args)

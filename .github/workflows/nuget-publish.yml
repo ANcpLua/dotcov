@@ -277,14 +277,25 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        target: [compare-versions, pydash]
+        target: [compare-versions, pydash, peek-readable]
         include:
           - target: compare-versions
             repository: omichelsen/compare-versions
             revision: 98e81116ef4197b42dca8c3fde8d1e8166e2a81f
+            node: '20.15.1'
+            min-line: '100'
+            min-branch: '0'
           - target: pydash
             repository: dgilland/pydash
             revision: f46de3669742c075e5379c1e193c86c1c2c70dc2
+            min-line: '100'
+            min-branch: '0'
+          - target: peek-readable
+            repository: Borewit/peek-readable
+            revision: 9cef754de7baad45e43195bbb35bd9bbf30abbc9 # 5.4.2
+            node: '20.18.2'
+            min-line: '98.086'
+            min-branch: '94.736'
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -304,13 +315,22 @@ jobs:
         with:
           python-version: '3.12'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: matrix.target == 'compare-versions'
+        if: matrix.target != 'pydash'
         with:
-          node-version: '20.15.1'
+          node-version: ${{ matrix.node }}
       - name: Install upstream locked TypeScript dependencies
         if: matrix.target == 'compare-versions'
         working-directory: .readme-consumer
         run: npm ci --ignore-scripts
+      - name: Install upstream locked async TypeScript dependencies
+        if: matrix.target == 'peek-readable'
+        working-directory: .readme-consumer
+        run: npm exec --yes --package=@yarnpkg/cli-dist@4.6.0 -- yarn install --immutable
+      - name: Verify real timer enforcement rejects invalid tests
+        if: matrix.target == 'peek-readable'
+        env:
+          PEEK_PROJECT: .readme-consumer
+        run: node --test .github/tests/test_peek_real_timers.cjs
       - name: Install the published Python coverage toolchain
         if: matrix.target == 'pydash'
         run: |
@@ -337,19 +357,53 @@ jobs:
         run: |
           git init --bare .readme-badge-results/origin.git
           git remote set-url origin "$PWD/.readme-badge-results/origin.git"
-      - name: Publish the matching line-coverage badge
+      - name: Publish the matching coverage badge
         id: badge
         uses: ./.github/actions/badge
         with:
           reports: .readme-badge-results/coverage.xml
-          min-line: '100'
-          min-branch: '0'
+          min-line: ${{ matrix.min-line }}
+          min-branch: ${{ matrix.min-branch }}
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
       - name: Compare the action badge with the published upstream percentage
         env:
           BADGE_CODE: ${{ steps.badge.outputs.exit-code }}
           BADGE_DIRECTORY: ${{ steps.badge.outputs.directory }}
         run: python .github/tests/readme_badge_coverage.py badge --output .readme-badge-results
+      - name: Reject missing async TypeScript lines with a red badge
+        if: matrix.target == 'peek-readable'
+        id: line-fail-badge
+        continue-on-error: true
+        uses: ./.github/actions/badge
+        with:
+          reports: .readme-badge-results/coverage.xml
+          min-line: '100'
+          min-branch: ${{ matrix.min-branch }}
+          command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+      - name: Require the line gate failure and exact published badge
+        if: matrix.target == 'peek-readable'
+        env:
+          BADGE_CODE: ${{ steps.line-fail-badge.outputs.exit-code }}
+          BADGE_DIRECTORY: ${{ steps.line-fail-badge.outputs.directory }}
+          BADGE_OUTCOME: ${{ steps.line-fail-badge.outcome }}
+        run: python .github/tests/readme_badge_coverage.py badge --output .readme-badge-results --phase line-fail
+      - name: Reject missing async TypeScript branches with a red badge
+        if: matrix.target == 'peek-readable'
+        id: branch-fail-badge
+        continue-on-error: true
+        uses: ./.github/actions/badge
+        with:
+          reports: .readme-badge-results/coverage.xml
+          min-line: ${{ matrix.min-line }}
+          min-branch: '100'
+          command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+      - name: Require the branch gate failure and exact published badge
+        if: matrix.target == 'peek-readable'
+        env:
+          BADGE_CODE: ${{ steps.branch-fail-badge.outputs.exit-code }}
+          BADGE_DIRECTORY: ${{ steps.branch-fail-badge.outputs.directory }}
+          BADGE_OUTCOME: ${{ steps.branch-fail-badge.outcome }}
+        run: python .github/tests/readme_badge_coverage.py badge --output .readme-badge-results --phase branch-fail
       - name: Retain README badge comparison evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -359,7 +413,7 @@ jobs:
             .readme-badge-results/*.xml
             .readme-badge-results/*.json
             .readme-badge-results/*.svg
-            .readme-badge-results/cli-badge/coverage-badge.*
+            .readme-badge-results/cli-*/coverage-badge.*
             .readme-thread-results/*.xml
             .github/tests/readme-badges/
           if-no-files-found: error
