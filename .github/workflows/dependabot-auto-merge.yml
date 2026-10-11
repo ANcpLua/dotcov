@@ -1,0 +1,31 @@
+# Dependabot auto-merge — enables GitHub native auto-merge (squash) on Dependabot PRs.
+#
+# GitHub merges once the required status checks on main pass (build, test (ubuntu-latest),
+# test (windows-latest)); without required checks, native auto-merge has nothing to wait
+# for. Major version bumps stay open for review.
+#
+# Trust: the PR author must be dependabot[bot] and the run must be in this repository.
+# A fork PR runs pull_request with a read-only token and cannot merge.
+
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'ANcpLua/dotcov'
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Enable native auto-merge (squash)
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
