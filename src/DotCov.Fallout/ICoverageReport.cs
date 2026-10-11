@@ -80,7 +80,9 @@ public interface ICoverageReport : IFalloutBuild
             {
                 CoverageFormat.Json => JsonFormatter.Format(report),
                 CoverageFormat.Markdown => markdown.Value,
-                _ => TableFormatter.Format(report)
+                // Rendered from the gate below the table, so a failing dimension floors like the
+                // verdict: never TOTAL 100.0% beside "FAIL: line 99.9% (min 100%)".
+                _ => TableFormatter.Format(report, gate)
             };
             Log.Information("Coverage:\n{Output}", output);
 
@@ -108,14 +110,22 @@ public interface ICoverageReport : IFalloutBuild
     /// <summary>Parse at the target boundary: a malformed report fails the target naming the file and XML coordinates.</summary>
     private static CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars)
     {
+        CoverageReport? report = null;
+        ReportParseException? failure = null;
         try
         {
-            return CoberturaParser.Parse(inputs, maxChars);
+            report = CoberturaParser.Parse(inputs, maxChars);
         }
         catch (ReportParseException ex)
         {
-            Assert.Fail($"Could not parse coverage report {ex.SourceName} (line {ex.LineNumber}, position {ex.LinePosition}): {ex.Message}", ex);
-            throw;   // unreachable: Assert.Fail throws
+            failure = ex;
         }
+
+        // Failed outside the catch block, so no statement has to follow Assert.Fail, which
+        // throws: only a successful parse reaches the return.
+        if (failure is not null)
+            Assert.Fail($"Could not parse coverage report {failure.SourceName} (line {failure.LineNumber}, position {failure.LinePosition}): {failure.Message}", failure);
+
+        return report!;
     }
 }

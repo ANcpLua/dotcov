@@ -14,7 +14,9 @@ namespace DotCov;
 /// <item><c>&lt;M&gt;g__Local|0_0</c> → <c>M</c> (local function, on the type or a display class)</item>
 /// <item><c>&lt;&lt;M&gt;g__Local|0_0&gt;d</c> + <c>MoveNext</c> → <c>M</c> (async/iterator local-function state machine)</item>
 /// <item><c>Program/&lt;Main&gt;$</c> and <c>Program/&lt;&lt;Main&gt;$&gt;d__0</c> + <c>MoveNext</c> → <c>Program.Main</c> (top-level statements)</item>
-/// <item><c>Type`2</c> → <c>Type</c> (generic arity suffix)</item>
+/// <item><c>Type`2</c> → <c>Type</c> (generic arity suffix, display only: <c>Type</c> and <c>Type`2</c> stay distinct identities)</item>
+/// <item><c>&lt;&lt;-ctor&gt;b__0_0&gt;d</c>, <c>&lt;MyApp-IJob-RunAsync&gt;d__1</c> → <c>.ctor</c>, <c>MyApp.IJob.RunAsync</c>
+/// (Roslyn spells <c>.</c> as <c>-</c> inside synthesized TYPE names; method names keep the dot)</item>
 /// </list>
 /// Mangled names nest (an async lambda's state machine is <c>&lt;&lt;M&gt;b__0_0&gt;d</c>), so every
 /// bracket parse here matches the OUTER close bracket and re-normalizes the inner name.
@@ -30,21 +32,30 @@ internal static class MethodIdentity
     /// constructors, <c>SetStateMachine</c>, the non-<c>MoveNext</c> surface of iterator state
     /// machines, anonymous-type members — whose lines belong to no method a source file names.
     /// </summary>
+    /// <param name="typeKey">Display type identity, generic arity stripped: <c>Ns.Outer.Inner</c>.</param>
+    /// <param name="typeIdentity">
+    /// The same chain with generic arity kept (<c>Ns.Result`1</c>): <c>Result</c> and
+    /// <c>Result&lt;T&gt;</c> share a display name but are different types whose methods must
+    /// never merge.
+    /// </param>
     /// <param name="folded">
     /// True when the identity came from a synthetic container, meaning the signature/arity of
     /// the raw entry does not describe the origin method.
     /// </param>
     internal static bool TryNormalize(
-        string className, string methodName, out string typeKey, out string methodKey, out bool folded)
+        string className, string methodName,
+        out string typeKey, out string typeIdentity, out string methodKey, out bool folded)
     {
         typeKey = "";
+        typeIdentity = "";
         methodKey = "";
         folded = false;
 
         var (typeSegments, stateMachineOrigin, inSyntheticContainer) = ScanClassChain(className);
 
         if (typeSegments.Count is 0) return false;
-        typeKey = string.Join(".", typeSegments);
+        typeIdentity = string.Join(".", typeSegments);
+        typeKey = string.Join(".", typeSegments.Select(StripGenericArity));
 
         if (stateMachineOrigin is not null)
         {
@@ -81,7 +92,7 @@ internal static class MethodIdentity
 
     /// <summary>
     /// Walk the nested-class chain of an IL class name, collecting real type segments
-    /// (generic arity stripped) until a state-machine segment terminates the chain — anything
+    /// (generic arity kept) until a state-machine segment terminates the chain — anything
     /// nested deeper (a lambda inside an async method compiles into the state machine) is still
     /// that method's machinery. Synthetic containers (<c>&lt;&gt;c</c>,
     /// <c>&lt;&gt;c__DisplayClass0_0</c>, <c>&lt;&gt;o__</c> dynamic call sites,
@@ -109,10 +120,24 @@ internal static class MethodIdentity
             // Anything else nested inside a synthetic container is machinery, not a type name.
             if (inSyntheticContainer) continue;
 
-            typeSegments.Add(StripGenericArity(segment));
+            typeSegments.Add(segment);
         }
 
         return (typeSegments, null, inSyntheticContainer);
+    }
+
+    /// <summary>
+    /// The member name a Roslyn metrics display carries for a normalized method key.
+    /// MinimallyQualifiedFormat drops an explicit implementation's interface (IL
+    /// <c>System.IDisposable.Dispose</c> displays as <c>void Bag.Dispose()</c>) and shows a static
+    /// constructor exactly like a parameterless instance one (<c>Calc.Calc()</c>, read as
+    /// <c>.ctor</c>), so those are the names to look up.
+    /// </summary>
+    internal static string MetricsMemberName(string methodKey)
+    {
+        if (methodKey is ".cctor") return ".ctor";
+        var dot = BalancedText.LastIndexOfTopLevel(methodKey, '.');
+        return dot > 0 ? methodKey[(dot + 1)..] : methodKey;
     }
 
     /// <summary>
@@ -143,7 +168,9 @@ internal static class MethodIdentity
         if (close <= 1) return false;                              // "<>…" has no origin name
         var rest = segment.AsSpan(close + 1);
         if (!rest.SequenceEqual("d") && !rest.StartsWith("d__", StringComparison.Ordinal)) return false;
-        origin = NormalizeOrigin(segment[1..close]);
+        // A type name spells the origin's dots as '-' (`<<-ctor>b__0_0>d`,
+        // `<System-Collections-IEnumerable-GetEnumerator>d__3`); '-' is no identifier character.
+        origin = NormalizeOrigin(segment[1..close]).Replace('-', '.');
         return true;
     }
 

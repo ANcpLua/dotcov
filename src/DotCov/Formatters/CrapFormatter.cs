@@ -31,7 +31,8 @@ public static class CrapFormatter
         foreach (var m in rows)
         {
             var over = CrapAnalysis.Exceeds(m.Score, gate.MaxCrap);
-            var crapCell = Invariant($"{m.Score,8:F1}");
+            // One rounding rule with the verdict line (CrapGateResult.ToString): an offender rounds up.
+            var crapCell = Invariant($"{CrapAnalysis.DisplayScore(m.Score, gate.MaxCrap),8:F1}");
             sb.AppendLine(
                 $"{m.Method.PadRight(maxName)}  " +
                 Invariant($"{m.Complexity,5}  ") +
@@ -90,8 +91,11 @@ public static class CrapFormatter
         sb.AppendLine("| Method | Comp | Cov % | CRAP |");
         sb.AppendLine("|--------|-----:|------:|-----:|");
         foreach (var m in rows)
+        {
+            var over = CrapAnalysis.Exceeds(m.Score, gate.MaxCrap);
             sb.AppendLine(Invariant(
-                $"| `{m.Method}` | {m.Complexity} | {m.Coverage * 100:F1}% | {m.Score:F1}{(CrapAnalysis.Exceeds(m.Score, gate.MaxCrap) ? " ❌" : "")} |"));
+                $"| {MarkdownFormatter.TableCode(m.Method)} | {m.Complexity} | {m.Coverage * 100:F1}% | {CrapAnalysis.DisplayScore(m.Score, gate.MaxCrap):F1}{(over ? " ❌" : "")} |"));
+        }
         if (top is { } t && report.Methods.Count > t)
         {
             sb.AppendLine();
@@ -107,7 +111,7 @@ public static class CrapFormatter
             sb.AppendLine("### Unscored methods (no complexity source)");
             sb.AppendLine();
             foreach (var u in report.Unscored)
-                sb.AppendLine($"- `{u.Method}` — {u.Reason}");
+                sb.AppendLine($"- {MarkdownFormatter.Code(u.Method)} — {u.Reason}");
         }
 
         if (report.UnmatchedMetricsMembers.Count > 0)
@@ -116,7 +120,7 @@ public static class CrapFormatter
             sb.AppendLine("### Unmatched metrics members");
             sb.AppendLine();
             foreach (var name in report.UnmatchedMetricsMembers)
-                sb.AppendLine($"- `{name}`");
+                sb.AppendLine($"- {MarkdownFormatter.Code(name)}");
         }
     }
 
@@ -125,6 +129,9 @@ public static class CrapFormatter
     /// indentation, absent key == clean (empty lists omitted), hand-written tokens
     /// (no reflection — AOT/trim safe). Percentages are rounded to two decimals like the
     /// coverage JSON; the raw 0..1 ratio is recoverable from the hit counts upstream.
+    /// <c>gate.maxCrap</c> is <c>null</c> when the maximum is not a finite number (an infinite
+    /// <c>--max-crap</c> disables the gate): JSON cannot spell infinity, and the outcome says
+    /// <c>disabled</c>.
     /// </summary>
     public static string FormatJson(CrapReport report, CrapGateResult gate, int? top = null)
     {
@@ -135,7 +142,12 @@ public static class CrapFormatter
 
             writer.WriteStartObject("gate");
             writer.WriteString("outcome", gate.Outcome.ToString().ToLowerInvariant());
-            writer.WriteNumber("maxCrap", gate.MaxCrap);
+            // JSON has no Infinity or NaN, and Utf8JsonWriter throws on them. A non-finite max -
+            // above all the documented infinite --max-crap that disables the gate - is written as
+            // null: the mapping JSON.stringify applies, so the key keeps its number-or-null type
+            // for every consumer, while "outcome" ("disabled") and "reason" carry the meaning.
+            if (double.IsFinite(gate.MaxCrap)) writer.WriteNumber("maxCrap", gate.MaxCrap);
+            else writer.WriteNull("maxCrap");
             writer.WriteNumber("scoredMethods", gate.ScoredMethods);
             writer.WriteNumber("aboveThreshold", gate.AboveThreshold);
             if (gate.WorstScore is { } worst) writer.WriteNumber("worstScore", Round(worst));

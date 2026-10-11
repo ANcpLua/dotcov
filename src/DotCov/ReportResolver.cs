@@ -33,7 +33,9 @@ public static class ReportResolver
     /// Every file under <paramref name="directory"/> whose name matches the pattern, ordinal
     /// by full path. Hidden and system directories are searched too: CI drops reports under
     /// dot-folders, and a report that exists but is not found is a silent NoData. Missing or
-    /// inaccessible directories throw instead of being skipped.
+    /// inaccessible directories throw instead of being skipped. The name matches
+    /// case-insensitively on every host, so a pattern finds the same reports on Linux as on
+    /// Windows and macOS (ReportGenerator's <c>Cobertura.xml</c> included).
     /// </summary>
     public static IReadOnlyList<ReportInput> ResolveDirectory(string directory, ReportPattern pattern)
     {
@@ -47,7 +49,10 @@ public static class ReportResolver
         {
             RecurseSubdirectories = pattern.Recursive,
             AttributesToSkip = FileAttributes.None,
-            IgnoreInaccessible = false
+            IgnoreInaccessible = false,
+            // PlatformDefault matched case-sensitively on Linux only, so the same pattern found
+            // "Cobertura.xml" on Windows and macOS and silently missed it on a Linux runner.
+            MatchCasing = MatchCasing.CaseInsensitive
         };
 
         return Directory.EnumerateFiles(directory, pattern.FileName, options)

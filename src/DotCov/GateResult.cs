@@ -103,9 +103,15 @@ public readonly record struct GateResult(
     {
         if (rate is not { } r) return "n/a";
         var pct = r * 100;
-        // Floor at one decimal for a failing dimension; the epsilon keeps float noise a hair
-        // under a tenth boundary (61.999999999999996) from flooring an extra tenth down.
-        if (belowThreshold) pct = Math.Floor(pct * 10 + RateEpsilon) / 10;
+        if (belowThreshold) pct = FloorToTenth(pct);
         return Invariant($"{pct:F1}%");
     }
+
+    /// <summary>
+    /// The one display floor for a failing percentage: one decimal, rounded toward the verdict.
+    /// The epsilon keeps float noise a hair under a tenth boundary (61.999999999999996) from
+    /// flooring an extra tenth down. Shared by <see cref="ToString"/> and the formatters' gate
+    /// overloads so every surface prints the same failing number.
+    /// </summary>
+    internal static double FloorToTenth(double percent) => Math.Floor(percent * 10 + RateEpsilon) / 10;
 }

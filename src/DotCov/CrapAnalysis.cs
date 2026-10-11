@@ -60,11 +60,15 @@ public readonly record struct CrapGateResult(
     /// One-line invariant-formatted summary, e.g.
     /// <c>FAIL: worst CRAP 30.0 (max 6) - 2 of 12 methods above threshold</c>. The first stderr
     /// token (<c>PASS:</c>/<c>FAIL:</c>/<c>NODATA:</c>) matches the <c>check</c> command's
-    /// machine-readable discriminator convention.
+    /// machine-readable discriminator convention. Like <see cref="GateResult.ToString"/>, a
+    /// failing figure rounds toward the verdict (up, for this upper bound — see
+    /// <see cref="CrapAnalysis.DisplayScore"/>), so a FAIL never prints a worst score that reads
+    /// as at the threshold: 30.03 against 30 renders <c>30.1</c>, not
+    /// <c>FAIL: worst CRAP 30.0 (max 30)</c>.
     /// </summary>
     public override string ToString()
     {
-        var worst = WorstScore is { } w ? Invariant($"{w:F1}") : "n/a";
+        var worst = WorstScore is { } w ? Invariant($"{CrapAnalysis.DisplayScore(w, MaxCrap):F1}") : "n/a";
         return Invariant($"{Outcome.ToString().ToUpperInvariant()}: worst CRAP {worst} (max {MaxCrap}) - {Reason}");
     }
 }
@@ -156,10 +160,21 @@ public static class CrapAnalysis
     /// exactly at the threshold does NOT exceed it. The epsilon absorbs binary floating-point
     /// noise in the score so an exactly-met threshold passes — the same tolerance policy as
     /// <see cref="GateResult.MeetsThreshold"/>, whose <see cref="GateResult.RateEpsilon"/>
-    /// (GateResult owns that policy) is reused here, inverted for an upper bound.
+    /// (GateResult owns that policy) is reused here, inverted for an upper bound. Phrased as
+    /// "not at or below" so a NaN threshold fails closed, as it does for the line/branch gate.
     /// </summary>
     internal static bool Exceeds(double score, double maxCrap) =>
-        score > maxCrap + GateResult.RateEpsilon;
+        !(score <= maxCrap + GateResult.RateEpsilon);
+
+    /// <summary>
+    /// A score for one-decimal display, rounded toward its verdict: an offender rounds UP, so it
+    /// never prints as a value that reads at or below <paramref name="maxCrap"/> (30.03 against 30
+    /// renders <c>30.1</c>, not <c>30.0</c>); any other score is returned unchanged for ordinary
+    /// rounding. The epsilon keeps float noise just above a tenth (42.000000000000007) from
+    /// rounding an extra tenth up. The upper-bound mirror of <see cref="GateResult"/>'s flooring.
+    /// </summary>
+    internal static double DisplayScore(double score, double maxCrap) =>
+        Exceeds(score, maxCrap) ? Math.Ceiling(score * 10 - GateResult.RateEpsilon) / 10 : score;
 
     /// <summary>
     /// Score every method: fold compiler-synthesized methods into their source-method identity,
@@ -193,7 +208,8 @@ public static class CrapAnalysis
     /// <c>Frob(String)</c>) are distinct source methods, and collapsing them would dilute an
     /// uncovered overload's CRAP with a covered sibling's lines. Folded entries (state machines,
     /// lambdas) lost their origin's signature, so all synthetic material for one origin name
-    /// shares a single folded group.
+    /// shares a single folded group. Types key by their arity-preserving identity for the same
+    /// reason: <c>Result</c> and <c>Result`1</c> display alike but are different types.
     /// </summary>
     private static List<LogicalMethod> FoldRawEntries(IReadOnlyList<MethodCoverage> methods)
     {
@@ -205,18 +221,19 @@ public static class CrapAnalysis
             // Pure compiler infrastructure (display-class constructors, SetStateMachine, the
             // non-MoveNext surface of iterators) has no source-method identity to fold into —
             // and no lines a source method is missing.
-            if (!MethodIdentity.TryNormalize(mc.ClassName, mc.MethodName, out var typeKey, out var methodKey, out var folded))
+            if (!MethodIdentity.TryNormalize(mc.ClassName, mc.MethodName,
+                    out var typeKey, out var typeIdentity, out var methodKey, out var folded))
                 continue;
 
             int? arity = folded ? null : MethodIdentity.SignatureArity(mc.Signature);
 
             var key = folded
-                ? Invariant($"{typeKey}|{methodKey}|<folded>")
-                : Invariant($"{typeKey}|{methodKey}|{mc.Signature}");
+                ? Invariant($"{typeIdentity}|{methodKey}|<folded>")
+                : Invariant($"{typeIdentity}|{methodKey}|{mc.Signature}");
 
             if (!byKey.TryGetValue(key, out var logical))
             {
-                logical = new LogicalMethod(typeKey, methodKey, arity, folded, mc.File);
+                logical = new LogicalMethod(typeKey, typeIdentity, methodKey, arity, folded, mc.File);
                 byKey[key] = logical;
                 order.Add(logical);
             }
@@ -241,7 +258,7 @@ public static class CrapAnalysis
         foreach (var logical in order)
         {
             if (logical.Folded) continue;
-            var nameKey = $"{logical.TypeKey}|{logical.MethodKey}";
+            var nameKey = $"{logical.TypeIdentity}|{logical.MethodKey}";
             if (!byName.TryGetValue(nameKey, out var list)) byName[nameKey] = list = [];
             list.Add(logical);
         }
@@ -249,7 +266,7 @@ public static class CrapAnalysis
         foreach (var logical in order)
         {
             if (!logical.Folded) continue;
-            if (!byName.TryGetValue($"{logical.TypeKey}|{logical.MethodKey}", out var candidates) ||
+            if (!byName.TryGetValue($"{logical.TypeIdentity}|{logical.MethodKey}", out var candidates) ||
                 candidates.Count != 1)
                 continue;
 
@@ -331,9 +348,10 @@ public static class CrapAnalysis
         return methods.Where(m => !ExclusionRules.Excluded(m.File, rules, keepRules)).ToList();
     }
 
-    private sealed class LogicalMethod(string typeKey, string methodKey, int? arity, bool folded, string file)
+    private sealed class LogicalMethod(string typeKey, string typeIdentity, string methodKey, int? arity, bool folded, string file)
     {
         public readonly string TypeKey = typeKey;
+        public readonly string TypeIdentity = typeIdentity;
         public readonly string MethodKey = methodKey;
         public readonly int? Arity = arity;
         public readonly bool Folded = folded;
@@ -394,7 +412,9 @@ public static class CrapAnalysis
                 case CodeMetricsMemberKind.Property:
                     // Older Metrics versions emit no <Accessors> children; the property
                     // aggregate (sum over its accessors) is the honest-but-coarser fallback,
-                    // used only when no accessor entry matched.
+                    // used only when no accessor entry matched. An aggregate below 1 summed no
+                    // declared accessor (a positional record property) — nothing was measured.
+                    if (m.CyclomaticComplexity < 1) break;
                     accessorFallback.TryAdd($"{m.TypeName}|get_{m.MemberName}", i);
                     accessorFallback.TryAdd($"{m.TypeName}|set_{m.MemberName}", i);
                     break;
@@ -439,7 +459,7 @@ public static class CrapAnalysis
     {
         if (members is null) return null;
 
-        var key = $"{logical.TypeKey}|{logical.MethodKey}";
+        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.MethodKey)}";
         if (metricsIndex.TryGetValue(key, out var candidates))
         {
             // Overload disambiguation by arity when both sides know it. When arity is unknown

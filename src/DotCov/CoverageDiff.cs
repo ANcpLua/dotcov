@@ -34,7 +34,7 @@ public readonly record struct FileDelta
     {
         FileChangeKind.Removed => Before is { } b ? 0.0 - b : null,
         FileChangeKind.Added => After,
-        _ => (Before, After) is ({ } b, { } a) ? a - b : null
+        _ => (Before, After) is ({ } b, { } a) ? CoverageDiff.Movement(b, a) : null
     };
 
     /// <summary>
@@ -87,7 +87,7 @@ public readonly record struct FileDelta
     /// </summary>
     public static FileDelta Compared(string path, double? before, double? after) =>
         new(path, before, after,
-            (before, after) is ({ } b, { } a) && Math.Abs(a - b) >= CoverageDiff.MovementEpsilon
+            (before, after) is ({ } b, { } a) && Math.Abs(CoverageDiff.Movement(b, a)) >= CoverageDiff.MovementEpsilon
                 ? FileChangeKind.Modified
                 : FileChangeKind.Unchanged);
 }
@@ -197,7 +197,7 @@ public sealed class CoverageDiffResult(
     /// Movement between the two reports, or null when either side was unmeasured. A diff against
     /// an empty report is not a 100-point regression - it is not a comparison at all.
     /// </summary>
-    public double? Delta => AfterRate - BeforeRate;
+    public double? Delta => (BeforeRate, AfterRate) is ({ } b, { } a) ? CoverageDiff.Movement(b, a) : null;
 
     /// <summary>The files with <see cref="FileDelta.IsRegression"/> — the same rule, not a second one.</summary>
     public IEnumerable<FileDelta> Regressions => Files.Where(static f => f.IsRegression);
@@ -229,6 +229,18 @@ public static class CoverageDiff
     /// never disagree about whether coverage moved.
     /// </summary>
     public const double MovementEpsilon = 0.0001;
+
+    /// <summary>
+    /// The movement from <paramref name="before"/> to <paramref name="after"/>, the one
+    /// subtraction behind every delta and every Unchanged/Modified decision. Rates are ratios a
+    /// double cannot hold exactly, so a raw subtraction can land a rounding error short:
+    /// 5001/10000 - 5000/10000 gave 9.999999999998899E-05, and a movement of exactly
+    /// <see cref="MovementEpsilon"/> read as noise. Snapping to a 1e-15 grid - above that
+    /// representation error, far below the epsilon - restores exact movements without widening
+    /// the threshold; adding 0.0 turns a snapped -0.0 into +0.0.
+    /// </summary>
+    internal static double Movement(double before, double after) =>
+        Math.Round(after - before, 15, MidpointRounding.ToEven) + 0.0;
 
     /// <summary>
     /// Compare two reports. Detects added, removed, improved, and regressed files plus
@@ -317,9 +329,11 @@ public static class CoverageDiff
 
         if (afterOnlyByName.Count is 0) return pairs;
 
-        foreach (var group in beforeLookup.Keys
-                     .Where(k => !afterLookup.ContainsKey(k))
-                     .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal))
+        var beforeOnlyByName = beforeLookup.Keys
+            .Where(k => !afterLookup.ContainsKey(k))
+            .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal);
+
+        foreach (var group in beforeOnlyByName)
         {
             var befores = group.ToList();
             if (befores.Count is not 1) continue;   // ambiguous on the Before side

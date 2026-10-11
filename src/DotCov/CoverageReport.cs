@@ -31,7 +31,8 @@ public enum CoverageWarningKind
     /// <summary>
     /// A Cobertura <c>&lt;line&gt;</c> carried <c>branch="true"</c> but its
     /// <c>condition-coverage</c> attribute didn't match the <c>(covered/total)</c>
-    /// shape, or the numbers overflowed <see cref="int"/>. The parser drops the branch
+    /// shape, the numbers overflowed <see cref="int"/>, or it claimed more covered outcomes
+    /// than its total (e.g. <c>150% (3/2)</c>). The parser drops the branch
     /// entry; this warning makes the omission observable so emitter regressions
     /// (e.g. malformed Coverlet output) don't silently zero out branch coverage.
     /// </summary>
@@ -322,6 +323,19 @@ public readonly record struct FileCoverage(
     /// returning just <c>FileCoverage</c> was removed to keep the divergence-is-observable
     /// contract from being silently bypassed.
     /// </para>
+    /// <para>
+    /// Counts not backed by per-line data: a record built from counts alone (the positional
+    /// constructor) has no lines to union. For each dimension — lines, and branches — whose
+    /// counts a side's per-line data does not reproduce (<see cref="LineHits"/> for
+    /// <see cref="LinesHit"/>/<see cref="LinesTotal"/>, <see cref="BranchesByLine"/> for
+    /// <see cref="BranchesHit"/>/<see cref="BranchesTotal"/>), the merged hit and total are
+    /// each the <c>Math.Max</c> of those unbacked counts and what the per-line union yields,
+    /// so a merge never reports less than either side vouched for, and reconciling a
+    /// count-only record with itself keeps it. The unbacked counts are carried as merge
+    /// state rather than re-read from the merged counts, so the result does not depend on
+    /// the order reports are folded in. Records whose per-line data backs their counts on
+    /// both sides — everything the parser builds — merge exactly by line as described above.
+    /// </para>
     /// </summary>
     public (FileCoverage Merged, IReadOnlyList<CoverageWarning> Warnings) MergeWith(FileCoverage other)
     {
@@ -333,8 +347,42 @@ public readonly record struct FileCoverage(
         var mergedBranches = MergeBranches(other, warnings);
         var mergedConditions = MergeConditions(other, warnings);
 
-        return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions), warnings);
+        return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions,
+            MaxCounts(LineCountFloor, other.LineCountFloor),
+            MaxCounts(BranchCountFloor, other.BranchCountFloor)), warnings);
     }
+
+    /// <summary>
+    /// Merge-state floor for the line counts: the largest (hit, total) carried by any merged
+    /// record whose per-line data did not back them. Stored by <see cref="FromLineData"/>
+    /// (zero for parser output); for a hand-built record it is its own counts when
+    /// <see cref="LineHits"/> does not reproduce them, and zero when it does.
+    /// </summary>
+    internal (int Hit, int Total) LineCountFloor
+    {
+        get => _lineCountFloor ?? (LinesBackedByLineData ? default : (LinesHit, LinesTotal));
+        init => _lineCountFloor = value;
+    }
+
+    /// <summary>Branch twin of <see cref="LineCountFloor"/>, judged against <see cref="BranchesByLine"/>.</summary>
+    internal (int Hit, int Total) BranchCountFloor
+    {
+        get => _branchCountFloor ?? (BranchesBackedByLineData ? default : (BranchesHit, BranchesTotal));
+        init => _branchCountFloor = value;
+    }
+
+    private readonly (int Hit, int Total)? _lineCountFloor;
+    private readonly (int Hit, int Total)? _branchCountFloor;
+
+    private bool LinesBackedByLineData =>
+        LineHits.Count == LinesTotal && LineHits.Values.Count(static hits => hits > 0) == LinesHit;
+
+    private bool BranchesBackedByLineData =>
+        BranchesByLine.Values.Sum(static b => b.Covered) == BranchesHit &&
+        BranchesByLine.Values.Sum(static b => b.Total) == BranchesTotal;
+
+    private static (int Hit, int Total) MaxCounts((int Hit, int Total) a, (int Hit, int Total) b) =>
+        (Math.Max(a.Hit, b.Hit), Math.Max(a.Total, b.Total));
 
     /// <summary>Line-level branch union of two reports; a line whose <c>Total</c> differs adds a warning.</summary>
     private Dictionary<int, (int Covered, int Total)> MergeBranches(FileCoverage other, List<CoverageWarning> warnings)
@@ -453,13 +501,16 @@ public readonly record struct FileCoverage(
     /// from the raw dicts — one walk of the algorithm instead of two hand-synchronized copies.
     /// Wraps the dicts read-only so internal accumulator state never escapes mutable behind the
     /// <c>IReadOnly*</c> surface (a downcast mutation would silently desynchronize
-    /// <see cref="LineHits"/> from the precomputed aggregates).
+    /// <see cref="LineHits"/> from the precomputed aggregates). The count floors (zero for the
+    /// parser) raise each file-level count to at least the unbacked counts a merge carried.
     /// </summary>
     internal static FileCoverage FromLineData(
         string path,
         Dictionary<int, int> lineHits,
         Dictionary<int, (int Covered, int Total)> branchesByLine,
-        Dictionary<int, IReadOnlyDictionary<int, int>> conditionsByLine)
+        Dictionary<int, IReadOnlyDictionary<int, int>> conditionsByLine,
+        (int Hit, int Total) lineCountFloor = default,
+        (int Hit, int Total) branchCountFloor = default)
     {
         var linesHit = 0;
         var uncovered = new List<int>();
@@ -504,8 +555,13 @@ public readonly record struct FileCoverage(
         }
 
         var (strict, partial) = ClassifyLines(lineHits, presented);
-        return new FileCoverage(path, linesHit, lineHits.Count, branchesHit, branchesTotal)
+        // Counts never fall below what an unbacked count-only side vouched for (see MergeWith).
+        return new FileCoverage(path,
+            Math.Max(linesHit, lineCountFloor.Hit), Math.Max(lineHits.Count, lineCountFloor.Total),
+            Math.Max(branchesHit, branchCountFloor.Hit), Math.Max(branchesTotal, branchCountFloor.Total))
         {
+            LineCountFloor = lineCountFloor,
+            BranchCountFloor = branchCountFloor,
             LineHits = new ReadOnlyDictionary<int, int>(lineHits),
             BranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(presented),
             RawBranchesByLine = new ReadOnlyDictionary<int, (int Covered, int Total)>(branchesByLine),
@@ -612,7 +668,9 @@ public sealed class CoverageReport
         // Epsilon-tolerant so an exactly-met threshold passes: 29/100 lines against
         // --min-line 29 is a pass, not the self-contradictory "FAIL: line 29.0% (min 29%)"
         // that a raw `rate * 100 >= min` produces when the division lands a ulp low.
-        var lineOk = LineRate is { } lr && GateResult.MeetsThreshold(lr, minLinePercent);
+        // LineRate exists here: HasLineData was checked above. BranchRate may not: a NaN branch
+        // threshold is neither "> 0" (so no NoData above) nor "<= 0", and must fail, not throw.
+        var lineOk = GateResult.MeetsThreshold(LineRate!.Value, minLinePercent);
         var branchOk = minBranchPercent <= 0 ||
                        (BranchRate is { } br && GateResult.MeetsThreshold(br, minBranchPercent));
 
@@ -730,7 +788,10 @@ public sealed class CoverageReport
             .GroupBy(PathIdentity.FileNameOf, StringComparer.Ordinal)
             .ToDictionary(static g => g.Key, static g => g.ToList(), StringComparer.Ordinal);
 
-        foreach (var pa in a.Files.Select(static f => f.Path).Where(p => !bPaths.Contains(p)))
+        // Hoisted out of the foreach header: a capturing lambda there is compiled with a
+        // per-call delegate cache whose hit branch no input can take.
+        var aOnly = a.Files.Select(static f => f.Path).Where(p => !bPaths.Contains(p));
+        foreach (var pa in aOnly)
         {
             if (!bOnlyByName.TryGetValue(PathIdentity.FileNameOf(pa), out var candidates)) continue;
             foreach (var pb in candidates)

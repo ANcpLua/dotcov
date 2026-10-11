@@ -89,8 +89,13 @@ class Build : FalloutBuild
             var directory = RootDirectory / "artifacts" / _runId;
             Directory.CreateDirectory(directory);
             var path = directory / "snapshot.json";
+            // A detached HEAD (pull-request checkouts, bisect, worktrees) has no branch, and a null
+            // argument crashed the target; without --branch the CLI stamps 'unknown' and warns.
+            List<string> args = ["snapshot", Input, "--commit", repository.Commit, "--project", "dotcov"];
+            if (repository.Branch is { } branch)
+                args.AddRange(["--branch", branch]);
             await using (var output = new StreamWriter(path))
-                await RunDotCov(["snapshot", Input, "--commit", repository.Commit, "--branch", repository.Branch, "--project", "dotcov"], output);
+                await RunDotCov([.. args], output);
             Log.Information("Snapshot: {Path}", path);
         });
 

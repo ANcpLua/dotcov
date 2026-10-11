@@ -45,6 +45,7 @@ public static partial class CoberturaParser
         var methods = new MethodCollector();
         foreach (var input in inputs)
         {
+            ArgumentNullException.ThrowIfNull(input);
             using var stream = input.OpenStream();
             try
             {
@@ -133,15 +134,19 @@ public static partial class CoberturaParser
 
             public MethodCoverage Materialize()
             {
+                // Range seeded from the first line, not from 0: line 0 is a real line, and a
+                // 0 sentinel let the next line overwrite it (lines 0..2 reported StartLine 2).
                 var linesHit = 0;
-                var start = 0;
-                var end = 0;
+                var start = int.MaxValue;
+                var end = int.MinValue;
                 foreach (var (line, hits) in _lineHits)
                 {
                     if (hits > 0) linesHit++;
-                    if (start is 0 || line < start) start = line;
-                    if (line > end) end = line;
+                    start = Math.Min(start, line);
+                    end = Math.Max(end, line);
                 }
+
+                if (_lineHits.Count is 0) start = end = 0;   // documented: 0 when the method carries no lines
 
                 return new MethodCoverage(
                     key.ClassName, key.MethodName, key.Signature, key.File,

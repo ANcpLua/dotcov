@@ -9,7 +9,30 @@ public static class TableFormatter
 {
     public static string Format(CoverageReport report) => Format(report, color: false);
 
-    public static string Format(CoverageReport report, bool color)
+    public static string Format(CoverageReport report, bool color) =>
+        Render(report, color, lineFloorBelow: null, branchFloorBelow: null);
+
+    /// <inheritdoc cref="Format(CoverageReport, GateResult, bool)"/>
+    public static string Format(CoverageReport report, GateResult gate) => Format(report, gate, color: false);
+
+    /// <summary>
+    /// Render the report next to an already-evaluated <see cref="GateResult"/>, flooring exactly
+    /// what <see cref="MarkdownFormatter.Format(CoverageReport, GateResult)"/> floors: in a
+    /// dimension the gate failed, the TOTAL cell and every file cell below the missed minimum
+    /// round toward the verdict (one decimal, floor), so a 19999/20000 TOTAL beside
+    /// <c>FAIL: line 99.9% (min 100%)</c> reads <c>99.9%</c>, never <c>100.0%</c>. Passing
+    /// dimensions and passing files keep normal rounding, so a passing gate renders
+    /// byte-identical to <see cref="Format(CoverageReport, bool)"/>. Presentation only: the gate
+    /// is not re-evaluated, and no verdict line is appended.
+    /// </summary>
+    public static string Format(CoverageReport report, GateResult gate, bool color) =>
+        Render(report, color,
+            lineFloorBelow: gate.LineBelowThreshold ? gate.MinLinePercent : null,
+            branchFloorBelow: gate.BranchBelowThreshold ? gate.MinBranchPercent : null);
+
+    /// <param name="lineFloorBelow">The missed line minimum when the gate failed lines, else null.</param>
+    /// <param name="branchFloorBelow">The missed branch minimum when the gate failed branches, else null.</param>
+    private static string Render(CoverageReport report, bool color, double? lineFloorBelow, double? branchFloorBelow)
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
@@ -22,9 +45,9 @@ public static class TableFormatter
         foreach (var f in report.Files.WorstFirst())
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
-            var linePct = Pct(f.LineRate);
+            var linePct = Pct(f.LineRate, Below(f.LineRate, lineFloorBelow));
             var branches = (f.HasBranchData ? $"{f.BranchesHit}/{f.BranchesTotal}" : "-").PadLeft(10);
-            var branchPct = Pct(f.BranchRate);
+            var branchPct = Pct(f.BranchRate, Below(f.BranchRate, branchFloorBelow));
 
             // Branch cells route through pen.Rate unconditionally: BranchRate is null exactly
             // when the file has no branch data, and a null rate falls to the pen's dim arm.
@@ -39,10 +62,10 @@ public static class TableFormatter
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
         var totalLines = $"{report.TotalLinesHit}/{report.TotalLines}".PadLeft(10);
-        var totalLinePct = Pct(report.LineRate);
+        var totalLinePct = Pct(report.LineRate, floor: lineFloorBelow is not null);
         var totalBranches = (report.HasBranchData
             ? $"{report.TotalBranchesHit}/{report.TotalBranches}" : "-").PadLeft(10);
-        var totalBranchPct = Pct(report.BranchRate);
+        var totalBranchPct = Pct(report.BranchRate, floor: branchFloorBelow is not null);
 
         sb.AppendLine(
             $"{pen.Bold("TOTAL".PadRight(maxPath))}  " +
@@ -108,8 +131,14 @@ public static class TableFormatter
 
     // The one fixed-width percent cell every rate column uses: right-aligned to 8 chars,
     // dash-padded when the rate is unmeasured (null), always invariant-formatted.
-    private static string Pct(double? rate) =>
-        rate is { } r ? Invariant($"{r * 100,7:F1}%") : "       -";
+    // A failing cell floors through GateResult's one display policy (FloorToTenth).
+    private static string Pct(double? rate, bool floor = false) =>
+        rate is { } r ? Invariant($"{(floor ? GateResult.FloorToTenth(r * 100) : r * 100),7:F1}%") : "       -";
+
+    // Same per-file rule as the markdown gate overload and the CLI offender list: only a file
+    // genuinely below the missed minimum floors its cell.
+    private static bool Below(double? rate, double? missedMinimum) =>
+        missedMinimum is { } min && rate is { } r && !GateResult.MeetsThreshold(r, min);
 
     // The one delta cell policy, shared by per-file rows and the TOTAL row (and matching the
     // markdown formatter's sign convention): sign rendered as part of the number — '+' for

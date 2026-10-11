@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.RegularExpressions;
 using System.Xml;
 
@@ -154,9 +155,15 @@ public static partial class CoberturaParser
         {
             case "source":
                 if (reader.IsEmptyElement) return;
-                if (!await reader.ReadAsync() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
-                RecordSource(await reader.GetValueAsync(), document);
-                ct.ThrowIfCancellationRequested();
+                var sourceDepth = reader.Depth;
+                string? root = null;
+                while (await reader.ReadAsync())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (reader.Depth == sourceDepth) break;   // </source>
+                    if (IsOwnText(reader, sourceDepth)) root += await reader.GetValueAsync();
+                }
+                if (root is not null) RecordSource(root, document);
                 break;
             case "class":
                 if (CreateClassContext(reader, document, files, methods: null) is not { } context) return;
@@ -180,14 +187,28 @@ public static partial class CoberturaParser
     /// roots is a second resolution convention, so it counts toward the multi-root warning and
     /// keeps its document-order slot (the FIRST declared root wins resolution). Respellings of
     /// one root are deduplicated so they cannot fake that multiplicity.
+    /// <para>
+    /// The root is the element's own character content: every text and CDATA child,
+    /// concatenated. A comment or processing instruction splits that text without ending it,
+    /// and nested elements are not part of it; an element with no text declares no root.
+    /// <c>ReadSubtree</c> leaves the reader on the closing tag, so the next root is not skipped.
+    /// </para>
     /// </summary>
     private static void ConsumeSource(XmlReader reader, DocumentContext document)
     {
-        if (reader.IsEmptyElement) return;
-        if (!reader.Read() || reader.NodeType is not (XmlNodeType.Text or XmlNodeType.CDATA)) return;
+        string? root = null;
+        using (var sub = reader.ReadSubtree())
+        {
+            while (sub.Read())
+                if (IsOwnText(sub, elementDepth: 0)) root += sub.Value;
+        }
 
-        RecordSource(reader.Value, document);
+        if (root is not null) RecordSource(root, document);
     }
+
+    /// <summary>A text or CDATA node that is a direct child of the element at <paramref name="elementDepth"/>.</summary>
+    private static bool IsOwnText(XmlReader reader, int elementDepth) =>
+        reader.Depth == elementDepth + 1 && reader.NodeType is (XmlNodeType.Text or XmlNodeType.CDATA);
 
     private static void RecordSource(string value, DocumentContext document)
     {
@@ -248,7 +269,13 @@ public static partial class CoberturaParser
                     break;
 
                 case (XmlNodeType.Element, "line"):
-                    if (!TryDecodeLine(sub, file, document, out var line)) break;
+                    if (!TryDecodeLine(sub, file, document, out var line))
+                    {
+                        // A skipped line takes its nested <condition>s with it; they must not
+                        // attach to the previous branched line.
+                        fileAcc?.SkipLine();
+                        break;
+                    }
                     fileAcc?.AddLine(sub, line, file, document);
                     _methodAcc?.AddLine(line);
                     break;
@@ -295,6 +322,9 @@ public static partial class CoberturaParser
         {
             if (long.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h))
                 hits = (int)Math.Clamp(h, int.MinValue, int.MaxValue);
+            else if (BigInteger.TryParse(hitsAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var huge))
+                // An integer beyond even long (an unsigned 64-bit counter) saturates the same way.
+                hits = huge.Sign < 0 ? int.MinValue : int.MaxValue;
             else
                 document.Warn(new CoverageWarning(
                     CoverageWarningKind.MalformedHits,
@@ -389,7 +419,11 @@ public static partial class CoberturaParser
                 // A report whose ONLY declared root is the no-op sentinel exposes no roots at
                 // all — lone <source>.</source> adds no identity information. Mixed declarations
                 // keep the sentinel so Merge can tell ('.', '/real') apart from ('/real').
-                SourceRoots = document.SourceRoots is [""] ? [] : document.SourceRoots
+                // (Count/index rather than a list pattern: the pattern's null test can never
+                // fail on this readonly field.)
+                SourceRoots = document.SourceRoots.Count is 1 && document.SourceRoots[0].Length is 0
+                    ? []
+                    : document.SourceRoots
             };
         }
     }
@@ -411,6 +445,9 @@ public static partial class CoberturaParser
         // branched <line>. In document order conditions follow their line, so they are
         // attributed to the most recent branched line; -1 means "no per-condition detail".
         private int _conditionLine = -1;
+
+        /// <summary>A <c>&lt;line&gt;</c> that could not be decoded: conditions that follow belong to no line.</summary>
+        public void SkipLine() => _conditionLine = -1;
 
         public void AddLine(XmlReader reader, LineData line, string file, DocumentContext document)
         {
@@ -471,6 +508,11 @@ public static partial class CoberturaParser
         }
     }
 
+    /// <summary>
+    /// Read <c>(covered/total)</c> from a <c>condition-coverage</c> value. A fraction claiming
+    /// more covered outcomes than the line has is malformed like any other unreadable value:
+    /// accepting it put BranchesHit above BranchesTotal (a &gt;100% branch rate).
+    /// </summary>
     private static bool TryParseConditionCoverage(string cond, out int covered, out int total)
     {
         covered = 0;
@@ -478,7 +520,8 @@ public static partial class CoberturaParser
         var match = ConditionPattern().Match(cond);
         if (!match.Success) return false;
         return int.TryParse(match.Groups[1].ValueSpan, CultureInfo.InvariantCulture, out covered) &&
-               int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total);
+               int.TryParse(match.Groups[2].ValueSpan, CultureInfo.InvariantCulture, out total) &&
+               covered <= total;
     }
 
     // coverlet's per-<condition> `coverage` is the percentage of that branch's outcomes hit.
