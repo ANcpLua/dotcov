@@ -23,7 +23,7 @@ public sealed class RepositoryBuildTests : IDisposable
     {
         var report = HalfCovered();
 
-        var run = await Run(cancellationToken, "Coverage", "--reports", report, "--min-line", threshold);
+        var run = await Run(cancellationToken, "Coverage", "--reports", report, "--min-line", threshold, "--min-branch", "0");
 
         await Assert.That(run.ExitCode is 0).IsEqualTo(passes).Because(run.Output);
         await Assert.That(run.Output).Contains(verdict);
@@ -49,7 +49,7 @@ public sealed class RepositoryBuildTests : IDisposable
         _workspace.Write("src/Tests/Tests.csproj", "<Project />");
         _workspace.Write("src/Dropped/Dropped.csproj", "<Project />");
 
-        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40");
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40", "--min-branch", "0");
 
         await Assert.That(run.ExitCode).IsNotEqualTo(0);
         await Assert.That(run.Output).Contains("Coverage report has no package for: Dropped");
@@ -61,7 +61,7 @@ public sealed class RepositoryBuildTests : IDisposable
     {
         _workspace.Write("src/Tests/Tests.csproj", "<Project />");
 
-        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40");
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40", "--min-branch", "0");
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         await Assert.That(run.Output).Contains("PASS:");

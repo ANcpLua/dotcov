@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Text.Json;
 using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
@@ -27,6 +28,19 @@ public sealed class DotCovCliEdgeTests : IDisposable
     /// <summary>50% line coverage, no branch data.</summary>
     private string HalfCovered(string relative = "half.cobertura.xml") =>
         _ws.Write(relative, Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0)));
+
+    private static bool CanOpen(string path)
+    {
+        try
+        {
+            File.OpenRead(path).Dispose();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private static async Task AssertOneLineError(int code, string stdout, string stderr, string expectedStart)
     {
@@ -204,15 +218,22 @@ public sealed class DotCovCliEdgeTests : IDisposable
     }
 
     [Test]
-    [RunOn(OS.Linux)]
+    [RunOn(OS.Linux | OS.MacOs)]
+    [UnsupportedOSPlatform("windows")]
     public async Task Report_FileThatCannotBeRead_IsAnError_NotACrash()
     {
-        // UnauthorizedAccessException: kernfs refuses to open a write-only sysfs attribute for
-        // reading with EACCES, even for root — the one unreadable file a root test run can use.
-        var unreadable = Directory.Exists("/sys/bus")
-            ? Directory.EnumerateDirectories("/sys/bus").Select(bus => Path.Combine(bus, "uevent")).FirstOrDefault(File.Exists)
-            : null;
-        Skip.When(unreadable is null, "this host exposes no write-only sysfs attribute");
+        // UnauthorizedAccessException: a file without permissions refuses to open, except for root,
+        // which reads through file modes. A root run uses a write-only sysfs attribute instead:
+        // kernfs refuses to open it for reading with EACCES, even for root.
+        var unreadable = _ws.Write("unreadable.cobertura.xml", "<coverage/>");
+        File.SetUnixFileMode(unreadable, UnixFileMode.None);
+        if (CanOpen(unreadable))
+        {
+            unreadable = Directory.Exists("/sys/bus")
+                ? Directory.EnumerateDirectories("/sys/bus").Select(bus => Path.Combine(bus, "uevent")).FirstOrDefault(File.Exists)
+                : null;
+        }
+        Skip.When(unreadable is null, "running as root on a host with no write-only sysfs attribute");
 
         var (code, stdout, stderr) = await Run("report", unreadable!);
 

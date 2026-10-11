@@ -21,10 +21,10 @@ class Build : FalloutBuild
     public string? Reports { get; set; }
 
     [Parameter("Minimum line coverage")]
-    public string MinLine { get; set; } = "80";
+    public string MinLine { get; set; } = "100";
 
     [Parameter("Minimum branch coverage")]
-    public string MinBranch { get; set; } = "0";
+    public string MinBranch { get; set; } = "100";
 
     [Parameter("Output format: table, json, md")]
     public string Format { get; set; } = "table";
@@ -61,7 +61,10 @@ class Build : FalloutBuild
         .Executes(async () =>
         {
             AssertEverySourceProjectMeasured();
-            await RunDotCov(["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"]);
+            await RunDotCov(["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"],
+                failure: "Coverage must stay at 100% of lines and branches. For each file dotcov lists above, add a test that " +
+                         "drives the uncovered line or branch through a public entry point (tests/CLAUDE.md), or delete the " +
+                         "code if no input can reach it. Never exclude code from measurement.");
         });
 
     Target Report => d => d
@@ -145,9 +148,9 @@ class Build : FalloutBuild
         Assert.True(missing.Length is 0, $"Coverage report has no package for: {string.Join(", ", missing)}");
     }
 
-    private static async Task RunDotCov(string[] args, TextWriter? output = null)
+    private static async Task RunDotCov(string[] args, TextWriter? output = null, string? failure = null)
     {
         var exitCode = await DotCovCli.RunAsync(args, output ?? Console.Out, Console.Error);
-        Assert.True(exitCode is 0, $"dotcov {args[0]} exited with code {exitCode}");
+        Assert.True(exitCode is 0, failure ?? $"dotcov {args[0]} exited with code {exitCode}");
     }
 }
