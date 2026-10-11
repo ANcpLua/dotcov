@@ -89,9 +89,11 @@ Compare-versions uses its original c8/Mocha coverage provider, npm lockfile, and
 (pinned here to 20.15.1). All 339 tests run. Its fresh native JSON, Cobertura/DotCov totals,
 and historical Coveralls line and branch totals must agree exactly.
 
-Pydash uses Python 3.12.14 and the coverage.py 7.16.0 / pytest 9.1.1 / pytest-cov 7.1.0
+Pydash uses Python 3.12 and the coverage.py 7.16.0 / pytest 9.1.1 / pytest-cov 7.1.0
 versions recorded in its published [Python 3.12 CI job](https://github.com/dgilland/pydash/actions/runs/33272967265/job/99154667022).
-Its 2,274 unit tests and doctests run with upstream's targets, source configuration,
+That upstream job ran Python 3.12.14. CI selects the available Python 3.12 patch release on
+each host (setup-python does not distribute 3.12.14 on Windows or macOS); exact count
+comparisons remain mandatory. Its 2,274 unit tests and doctests run with upstream's targets, source configuration,
 exclusions, and 100% gate. CI installs the package editable so per-file paths refer to the
 checkout. Only output locations and verbosity differ from upstream's test command.
 The saved upstream log excerpt contains the original coverage table and test summary
