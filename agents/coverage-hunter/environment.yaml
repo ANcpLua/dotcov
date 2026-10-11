@@ -1,0 +1,19 @@
+# Ubuntu 24.04 sandbox for dotcov: ICU for the culture tests, the .NET install hosts and NuGet.
+# allow_package_managers covers apt and GitHub (clone); nothing else is reachable.
+name: dotcov-coverage
+config:
+  type: cloud
+  packages:
+    apt:
+      - libicu74
+  networking:
+    type: limited
+    allow_package_managers: true
+    allow_mcp_servers: false
+    allowed_hosts:
+      - dot.net
+      - builds.dotnet.microsoft.com
+      - ci.dot.net
+      - dotnet.microsoft.com
+      - aka.ms
+      - api.nuget.org
