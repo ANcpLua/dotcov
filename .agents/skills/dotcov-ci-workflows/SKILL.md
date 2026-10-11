@@ -16,8 +16,8 @@ description: >-
    [dependabot-auto-merge.yml](../../../.github/workflows/dependabot-auto-merge.yml)
    are maintained here too, as is the composite
    [badge action](../../../.github/actions/badge/action.yml) and its `badge.sh`,
-   which CI runs on its own build and `BadgeActionTests` runs against a local
-   origin. Auto-merge waits for main's required status checks, so renaming a CI
+   which remains available to consumers and `BadgeActionTests` runs against a
+   local origin. Auto-merge waits for main's required status checks, so renaming a CI
    job means updating those checks in branch protection.
 2. Trace each affected event through job conditions and dependencies. Preserve
    the distinction between PR/main validation and release-triggered packing
@@ -31,11 +31,11 @@ description: >-
    - Coverage uses the shared project settings described in the
      [test guide](../../../tests/CLAUDE.md). Consume reports from the intended
      run only; missing measurements cannot produce a passing badge or gate.
-   - The coverage gate (`fallout Coverage --badge-directory`) draws the badge,
-     NODATA when a src project is missing from the report; its thresholds live
-     in `build/Build.cs` only. The badge action publishes that directory and
-     still runs when the gate failed, so a drop turns the badge red. Badge
-     writes remain restricted to Ubuntu pushes to `main`.
+   - The coverage gate (`fallout Coverage --reports TestResults`) rejects
+     missing src projects and coverage below the thresholds in `build/Build.cs`.
+     This repository does not publish a badge branch; do not add badge pushes
+     or write permissions to its test job. The reusable badge action remains
+     available for consumers who choose to publish in their own repositories.
      Preserve same-repository checks before privileged auto-merge or branch
      deletion; a branch prefix alone does not establish trust.
 4. Run `actionlint` and `shellcheck .github/actions/badge/badge.sh`; the

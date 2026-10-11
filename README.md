@@ -1,5 +1,4 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/ANcpLua/dotcov/nuget-publish.yml?branch=main&style=flat-square&label=Build)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
-[![Coverage](https://raw.githubusercontent.com/ANcpLua/dotcov/badges/coverage-badge.svg)](https://github.com/ANcpLua/dotcov/tree/badges)
 
 # DotCov
 
@@ -94,8 +93,9 @@ branch rate too when `--min-branch` is above `0` (`100.0% / 98.5%`), rounded dow
 verdict when it falls short. A branch rate below its minimum turns the badge red even at
 `100.0%` lines.
 
-In GitHub Actions, one step after your tests gates the reports and publishes the badge to a
-`badges` branch, which it creates on first use:
+This repository enforces 100% line and branch coverage in CI without publishing a badge branch.
+The badge action below is optional for consumers who want to publish coverage in their own repository.
+It creates a `badges` branch on first use:
 
 ```yaml
 permissions:

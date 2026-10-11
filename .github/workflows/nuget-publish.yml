@@ -77,8 +77,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write # badge push to the `badges` branch (ubuntu + main only)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -97,26 +95,14 @@ jobs:
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A src/ project missing from the report, or
       # a coverage drop below build/Build.cs's thresholds, fails the job, on PRs and main alike.
-      # Either way the gate first draws its verdict as the badge: NODATA for a missing project,
-      # FAIL for a drop. Ubuntu only: coverlet cannot instrument on the Windows runner
-      # ("DotCov.dll ... is being used by another process"), so that leg writes no report and the
-      # gate reads NODATA. Skipped, with the badge, when the tests failed.
+      # Ubuntu only: coverlet cannot instrument on the Windows runner ("DotCov.dll ... is being
+      # used by another process"), so that leg writes no report and the gate reads NODATA.
+      # Skipped when the tests failed. Coverage is enforced without publishing a badge branch.
       - name: Coverage gate (dotcov checking dotcov)
-        id: gate
         if: matrix.os == 'ubuntu-latest'
         run: |
           dotnet tool restore
-          dotnet fallout Coverage --reports TestResults --badge-directory "$RUNNER_TEMP/coverage-badge"
-      # Dogfood: the badge action publishes the badge the gate drew, also when the gate failed, so
-      # a red build never leaves the last green badge standing. Its thresholds are build/Build.cs's
-      # alone. PRs check only that a badge was drawn; pushes to main publish it to the `badges`
-      # branch the READMEs read.
-      - name: Coverage badge (dotcov drawing dotcov)
-        if: ${{ !cancelled() && steps.gate.outcome != 'skipped' }}
-        uses: ./.github/actions/badge
-        with:
-          badge-directory: ${{ runner.temp }}/coverage-badge
-          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          dotnet fallout Coverage --reports TestResults
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
