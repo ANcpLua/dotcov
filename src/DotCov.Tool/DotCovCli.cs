@@ -12,8 +12,14 @@ namespace DotCov.Tool;
 /// </summary>
 public static partial class DotCovCli
 {
-    /// <summary>Exit code for an unrecognized command — distinct from 1 (a documented failure) so a typo'd `check` in CI can never look like a clean gate.</summary>
+    /// <summary>Exit code for an unrecognized command.</summary>
     public const int UnknownCommandExitCode = 2;
+    /// <summary>Exit code when a gate lacks the measurements it needs.</summary>
+    public const int NoDataExitCode = 3;
+    /// <summary>Exit code when all thresholds are disabled.</summary>
+    public const int DisabledExitCode = 4;
+    /// <summary>Exit code for invalid input, IO, upload, or test-run failures.</summary>
+    public const int ErrorExitCode = 5;
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -37,7 +43,7 @@ public static partial class DotCovCli
             // Malformed XML, DTD refusal, char-cap overflow: the parser reports which input
             // and where; the message is rendered here, once, at the output boundary.
             await stderr.WriteLineAsync($"error: {ex.SourceName}: {ex.Message}");
-            return 1;
+            return ErrorExitCode;
         }
         catch (Exception ex)
         {
@@ -47,7 +53,7 @@ public static partial class DotCovCli
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
             await stderr.WriteLineAsync($"error: {ex.Message}");
-            return 1;
+            return ErrorExitCode;
         }
     }
 
@@ -83,19 +89,19 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
-            return 1;
+            return ErrorExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return 1;
+        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
 
         double? threshold = null;
         if (opts.TryGetValue("threshold", out var raw))
         {
-            if (!TryParsePercent("threshold", raw, stderr, out var parsed)) return 1;
+            if (!TryParsePercent("threshold", raw, stderr, out var parsed)) return ErrorExitCode;
             threshold = parsed;
         }
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -125,16 +131,16 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
-            return 1;
+            return ErrorExitCode;
         }
 
         if (!TryParsePercent("min-line", opts.GetValueOrDefault("min-line", "80"), stderr, out var minLine))
-            return 1;
+            return ErrorExitCode;
 
         if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
-            return 1;
+            return ErrorExitCode;
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -164,7 +170,7 @@ public static partial class DotCovCli
         if (gate.IsPass)
         {
             await stdout.WriteLineAsync(gate.ToString());
-            // A failed upload turns this pass into exit 1; its "error:" line leads stderr.
+            // A failed upload turns this pass into exit 5; its "error:" line leads stderr.
             var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
             WriteSummary();
             WriteDiagnostics(path, inputs, report.Warnings, stderr);
@@ -189,36 +195,38 @@ public static partial class DotCovCli
         WriteDiagnostics(path, inputs, report.Warnings, stderr);
 
         // Failing runs upload too — red runs are the ones a coverage dashboard most needs.
-        // The gate's exit 1 wins regardless of the upload outcome.
+        // The non-passing gate's exit code wins regardless of the upload outcome.
         await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
 
-        // POLICY (shell, not core): NoData and Disabled both exit 1 here, deliberately
-        // conservative — a gate that cannot see must not exit 0. The contract (0 = pass,
-        // 1 = fail or inconclusive or could-not-measure, 2 = unknown command) is documented in
-        // help and both READMEs; the stderr first token (FAIL:/NODATA:/DISABLED:/error:) is the
-        // machine-readable discriminator. A distinct inconclusive exit code would be a CLI
-        // contract change that ripples into every consumer's CI.
-        return 1;
+        return NonPassingGateExitCode(gate.Outcome);
     }
+
+    // Called only after the measured-pass path has returned.
+    static int NonPassingGateExitCode(GateOutcome outcome) => outcome switch
+    {
+        GateOutcome.NoData => NoDataExitCode,
+        GateOutcome.Disabled => DisabledExitCode,
+        _ => 1
+    };
 
     static int Crap(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
         if (!opts.TryGetValue("file", out var path))
         {
             stderr.WriteLine("error: missing path. Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
-            return 1;
+            return ErrorExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return 1;
+        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
 
         // Default 30 — the original CRAP threshold (crap4j). A fully covered method scores its
         // own complexity, so a lower default fails well-tested code on complexity alone;
         // --max-crap 6 opts into that stricter gate.
         if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "30"), stderr, out var maxCrap))
-            return 1;
+            return ErrorExitCode;
 
-        if (!TryGetTop(opts, stderr, out var top)) return 1;
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+        if (!TryGetTop(opts, stderr, out var top)) return ErrorExitCode;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
 
         var inputs = ResolveInputs(path, pattern);
         var parsed = CoberturaParser.ParseMethods(inputs, maxChars);
@@ -247,13 +255,11 @@ public static partial class DotCovCli
             return 0;
         }
 
-        // Same fail-closed policy as check: NoData (no scorable methods) and Disabled (an
-        // infinite --max-crap) exit 1 — a gate that cannot see or cannot fail must not exit 0.
-        // stderr first token (FAIL:/NODATA:/DISABLED:) discriminates.
+        // Use the same distinct non-passing outcomes as check and test.
         stderr.WriteLine(gate.ToString());
         WriteSummary();
         WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
-        return 1;
+        return NonPassingGateExitCode(gate.Outcome);
     }
 
     static string RenderCrap(string format, CrapReport report, CrapGateResult gate, int? top, bool color) =>
@@ -296,12 +302,12 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
         {
             stderr.WriteLine("error: missing path. Usage: dotcov diff <before> <after> [--format table|json|md]");
-            return 1;
+            return ErrorExitCode;
         }
 
-        if (!TryGetFormat(opts, stderr, out var format)) return 1;
+        if (!TryGetFormat(opts, stderr, out var format)) return ErrorExitCode;
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
 
         var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars);
         var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars);
@@ -324,10 +330,10 @@ public static partial class DotCovCli
         if (!opts.TryGetValue("file", out var path))
         {
             await stderr.WriteLineAsync("error: missing path. Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
-            return 1;
+            return ErrorExitCode;
         }
 
-        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return 1;
+        if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return ErrorExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars);
         var report = ApplyExclusions(merged, opts);
@@ -418,16 +424,17 @@ public static partial class DotCovCli
             test passes the coverage options of the runner dotnet test uses in this directory
             (DOTNET_TEST_RUNNER, else global.json test.runner, else VSTest). MTP test projects need
             Microsoft.Testing.Extensions.CodeCoverage; VSTest projects get the Code Coverage collector
-            from Microsoft.NET.Test.Sdk. dotnet test output goes to stdout; a failed run exits 1
+            from Microsoft.NET.Test.Sdk. dotnet test output goes to stdout; a failed run exits 5
             without evaluating coverage.
 
             Exit codes:
-              0  success; for check, the gate passed
-              1  gate failed or was inconclusive (NODATA/DISABLED), or the command could not
-                 run: missing path, parse/IO/size-cap error, invalid flag value, unknown flag,
-                 extra path, upload failure, failed test run. The stderr first token
-                 (FAIL:/NODATA:/DISABLED:/error:) distinguishes these.
+              0  success; check, crap, and test require a measured pass
+              1  FAIL: below a threshold
               2  unknown command
+              3  NODATA: missing measurements
+              4  DISABLED: no active threshold
+              5  error: invalid input, parse/IO/size-cap error, upload failure, failed test run
+            A non-passing gate keeps its exit code even if an upload also fails.
 
             crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML
             (used automatically); for other emitters pass --metrics <file> produced by
@@ -650,7 +657,7 @@ public static partial class DotCovCli
             }
 
             await stderr.WriteLineAsync($"error: Upload failed: {url} ({response.StatusCode})");
-            return 1;
+            return ErrorExitCode;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or NotSupportedException)
         {
@@ -659,7 +666,7 @@ public static partial class DotCovCli
             // NotSupportedException: documented HttpClient behavior for non-http(s) schemes
             // (e.g. ftp://) — thrown before any connection is attempted.
             await stderr.WriteLineAsync($"error: Upload failed: {url} ({ex.Message})");
-            return 1;
+            return ErrorExitCode;
         }
     }
 

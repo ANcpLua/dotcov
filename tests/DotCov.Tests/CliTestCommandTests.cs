@@ -123,7 +123,7 @@ public sealed class CliTestCommandTests : IDisposable
         var run = await Dotcov(cancellationToken, _ws.Root,
             new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, "test");
 
-        await Assert.That(run.ExitCode).IsEqualTo(1);
+        await Assert.That(run.ExitCode).IsEqualTo(5);
         await Assert.That(run.StdOut).StartsWith($"> \"{dotnet}\" test --results-directory ");
         await Assert.That(run.StdErr).StartsWith("error: ");
         await Assert.That(run.StdErr).Contains(dotnet);
@@ -134,7 +134,11 @@ public sealed class CliTestCommandTests : IDisposable
 
     [Test]
     [Timeout(300_000)]
-    public async Task TestingPlatformProject_IsTestedReportedAndGated(CancellationToken cancellationToken)
+    [Arguments("30", 0, "PASS:")]
+    [Arguments("100", 1, "FAIL:")]
+    [Arguments("0", 4, "DISABLED:")]
+    public async Task TestingPlatformProject_IsTestedReportedAndGated(
+        string minLine, int expectedCode, string verdict, CancellationToken cancellationToken)
     {
         var project = WriteTestingPlatformProject();
         var summary = _ws.PathOf("step-summary.md");
@@ -147,15 +151,34 @@ public sealed class CliTestCommandTests : IDisposable
                 ["UseSharedCompilation"] = "false",
                 ["MSBUILDDISABLENODEREUSE"] = "1"
             },
-            "test", project, "--min-line", "30", "--exclude-generated", "--github-summary");
+            "test", project, "--min-line", minLine, "--exclude-generated", "--github-summary");
 
-        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(run.ExitCode).IsEqualTo(expectedCode).Because(run.Output);
         await Assert.That(run.StdOut).Contains($"test --project {project} --results-directory ");
         await Assert.That(run.StdOut).Contains("Sign.cs");
-        await Assert.That(run.StdOut).Contains("PASS: line ");
-        // Whatever dotnet test printed went to stdout; stderr carries only dotcov's own lines.
-        await Assert.That(run.StdErr).IsEmpty();
-        await Assert.That(await File.ReadAllTextAsync(summary, cancellationToken)).Contains("`PASS: line ");
+        await Assert.That(expectedCode == 0 ? run.StdOut : run.StdErr).Contains(verdict);
+        if (expectedCode == 0)
+            await Assert.That(run.StdErr).IsEmpty();
+        else
+            await Assert.That(run.StdErr).StartsWith(verdict);
+        await Assert.That(await File.ReadAllTextAsync(summary, cancellationToken)).Contains($"`{verdict}");
+    }
+
+    [Test]
+    public async Task SuccessfulRunWithoutCoverage_ExitsNoData(CancellationToken cancellationToken)
+    {
+        // dotnet test accepts a library with no tests and exits 0, but produces no coverage.
+        // That child success must not become a passing coverage gate.
+        _ws.Write("Library.csproj", $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net{Environment.Version.Major}.0</TargetFramework></PropertyGroup>
+            </Project>
+            """);
+        var run = await Dotcov(cancellationToken, "test", "Library.csproj");
+
+        await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
+        await Assert.That(run.StdErr).StartsWith("NODATA:");
+        await Assert.That(run.StdOut).DoesNotContain("PASS:");
     }
 
     private string WriteTestingPlatformProject()
@@ -225,7 +248,7 @@ public sealed class CliTestCommandTests : IDisposable
 
     private static async Task AssertNotEvaluated(ChildRun run)
     {
-        await Assert.That(run.ExitCode).IsEqualTo(1);
+        await Assert.That(run.ExitCode).IsEqualTo(5);
         await Assert.That(run.StdErr).StartsWith("error: dotnet test exited with code ");
         await Assert.That(run.StdErr).Contains("coverage was not evaluated.");
         await Assert.That(run.Output).DoesNotContain("PASS:");

@@ -72,14 +72,13 @@ errors are listed below.
 |---|---|---|
 | `PASS:` | Thresholds met | 0 |
 | `FAIL:` | Below a threshold | 1 |
-| `NODATA:` | The gate lacks the data needed to evaluate | 1 |
-| `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 1 |
-| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 1 |
+| `NODATA:` | The gate lacks the data needed to evaluate | 3 |
+| `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 4 |
+| `error:` | Missing path, bad path, parse failure, size cap, bad flag value, unknown flag, extra path, upload failure, failed test run | 5 |
 | — | Unknown command | 2 |
 
-Use `check` when CI must require measured coverage. For gate outcomes and CLI errors, branch
-on the first stderr token, not the message text. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
-for empty-report output. Percentages are invariant-formatted, so CI logs read `62.0%` on every
+Use `check` when CI must require measured coverage. Branch on the exit code. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
+for details. Percentages are invariant-formatted, so CI logs read `62.0%` on every
 host, never `62,0%`.
 
 Parsing is streaming `XmlReader`: no full-DOM load, DTDs ignored (never processed), external
@@ -98,5 +97,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.4.0.md) ·
+[Release notes](docs/releases/1.5.0.md) ·
 [MIT](LICENSE)

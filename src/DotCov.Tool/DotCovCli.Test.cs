@@ -21,10 +21,10 @@ public static partial class DotCovCli
     {
         // Flag values are checked before anything runs: a typo must not cost a test run.
         if (!TryParsePercent("min-line", opts.GetValueOrDefault("min-line", "80"), stderr, out var minLine))
-            return 1;
+            return ErrorExitCode;
 
         if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
-            return 1;
+            return ErrorExitCode;
 
         // A fresh directory per run, so the gate reads this run's reports and nothing an earlier
         // run left behind. Created up front: a run that writes no report is NODATA, not a
