@@ -30,17 +30,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      # Event data reaches the script through env, never spliced into its text.
       - id: ver
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "is_release=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-            echo "is_release=true" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            echo "version=$DISPATCH_VERSION" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.0.$(git rev-list --count HEAD)-ci.g$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "version=0.0.$(git rev-list --count HEAD)-ci.g$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -48,6 +52,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Workflow and action lint: actionlint checks every workflow, shellchecks their scripts, and
+      # validates local action inputs; shellcheck (on the runner) covers the badge action's script.
+      # actionlint is pinned by version and checksum, like the actions above by commit.
+      - name: Lint workflows and actions
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+          shellcheck .github/actions/badge/badge.sh
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
@@ -72,9 +87,8 @@ jobs:
       # Microsoft.Testing.Platform runner (global.json) with coverlet.MTP. -p:Coverage=true
       # switches on the coverlet arguments defined in tests/DotCov.Tests/DotCov.Tests.csproj.
       # The file lands in TestResults as dotcov.coverage.cobertura.<timestamp>.xml, which the
-      # gate and the badge both read.
+      # gate reads.
       - name: Test
-        id: test
         run: >-
           dotnet test --solution DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
           -p:Coverage=true --results-directory TestResults
@@ -83,29 +97,26 @@ jobs:
       # Dogfood gate: the same Fallout Coverage target as local runs, pointed at this run's
       # reports (a fresh checkout holds no other run). A src/ project missing from the report, or
       # a coverage drop below build/Build.cs's thresholds, fails the job, on PRs and main alike.
-      # Ubuntu only, like the badge: coverlet cannot instrument on the Windows runner
+      # Either way the gate first draws its verdict as the badge: NODATA for a missing project,
+      # FAIL for a drop. Ubuntu only: coverlet cannot instrument on the Windows runner
       # ("DotCov.dll ... is being used by another process"), so that leg writes no report and the
-      # gate reads NODATA.
+      # gate reads NODATA. Skipped, with the badge, when the tests failed.
       - name: Coverage gate (dotcov checking dotcov)
+        id: gate
         if: matrix.os == 'ubuntu-latest'
         run: |
           dotnet tool restore
-          dotnet fallout Coverage --reports TestResults
-      # Dogfood: the badge action, run on this build's dotcov, draws the badge from the same
-      # reports and thresholds as the gate above. It also runs when that gate failed, so a drop
-      # turns the badge red instead of leaving the last green one standing; it is skipped when the
-      # tests failed, whose coverage is not evaluated. PRs render only; pushes to main publish to
-      # the `badges` branch the READMEs read. The gate step owns the job's verdict.
+          dotnet fallout Coverage --reports TestResults --badge-directory "$RUNNER_TEMP/coverage-badge"
+      # Dogfood: the badge action publishes the badge the gate drew, also when the gate failed, so
+      # a red build never leaves the last green badge standing. Its thresholds are build/Build.cs's
+      # alone. PRs check only that a badge was drawn; pushes to main publish it to the `badges`
+      # branch the READMEs read.
       - name: Coverage badge (dotcov drawing dotcov)
-        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' && steps.test.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.gate.outcome != 'skipped' }}
         uses: ./.github/actions/badge
         with:
-          reports: TestResults
-          min-line: 100
-          min-branch: 100
-          command: dotnet run --project src/DotCov.Tool -c Release --property:Version=${{ needs.version.outputs.version }} --
+          badge-directory: ${{ runner.temp }}/coverage-badge
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          fail-on-gate: false
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single

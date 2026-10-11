@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Xml;
 using DotCov;
+using DotCov.Formatters;
 using DotCov.Tool;
 using Fallout.Common;
 using Fallout.Common.Git;
@@ -41,6 +43,9 @@ class Build : FalloutBuild
     [Parameter("Baseline Cobertura file or directory for Diff")]
     public string? Before { get; set; }
 
+    [Parameter("Directory Coverage writes coverage-badge.svg and coverage-badge.json to, for every outcome")]
+    public string? BadgeDirectory { get; set; }
+
     private readonly string _runId = Guid.NewGuid().ToString("N");
     private AbsolutePath ResultsDirectory => RootDirectory / "TestResults" / _runId;
     private AbsolutePath TestProject => RootDirectory / "tests" / "DotCov.Tests" / "DotCov.Tests.csproj";
@@ -56,12 +61,15 @@ class Build : FalloutBuild
         .Executes(() => RunTests(coverage: true));
 
     Target Coverage => d => d
-        .Description("Collect coverage, require every src project in it, and enforce line/branch thresholds")
+        .Description("Collect coverage, require every src project in it, and enforce line/branch thresholds; --badge-directory draws the verdict")
         .DependsOn(CollectCoverage)
         .Executes(async () =>
         {
             AssertEverySourceProjectMeasured();
-            await RunDotCov(["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"],
+            List<string> args = ["check", Input, "--min-line", MinLine, "--min-branch", MinBranch, "--github-summary"];
+            if (BadgeDirectory is not null)
+                args.AddRange(["--badge-dir", Path.GetFullPath(BadgeDirectory, RootDirectory)]);
+            await RunDotCov([.. args],
                 failure: "Coverage must stay at 100% of lines and branches. For each file dotcov lists above, add a test that " +
                          "drives the uncovered line or branch through a public entry point (tests/CLAUDE.md), or delete the " +
                          "code if no input can reach it. Never exclude code from measurement.");
@@ -117,7 +125,8 @@ class Build : FalloutBuild
 
     // A Cobertura package is one measured assembly. coverlet can drop an assembly without failing,
     // so every src/ project needs a package before the thresholds count. Runs before `check` so a
-    // failure never leaves a PASS summary behind; a missing input stays `check`'s to report.
+    // failure never leaves a PASS summary or badge behind: the badge reads NODATA instead, since
+    // the thresholds were judged on part of the code. A missing input stays `check`'s to report.
     private void AssertEverySourceProjectMeasured()
     {
         var source = RootDirectory / "src";
@@ -144,8 +153,28 @@ class Build : FalloutBuild
             .Where(name => !measured.Contains(name))
             .Order(StringComparer.Ordinal)
             .ToArray();
-        Assert.True(missing.Length is 0, $"Coverage report has no package for: {string.Join(", ", missing)}");
+        if (missing.Length is 0)
+            return;
+
+        var reason = $"coverage report has no package for: {string.Join(", ", missing)}";
+        if (BadgeDirectory is not null)
+            WriteBadge(new GateResult(GateOutcome.NoData, null, null, Percent(MinLine, "min-line"), Percent(MinBranch, "min-branch"), reason));
+        Assert.Fail($"Coverage report has no package for: {string.Join(", ", missing)}");
     }
+
+    private void WriteBadge(GateResult gate)
+    {
+        var directory = Path.GetFullPath(BadgeDirectory!, RootDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, BadgeFormatter.SvgFileName), BadgeFormatter.Svg(gate));
+        File.WriteAllText(Path.Combine(directory, BadgeFormatter.JsonFileName), BadgeFormatter.ShieldsJson(gate));
+    }
+
+    // The thresholds the badge's title names; check validates them on every other path.
+    private static double Percent(string value, string flag) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent)
+            ? percent
+            : throw new ArgumentException($"Invalid --{flag} value: '{value}' (expected a number).");
 
     private static async Task RunDotCov(string[] args, TextWriter? output = null, string? failure = null)
     {

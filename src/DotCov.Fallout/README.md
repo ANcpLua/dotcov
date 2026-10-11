@@ -75,7 +75,8 @@ Parser warnings (malformed hit counts, ambiguous source roots, …) are logged o
 and never change the verdict. The badge is written before a failing verdict fails the target, so
 a drop turns it red; its colour is the outcome, and its message the line rate, plus the branch
 rate when a branch minimum is set. A non-passing gate keeps its own failure message when the badge
-cannot be written. An unwritable `GITHUB_STEP_SUMMARY` is logged as a warning and
+cannot be written. To publish it to a branch, pass the directory to the
+[badge action](https://github.com/ANcpLua/dotcov#badge) as `badge-directory`. An unwritable `GITHUB_STEP_SUMMARY` is logged as a warning and
 does not fail an otherwise passing gate. Percentages are invariant-formatted, so CI logs read
 `62.0%` on every host, never `62,0%`.
 

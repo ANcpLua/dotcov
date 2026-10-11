@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The dotcov badge action (action.yml): gate the reports with `dotcov check`, which renders the
 # verdict into coverage-badge.svg and coverage-badge.json, publish both to a branch, then exit
-# with the gate's code. Inputs arrive as DOTCOV_* variables. Runs on bash 3.2 (macOS) and later.
+# with the gate's code. With badge-directory it publishes a badge a gate rendered earlier
+# instead. Inputs arrive as DOTCOV_* variables. Runs on bash 3.2 (macOS) and later.
 set -euo pipefail
 
 fail() {
@@ -9,36 +10,47 @@ fail() {
   exit 1
 }
 
-[ -n "$DOTCOV_REPORTS" ] || fail "The reports input is required."
+if [ -n "$DOTCOV_BADGE_DIRECTORY" ]; then
+  [ -z "$DOTCOV_REPORTS" ] || fail "Set reports or badge-directory, not both."
+else
+  [ -n "$DOTCOV_REPORTS" ] || fail "Set reports, or badge-directory to publish a badge rendered earlier."
+fi
 case "$DOTCOV_PUBLISH" in true | false) ;; *) fail "publish must be true or false, not '$DOTCOV_PUBLISH'." ;; esac
 case "$DOTCOV_FAIL_ON_GATE" in true | false) ;; *) fail "fail-on-gate must be true or false, not '$DOTCOV_FAIL_ON_GATE'." ;; esac
 
-# A fresh directory per run: files found in it afterwards were written by this gate.
 work="${RUNNER_TEMP:?}/dotcov-badge-${GITHUB_RUN_ID:-local}-$$"
-badge_dir="$work/badge"
 mkdir -p "$work"
 
-# Whitespace-only values count as empty: they would split into no words at all.
-if [ -n "${DOTCOV_COMMAND//[[:space:]]/}" ]; then
-  read -ra dotcov <<<"$DOTCOV_COMMAND"
+# The gate's exit code; empty when the badge was rendered earlier and no gate runs here.
+code=''
+if [ -n "$DOTCOV_BADGE_DIRECTORY" ]; then
+  badge_dir="$DOTCOV_BADGE_DIRECTORY"
 else
-  tools="$RUNNER_TEMP/dotcov-tool-$DOTCOV_VERSION"
-  if [ ! -e "$tools/dotcov" ] && [ ! -e "$tools/dotcov.exe" ]; then
-    dotnet tool install DotCov.Tool --version "$DOTCOV_VERSION" --tool-path "$tools"
+  # A fresh directory per run: files found in it afterwards were written by this gate.
+  badge_dir="$work/badge"
+
+  # Whitespace-only values count as empty: they would split into no words at all.
+  if [ -n "${DOTCOV_COMMAND//[[:space:]]/}" ]; then
+    read -ra dotcov <<<"$DOTCOV_COMMAND"
+  else
+    tools="$RUNNER_TEMP/dotcov-tool-$DOTCOV_VERSION"
+    if [ ! -e "$tools/dotcov" ] && [ ! -e "$tools/dotcov.exe" ]; then
+      dotnet tool install DotCov.Tool --version "$DOTCOV_VERSION" --tool-path "$tools"
+    fi
+    dotcov=("$tools/dotcov")
   fi
-  dotcov=("$tools/dotcov")
-fi
 
-args=(check "$DOTCOV_REPORTS" --min-line "$DOTCOV_MIN_LINE" --min-branch "$DOTCOV_MIN_BRANCH" --badge-dir "$badge_dir")
-if [ -n "$DOTCOV_PATTERN" ]; then args+=(--pattern "$DOTCOV_PATTERN"); fi
-if [ -n "${DOTCOV_ARGS//[[:space:]]/}" ]; then
-  read -ra extra <<<"$DOTCOV_ARGS"
-  args+=("${extra[@]}")
-fi
+  args=(check "$DOTCOV_REPORTS" --min-line "$DOTCOV_MIN_LINE" --min-branch "$DOTCOV_MIN_BRANCH" --badge-dir "$badge_dir")
+  if [ -n "$DOTCOV_PATTERN" ]; then args+=(--pattern "$DOTCOV_PATTERN"); fi
+  if [ -n "${DOTCOV_ARGS//[[:space:]]/}" ]; then
+    read -ra extra <<<"$DOTCOV_ARGS"
+    args+=("${extra[@]}")
+  fi
 
-code=0
-"${dotcov[@]}" "${args[@]}" || code=$?
-echo "exit-code=$code" >>"$GITHUB_OUTPUT"
+  code=0
+  "${dotcov[@]}" "${args[@]}" || code=$?
+  echo "exit-code=$code" >>"$GITHUB_OUTPUT"
+fi
 
 # Commits the badge onto the tip of the branch, or as the first commit of an orphan branch. The
 # tree is built in a private index from git objects, so the consumer's checkout, index, branches
@@ -99,11 +111,17 @@ publish() {
 if [ -f "$badge_dir/coverage-badge.svg" ] && [ -f "$badge_dir/coverage-badge.json" ]; then
   echo "directory=$badge_dir" >>"$GITHUB_OUTPUT"
   if [ "$DOTCOV_PUBLISH" = true ]; then publish; fi
+elif [ -z "$code" ]; then
+  # The gate that should have rendered it failed before evaluating; a stale badge stays unpublished.
+  fail "badge-directory '$badge_dir' holds no coverage-badge.svg and coverage-badge.json; nothing was published."
 elif [ "$DOTCOV_PUBLISH" = true ]; then
   # No badge means no evaluated gate (an error such as an unreadable report), so nothing to show.
   echo "::error::dotcov check exited $code without writing a badge; nothing was published."
   exit $((code == 0 ? 1 : code))
 fi
+
+# A badge rendered earlier was judged by its own gate, which owns the verdict.
+if [ -z "$code" ]; then exit 0; fi
 
 # Gate outcomes (FAIL 1, NODATA 3, DISABLED 4) honour fail-on-gate; errors always fail the step.
 case $code in

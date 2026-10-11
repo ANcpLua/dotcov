@@ -68,6 +68,57 @@ public sealed class RepositoryBuildTests : IDisposable
     }
 
     [Test]
+    [Arguments("40", true, "50.0%", "brightgreen")]
+    [Arguments("80", false, "50.0%", "red")]
+    public async Task Coverage_BadgeDirectory_DrawsTheGateVerdict(
+        string threshold, bool passes, string message, string color, CancellationToken cancellationToken)
+    {
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", threshold,
+            "--min-branch", "0", "--badge-directory", "out/badge");
+
+        await Assert.That(run.ExitCode is 0).IsEqualTo(passes).Because(run.Output);
+        await AssertBadge("out/badge", message, color, passes ? "PASS:" : "FAIL:");
+    }
+
+    [Test]
+    public async Task Coverage_SourceProjectMissing_DrawsNoDataInsteadOfTheThresholds(CancellationToken cancellationToken)
+    {
+        // The rest of the report clears the thresholds; without Dropped they judged only part of src.
+        _workspace.Write("src/Tests/Tests.csproj", "<Project />");
+        _workspace.Write("src/Dropped/Dropped.csproj", "<Project />");
+
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40",
+            "--min-branch", "0", "--badge-directory", "out/badge");
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("Coverage report has no package for: Dropped");
+        await AssertBadge("out/badge", "no data", "lightgrey",
+            "NODATA: line n/a (min 40%), branch n/a (min 0%) - coverage report has no package for: Dropped");
+    }
+
+    [Test]
+    public async Task Coverage_SourceProjectMissing_InvalidThreshold_FailsNamingIt(CancellationToken cancellationToken)
+    {
+        _workspace.Write("src/Dropped/Dropped.csproj", "<Project />");
+
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "abc",
+            "--badge-directory", "out/badge");
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("Invalid --min-line value: 'abc' (expected a number).");
+        await Assert.That(Directory.Exists(_workspace.PathOf("out/badge"))).IsFalse();
+    }
+
+    [Test]
+    public async Task Coverage_WithoutBadgeDirectory_DrawsNoBadge(CancellationToken cancellationToken)
+    {
+        var run = await Run(cancellationToken, "Coverage", "--reports", HalfCovered(), "--min-line", "40", "--min-branch", "0");
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(Directory.EnumerateFiles(_workspace.Root, "coverage-badge.*", SearchOption.AllDirectories)).IsEmpty();
+    }
+
+    [Test]
     public async Task Report_InvalidFormat_FailsInsteadOfDiscardingTheCliExitCode(CancellationToken cancellationToken)
     {
         var run = await Run(cancellationToken, "Report", "--reports", HalfCovered(), "--format", "invalid");
@@ -99,6 +150,16 @@ public sealed class RepositoryBuildTests : IDisposable
         await Assert.That(run.Output).Contains("\"before\": 0");
         await Assert.That(run.Output).Contains("\"after\": 50");
         await Assert.That(run.Output).Contains("\"delta\": 50");
+    }
+
+    /// <summary>Both files, relative to the build root, with the verdict in the SVG's title.</summary>
+    private async Task AssertBadge(string directory, string message, string color, string verdict)
+    {
+        var svg = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.svg"));
+        var json = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.json"));
+
+        await Assert.That(svg).Contains($"<title>Coverage: {verdict}");
+        await Assert.That(json).IsEqualTo($$"""{"schemaVersion":1,"label":"Coverage","message":"{{message}}","color":"{{color}}"}""");
     }
 
     private string HalfCovered() => _workspace.Write("reports/dotcov.coverage.cobertura.123.xml",

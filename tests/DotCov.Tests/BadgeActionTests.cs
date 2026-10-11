@@ -107,6 +107,53 @@ public sealed class BadgeActionTests : IDisposable
     }
 
     [Test]
+    public async Task BadgeDirectory_PublishesTheRenderedBadge_WithoutRunningDotcov(CancellationToken cancellationToken)
+    {
+        await Init(cancellationToken);
+        var rendered = _ws.CreateDirectory("rendered");
+        var svg = _ws.Write("rendered/coverage-badge.svg", "<svg/>");
+        _ws.Write("rendered/coverage-badge.json", """{"schemaVersion":1,"label":"Coverage","message":"no data","color":"lightgrey"}""");
+
+        // `false` as dotcov: running it would fail the step.
+        var run = await RunAction(cancellationToken, ("reports", ""), ("badge-directory", rendered), ("command", "false"));
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(run.Outputs.ContainsKey("exit-code")).IsFalse();
+        await Assert.That(run.Outputs["directory"]).IsEqualTo(rendered);
+        await Assert.That(run.Output).Contains("Published no data (lightgrey) to 'badges'.");
+        await Assert.That(await Git(cancellationToken, _origin, "show", "badges:coverage-badge.svg")).IsEqualTo(await File.ReadAllTextAsync(svg, cancellationToken));
+    }
+
+    [Test]
+    public async Task BadgeDirectory_WithoutABadge_FailsAndPublishesNothing(CancellationToken cancellationToken)
+    {
+        await Init(cancellationToken);
+        var empty = _ws.CreateDirectory("rendered");
+
+        var run = await RunAction(cancellationToken, ("reports", ""), ("badge-directory", empty));
+
+        await Assert.That(run.ExitCode).IsEqualTo(1);
+        await Assert.That(run.Output).Contains($"::error::badge-directory '{empty}' holds no coverage-badge.svg and coverage-badge.json; nothing was published.");
+        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+    }
+
+    [Test]
+    [Arguments(true, "Set reports or badge-directory, not both.")]
+    [Arguments(false, "Set reports, or badge-directory to publish a badge rendered earlier.")]
+    public async Task ReportsAndBadgeDirectory_TakeExactlyOne(bool both, string error, CancellationToken cancellationToken)
+    {
+        await Init(cancellationToken);
+
+        var run = await RunAction(cancellationToken, both
+            ? [("badge-directory", _ws.CreateDirectory("rendered"))]
+            : [("reports", "")]);
+
+        await Assert.That(run.ExitCode).IsEqualTo(1);
+        await Assert.That(run.Output).Contains($"::error::{error}");
+        await Assert.That(run.Outputs).IsEmpty();
+    }
+
+    [Test]
     [Arguments("publish", "yes")]
     [Arguments("fail-on-gate", "1")]
     public async Task NonBooleanSwitch_FailsBeforeRunningDotcov(string input, string value, CancellationToken cancellationToken)
@@ -132,7 +179,7 @@ public sealed class BadgeActionTests : IDisposable
     {
         var values = new Dictionary<string, string>
         {
-            ["reports"] = _report, ["pattern"] = "", ["min-line"] = "80", ["min-branch"] = "0", ["args"] = "",
+            ["reports"] = _report, ["badge-directory"] = "", ["pattern"] = "", ["min-line"] = "80", ["min-branch"] = "0", ["args"] = "",
             ["branch"] = "badges", ["publish"] = "true", ["fail-on-gate"] = "true", ["version"] = "unused",
             ["command"] = DotcovCommand(),
         };

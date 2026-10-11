@@ -102,7 +102,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v1.6.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v1.6.1
     with:
       reports: TestResults
       min-line: 80
@@ -126,6 +126,11 @@ report still fails. The other inputs are `pattern`, `args` (further `dotcov chec
 `--exclude-generated`), `branch`, `version` (the `DotCov.Tool` version to install), and `command`
 (run a dotcov you built instead); see [action.yml](.github/actions/badge/action.yml).
 
+When your build already gates and draws the badge (`--badge-dir`, or the Fallout component's
+`--coverage-badge-directory`), pass that directory as `badge-directory` instead of `reports`: the
+action then only publishes, and your gate keeps the verdict. Run the step with
+`if: ${{ !cancelled() }}` so a failing gate still publishes its red badge.
+
 A private repository cannot serve the image from its own branch: GitHub's image proxy fetches
 README images without credentials, and shields.io cannot read the JSON either. A badge hosted
 publicly renders, but shows your coverage number to anyone.
@@ -143,5 +148,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.6.0.md) ·
+[Release notes](docs/releases/1.6.1.md) ·
 [MIT](LICENSE)
