@@ -95,7 +95,21 @@ That upstream job ran Python 3.12.14. CI selects the available Python 3.12 patch
 each host (setup-python does not distribute 3.12.14 on Windows or macOS); exact count
 comparisons remain mandatory. Its 2,274 unit tests and doctests run with upstream's targets, source configuration,
 exclusions, and 100% gate. CI installs the package editable so per-file paths refer to the
-checkout. Only output locations and verbosity differ from upstream's test command.
+checkout. A local pytest plugin supplies a virtual clock and timer queue only to
+`test_debounce` and `test_debounce_max_wait`: their 10 ms sleeps and 15 ms timers otherwise
+race the hosted macOS scheduler. All source files and test assertions remain unchanged,
+and the measurement checks that Git's tracked source/test/config files are unchanged.
+The plugin replaces module references for those two tests and restores them after each
+test; other tests and the Python standard library keep real time. Timers execute pydash's
+actual callbacks in deadline order, including cancellation and max-wait behavior.
+
+CI first runs `test_pydash_clock.py` on all three hosts. It repeats both unchanged upstream
+tests with real 30 ms scheduling stalls, verifies clock isolation and JUnit evidence, and
+proves that deliberately early or late timers still fail upstream assertions. The
+full measurement then requires all 2,274 tests to pass with zero skips or errors, evidence
+that exactly the two intended tests used the clock, and the same exact coverage counts.
+There are no retries, merged partial measurements, extra exclusions, or relaxed thresholds.
+
 The saved upstream log excerpt contains the original coverage table and test summary
 (with terminal color escapes removed). Fresh per-file counts must also match that table:
 2,607/2,607 lines across 14 files. GitHub's saved job metadata and commit statuses connect
