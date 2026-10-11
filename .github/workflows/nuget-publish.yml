@@ -104,6 +104,72 @@ jobs:
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
 
+  # Exercise the composite action itself, including its default tool installation, on every
+  # supported host. The origin is a local bare repository: no GitHub badge branch or write token.
+  badge-action:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - name: Set up isolated badge origin and Cobertura report
+        run: |
+          git init --bare "$RUNNER_TEMP/badge-origin.git"
+          git remote set-url origin "$RUNNER_TEMP/badge-origin.git"
+          mkdir -p badge-reports
+          cat > badge-reports/coverage.cobertura.xml <<'XML'
+          <coverage line-rate="1" branch-rate="0.5" lines-covered="1" lines-valid="1" branches-covered="1" branches-valid="2">
+            <packages><package name="fixture"><classes><class name="Fixture" filename="src/Fixture.cs">
+              <lines><line number="1" hits="1" branch="true" condition-coverage="50% (1/2)" /></lines>
+            </class></classes></package></packages>
+          </coverage>
+          XML
+      - name: Install tool, gate and publish a passing badge
+        id: pass
+        uses: ./.github/actions/badge
+        with:
+          reports: badge-reports
+          min-line: '100'
+          min-branch: '40'
+      - name: Keep an unchanged badge at the same commit
+        uses: ./.github/actions/badge
+        with:
+          reports: badge-reports
+          min-line: '100'
+          min-branch: '40'
+      - name: Publish a failing badge and fail the gate
+        id: fail
+        continue-on-error: true
+        uses: ./.github/actions/badge
+        with:
+          reports: badge-reports
+          min-line: '100'
+          min-branch: '60'
+      - name: Verify action outputs, gate failure and published history
+        env:
+          PASS_CODE: ${{ steps.pass.outputs.exit-code }}
+          FAIL_CODE: ${{ steps.fail.outputs.exit-code }}
+          FAIL_OUTCOME: ${{ steps.fail.outcome }}
+          BADGE_DIRECTORY: ${{ steps.fail.outputs.directory }}
+        run: |
+          test "$PASS_CODE" = 0
+          test "$FAIL_CODE" = 1
+          test "$FAIL_OUTCOME" = failure
+          test -f "$BADGE_DIRECTORY/coverage-badge.svg"
+          git fetch origin badges
+          test "$(git rev-list --count FETCH_HEAD)" = 2
+          git show FETCH_HEAD:coverage-badge.json > published-badge.json
+          cmp "$BADGE_DIRECTORY/coverage-badge.json" published-badge.json
+          grep -q '"color":"red"' published-badge.json
+
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
   # RID failure fails the whole job and gates `publish` (no partial/broken RID set ships).
@@ -163,7 +229,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, build, test, pack-tool-native, pack-rest]
+    needs: [version, build, test, badge-action, pack-tool-native, pack-rest]
     if: needs.version.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     environment: nuget
