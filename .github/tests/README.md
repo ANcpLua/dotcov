@@ -110,6 +110,26 @@ full measurement then requires all 2,274 tests to pass with zero skips or errors
 that exactly the two intended tests used the clock, and the same exact coverage counts.
 There are no retries, merged partial measurements, extra exclusions, or relaxed thresholds.
 
+A separate `test_pydash_threads.py` suite runs on Linux, Windows, and macOS using pydash's
+real clock, `threading.Timer`, and locks, without loading the virtual-clock plugin. Five
+scenarios each run three times: background delivery and last-result reuse; cancellation
+after a timer has fired; a caller arriving during a blocked callback; eight concurrent
+callers with argument/result checks; and `max_wait` delivery during an ongoing burst.
+Every repetition must pass. Events and barriers coordinate progress, with generous
+liveness deadlines instead of short-sleep timing assertions. For the expired-timer race,
+a profiling hook pauses genuine timer threads at entry to `_on_timer`, before the lock;
+the test then reschedules through the public API and releases the old and new threads in
+order. The timer implementation, clock, lock, and pydash callback body are not replaced.
+
+Four negative controls prove the suite rejects a missing stale-generation guard, missing
+callback lock, disabled `max_wait`, and an uncaught background-thread exception. A fifth
+proves a deadlocked child is killed and reaped. These mutations occur only in disposable
+negative-control processes. All 20 checks must pass; background exceptions and leaked
+threads fail the process. Normal cleanup releases barriers, cancels outstanding timers,
+and joins owned threads, while a 30-second subprocess deadline bounds deadlocks. CI retains
+the separate JUnit report. These checks contribute no data to the independent 2,274-test
+coverage measurement, whose exact counts and 100% gates remain mandatory.
+
 The saved upstream log excerpt contains the original coverage table and test summary
 (with terminal color escapes removed). Fresh per-file counts must also match that table:
 2,607/2,607 lines across 14 files. GitHub's saved job metadata and commit statuses connect
