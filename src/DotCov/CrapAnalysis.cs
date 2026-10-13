@@ -206,7 +206,7 @@ public static class CrapAnalysis
     public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var analysis = Analyze(report.Methods, metricsMembers);
+        var analysis = AnalyzeCore(report.Methods, metricsMembers, report.ExcludedMethods);
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
         {
             AmbiguousFiles = report.AmbiguousFiles,
@@ -228,12 +228,26 @@ public static class CrapAnalysis
     /// </param>
     public static CrapReport Analyze(
         IReadOnlyList<MethodCoverage> methods,
-        IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
+        IReadOnlyList<CodeMetricsMember>? metricsMembers = null) =>
+        AnalyzeCore(methods, metricsMembers, []);
+
+    private static CrapReport AnalyzeCore(
+        IReadOnlyList<MethodCoverage> methods,
+        IReadOnlyList<CodeMetricsMember>? metricsMembers,
+        IReadOnlyList<MethodCoverage> excludedMethods)
     {
         var order = FoldRawEntries(methods);            // 1. raw coverage → logical source methods
         FoldSyntheticGroups(order);                     // 2. state machines/lambdas → their origin
 
         var consumed = new HashSet<int>();
+        // Exclusions remove methods from the measurement scope, not from the metrics file.
+        // Match their identities without scoring them, even when they have no line data.
+        var (metricsIndex, accessorFallback) = IndexMetrics(metricsMembers);
+        var excluded = FoldRawEntries(excludedMethods);
+        FoldSyntheticGroups(excluded);
+        foreach (var logical in excluded.Where(static l => !l.FoldedAway))
+            MatchMetrics(logical, metricsMembers, metricsIndex, accessorFallback, consumed);
+
         var (scored, unscored) = ScoreMethods(order, metricsMembers, consumed);   // 3. resolve comp, score
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
 
@@ -365,6 +379,7 @@ public static class CrapAnalysis
         if (metricsMembers is not null)
             for (var i = 0; i < metricsMembers.Count; i++)
                 if (metricsMembers[i].Kind is CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor &&
+                    metricsMembers[i].ExecutableLines is not 0 &&
                     !consumed.Contains(i))
                     unmatched.Add(metricsMembers[i].DisplayName);
         return unmatched;

@@ -47,7 +47,14 @@ public readonly record struct CodeMetricsMember(
     CodeMetricsMemberKind Kind,
     int? Arity,
     int CyclomaticComplexity,
-    string DisplayName);
+    string DisplayName)
+{
+    /// <summary>
+    /// Executable lines reported by Roslyn. Zero identifies a declaration without a
+    /// measurable body; null means the metric is absent or invalid, not zero.
+    /// </summary>
+    public int? ExecutableLines { get; init; }
+}
 
 /// <summary>
 /// Streaming reader for the Microsoft.CodeAnalysis.Metrics XML shape
@@ -104,6 +111,7 @@ public static class CodeMetricsReader
         public readonly string Display = display;
         public readonly string Element = element;
         public int? Complexity;
+        public int? ExecutableLines;
     }
 
     /// <summary>The document position ParseCore threads through its element handlers.</summary>
@@ -146,7 +154,7 @@ public static class CodeMetricsReader
                 break;
 
             case "Metric":
-                RecordComplexity(reader, state);
+                RecordMetric(reader, state);
                 break;
 
             default:
@@ -195,14 +203,24 @@ public static class CodeMetricsReader
             state.Members.Add(Materialize(pending, state.Namespace, state.TypeChain, complexity));
     }
 
-    private static void RecordComplexity(XmlReader reader, ParserState state)
+    private static void RecordMetric(XmlReader reader, ParserState state)
     {
         // Assign to the innermost OPEN member: a Property's own Metrics arrive before its
         // <Accessors>, so accessor metrics can never leak upward.
-        if (state.MemberStack.Count > 0 &&
-            reader.GetAttribute("Name") is "CyclomaticComplexity" &&
-            int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-            state.MemberStack.Peek().Complexity = value;
+        if (state.MemberStack.Count is 0 ||
+            !int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            return;
+
+        var pending = state.MemberStack.Peek();
+        switch (reader.GetAttribute("Name"))
+        {
+            case "CyclomaticComplexity":
+                pending.Complexity = value;
+                break;
+            case "ExecutableLines":
+                pending.ExecutableLines = value >= 0 ? value : null;
+                break;
+        }
     }
 
     private static CodeMetricsMember Materialize(
@@ -214,7 +232,10 @@ public static class CodeMetricsReader
         var enclosingSimpleName = SimpleName(typeChain[^1]);
         var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, enclosingSimpleName);
 
-        return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display);
+        return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display)
+        {
+            ExecutableLines = pending.ExecutableLines
+        };
     }
 
     private static string SimpleName(string dottedType)
