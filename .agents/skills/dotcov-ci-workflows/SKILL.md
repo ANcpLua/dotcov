@@ -38,7 +38,7 @@ description: >-
    - Native RID packages and the portable fallback must exist before the
      `DotCov.Tool` pointer is pushed. Keep pointer publication last.
    - Coverage uses the shared project settings described in the
-     [test guide](../../../tests/CLAUDE.md). Consume reports from the intended
+     [test guide](../../../tests/AGENTS.md). Consume reports from the intended
      run only; missing measurements cannot produce a passing badge or gate.
    - The coverage gate (`fallout Coverage --reports TestResults`) rejects
      missing src projects and coverage below the thresholds in `build/Build.cs`.

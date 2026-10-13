@@ -7,7 +7,7 @@ Coverage stays at 100% of lines and branches: `fallout Coverage` and CI fail bel
 list the files that fell short. Close each gap with a test that drives a public entry point,
 or delete the code if no input can reach it; never exclude code from measurement.
 For test isolation, measurement or runner diagnostics, read the
-[test guide](tests/CLAUDE.md).
+[test guide](tests/AGENTS.md).
 
 ## Skills
 

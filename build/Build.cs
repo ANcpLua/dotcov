@@ -71,7 +71,7 @@ class Build : FalloutBuild
                 args.AddRange(["--badge-dir", Path.GetFullPath(BadgeDirectory, RootDirectory)]);
             await RunDotCov([.. args],
                 failure: "Coverage must stay at 100% of lines and branches. For each file dotcov lists above, add a test that " +
-                         "drives the uncovered line or branch through a public entry point (tests/CLAUDE.md), or delete the " +
+                         "drives the uncovered line or branch through a public entry point (tests/AGENTS.md), or delete the " +
                          "code if no input can reach it. Never exclude code from measurement.");
         });
 
