@@ -184,9 +184,9 @@ public static partial class CoberturaParser
     /// Capture one <c>&lt;source&gt;</c> root. No-op spellings (".", "./") collapse to the ""
     /// sentinel, which <see cref="ResolveFileKey"/> reads as "leave relative filenames
     /// unprefixed". The sentinel is recorded, not discarded: a no-op declared alongside real
-    /// roots is a second resolution convention, so it counts toward the multi-root warning and
-    /// keeps its document-order slot (the FIRST declared root wins resolution). Respellings of
-    /// one root are deduplicated so they cannot fake that multiplicity.
+    /// roots is a second resolution convention, so it is a candidate root like any other and
+    /// keeps its document-order slot (the FIRST declared root wins when the disk cannot
+    /// decide). Respellings of one root are deduplicated so they cannot fake that multiplicity.
     /// <para>
     /// The root is the element's own character content: every text and CDATA child,
     /// concatenated. A comment or processing instruction splits that text without ending it,
@@ -213,17 +213,7 @@ public static partial class CoberturaParser
     private static void RecordSource(string value, DocumentContext document)
     {
         var root = PathIdentity.NormalizeRoot(value);
-        if (document.SourceRoots.Contains(root)) return;   // List.Contains is Ordinal for strings
-
-        document.SourceRoots.Add(root);
-        if (document.SourceRoots.Count is 2)
-            document.Warn(new CoverageWarning(
-                CoverageWarningKind.FileIdentityAmbiguous,
-                "",
-                0,
-                $"multiple <source> roots - {(document.SourceRoots[0].Length is 0
-                    ? "leaving relative filenames unprefixed (the first declared root is a no-op)"
-                    : $"resolving relative filenames against the first ('{document.SourceRoots[0]}')")}; files may not be attributable to a unique root"));
+        if (!document.SourceRoots.Contains(root)) document.SourceRoots.Add(root);   // List.Contains is Ordinal for strings
     }
 
     /// <summary>
@@ -294,14 +284,14 @@ public static partial class CoberturaParser
 
     /// <summary>
     /// The file identity key of a <c>&lt;class filename&gt;</c>: separators normalized to '/'
-    /// (Windows coverlet writes '\'), the document's first <c>&lt;source&gt;</c> root applied
+    /// (Windows coverlet writes '\'), the document's <c>&lt;source&gt;</c> root applied
     /// to relative names, and a leading drive letter uppercased. Both aggregations key on this
     /// string, so method entries join against <see cref="FileCoverage.Path"/> on the same key.
     /// Returns null for a class without a filename, which carries no attributable data.
     /// </summary>
     private static string? DecodeFileName(XmlReader reader, DocumentContext document) =>
         reader.GetAttribute("filename") is { } filename
-            ? ResolveFileKey(filename.Replace('\\', '/'), document.SourceRoots)
+            ? ResolveFileKey(filename.Replace('\\', '/'), document)
             : null;
 
     /// <summary>
@@ -353,22 +343,20 @@ public static partial class CoberturaParser
     }
 
     /// <summary>
-    /// Prepend the report's first <c>&lt;source&gt;</c> root to a relative filename. Cobertura
+    /// Prepend the report's <c>&lt;source&gt;</c> root to a relative filename. Cobertura
     /// emitters (coverage.py, gcovr, cover2cover) write filenames relative to a source root;
     /// discarding it would make two different files that share a relative name collide on one key.
     /// The rooted check is manual (leading '/' or a drive-letter prefix) because
-    /// <c>Path.IsPathRooted("C:/x")</c> is false on Linux and reports cross machines. The root
-    /// is applied unconditionally, never only on collision — a conditional prefix would make a
-    /// file's identity unstable across runs. A first-declared no-op root (the "" sentinel)
-    /// resolves as "no prefix": first-wins applies to the DECLARED order.
+    /// <c>Path.IsPathRooted("C:/x")</c> is false on Linux and reports cross machines. A single
+    /// root is applied unconditionally, never only on collision — a conditional prefix would make
+    /// a file's identity unstable across runs. Several roots follow <see cref="ResolveRoot"/>.
+    /// A no-op root (the "" sentinel) resolves as "no prefix".
     /// </summary>
-    private static string ResolveFileKey(string filename, List<string> sourceRoots)
+    private static string ResolveFileKey(string filename, DocumentContext document)
     {
-        if (sourceRoots.Count > 0 && sourceRoots[0].Length > 0 && !IsRooted(filename))
-        {
-            var root = sourceRoots[0];
-            filename = root.EndsWith('/') ? root + filename : $"{root}/{filename}";
-        }
+        var roots = document.SourceRoots;
+        if (roots.Count > 0 && !IsRooted(filename))
+            filename = JoinRoot(roots.Count is 1 ? roots[0] : ResolveRoot(filename, document), filename);
 
         // Uppercase a leading drive letter so `c:\x\A.cs` and `C:/x/A.cs` — the same file
         // emitted by different Windows toolchains — produce one Ordinal key. Key normalization,
@@ -378,6 +366,42 @@ public static partial class CoberturaParser
 
         return filename;
     }
+
+    /// <summary>
+    /// Pick the root for a relative filename in a document that declares several. coverage.py
+    /// writes each file relative to the source root that contains it, so the one root under which
+    /// the file exists on disk is the file's own. When it exists under none (a report read away
+    /// from its sources) or under several, the first declared root applies and the document
+    /// carries one report-scoped warning.
+    /// </summary>
+    private static string ResolveRoot(string filename, DocumentContext document)
+    {
+        string? match = null;
+        foreach (var root in document.SourceRoots)
+        {
+            if (!File.Exists(JoinRoot(root, filename))) continue;
+            if (match is not null) return FirstRootWithWarning(document);
+            match = root;
+        }
+
+        return match ?? FirstRootWithWarning(document);
+    }
+
+    private static string FirstRootWithWarning(DocumentContext document)
+    {
+        var first = document.SourceRoots[0];
+        document.Warn(new CoverageWarning(
+            CoverageWarningKind.FileIdentityAmbiguous,
+            "",
+            0,
+            $"multiple <source> roots - {(first.Length is 0
+                ? "leaving relative filenames unprefixed (the first declared root is a no-op)"
+                : $"resolving relative filenames against the first ('{first}')")}; files may not be attributable to a unique root"));
+        return first;
+    }
+
+    private static string JoinRoot(string root, string filename) =>
+        root.Length is 0 ? filename : root.EndsWith('/') ? root + filename : $"{root}/{filename}";
 
     private static bool IsRooted(string path) =>
         path.StartsWith('/') ||
