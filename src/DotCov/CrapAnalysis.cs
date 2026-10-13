@@ -118,7 +118,8 @@ public sealed class CrapReport
     /// Decide whether every method is at or below <paramref name="maxCrap"/>. A method exactly AT
     /// the threshold passes — the gate fires only strictly above, mirroring <c>check</c>'s
     /// at-threshold-passes semantics (see <see cref="CrapAnalysis.Exceeds"/>). The verdict needs
-    /// COMPLETE scoring: a single <see cref="Unscored"/> method makes it
+    /// COMPLETE scoring: a single <see cref="Unscored"/> method or
+    /// <see cref="UnmatchedMetricsMembers"/> entry makes it
     /// <see cref="GateOutcome.NoData"/>, because the method the gate cannot score may be the
     /// one above the limit; zero scored methods is NoData too, and so is a report with
     /// <see cref="AmbiguousFiles"/>. A gate that cannot see everything cannot vouch for anything.
@@ -142,6 +143,11 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{Unscored.Count} of {Methods.Count + Unscored.Count} methods could not be scored - ") +
                 "supply --metrics <file> (dotnet msbuild /t:Metrics); a verdict needs every method scored");
+
+        if (UnmatchedMetricsMembers.Count > 0)
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
+                Invariant($"{UnmatchedMetricsMembers.Count} metrics members without coverage data - ") +
+                "a verdict needs every method scored");
 
         if (Methods.Count is 0)
             return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
@@ -271,6 +277,9 @@ public static class CrapAnalysis
                 order.Add(logical);
             }
 
+            // Any own state-machine body makes this the origin's body, even if a lambda
+            // created the group first. Never downgrade it when later entries are lambdas.
+            if (origin is { OwnBody: true }) logical.Origin = origin;
             logical.MergeLines(mc.LineHits);
             logical.MergeEmbeddedComplexity(mc.Complexity);
         }
@@ -370,7 +379,7 @@ public static class CrapAnalysis
         public readonly string TypeKey = typeKey;
         public readonly int? Arity = arity;
         /// <summary>Set for compiler-synthesized material; null for a method the source names directly.</summary>
-        public readonly SyntheticOrigin? Origin = origin;
+        public SyntheticOrigin? Origin = origin;
         public bool Folded => Origin is not null;
         public string File => Name.File;
         public readonly Dictionary<int, int> Lines = new();

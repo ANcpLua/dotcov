@@ -464,6 +464,44 @@ public sealed class CrapAnalysisTests
         await Assert.That(report.Unscored.Single().Reason).Contains("no line data");
     }
 
+    [Test]
+    [Arguments(CodeMetricsMemberKind.Method, 1, 0)]
+    [Arguments(CodeMetricsMemberKind.Accessor, 1, 0)]
+    [Arguments(CodeMetricsMemberKind.Method, 6, 1)]
+    public async Task UnmatchedExecutableMetricsMember_IsNoData_WithMeasuredStatistics(
+        CodeMetricsMemberKind kind, int complexity, int aboveThreshold)
+    {
+        var report = CrapAnalysis.Analyze(
+            [Method("MyApp.A", "M", "()", complexity, [(1, 0)])],
+            [Member("MyApp.A", "Ghost", kind, 0, 9)]);
+
+        var gate = report.Evaluate(30);
+
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
+        await Assert.That(gate.IsPass).IsFalse();
+        await Assert.That(gate.ScoredMethods).IsEqualTo(1);
+        await Assert.That(gate.AboveThreshold).IsEqualTo(aboveThreshold);
+        await Assert.That(gate.WorstScore).IsEqualTo(CrapAnalysis.Score(complexity, 0));
+        await Assert.That(gate.Reason).Contains("1 metrics members without coverage data");
+        await Assert.That(report.Evaluate(double.PositiveInfinity).Outcome).IsEqualTo(GateOutcome.Disabled);
+    }
+
+    [Test]
+    public async Task MetricsAggregatesWithoutCoverage_DoNotPreventAMeasuredPass()
+    {
+        var report = CrapAnalysis.Analyze(
+            [Method("MyApp.A", "M", "()", 1, [(1, 1)])],
+            [
+                Member("MyApp.A", "Value", CodeMetricsMemberKind.Property, null, 2),
+                Member("MyApp.A", "Field", CodeMetricsMemberKind.Field, null, 1),
+                Member("MyApp.A", "Changed", CodeMetricsMemberKind.Event, null, 1),
+            ]);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
     // ── Exclusions ────────────────────────────────────────────────────────────
 
     [Test]
