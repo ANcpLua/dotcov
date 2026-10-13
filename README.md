@@ -5,11 +5,13 @@
 Turn Cobertura XML into a build decision — a table, a markdown block, a JSON payload, and an
 exit code your CI can act on. Local by default; uploads are opt-in.
 
-## Migrating from 0.x
+## Migrating from 1.x
 
-Version 1.0 replaces `DotCov.Nuke` with `DotCov.Fallout` and separates report discovery from
-XML parsing (`ReportResolver.Resolve` replaces the parser's path methods). See the
-[1.0 migration notes](docs/releases/1.0.0.md) for both upgrades.
+Version 2.0 counts some reports differently. Line totals of istanbul reports (Jest, Vitest) drop
+to the tool's own, and coverage.py reports with several `source` roots resolve each file against
+its own root. Commands, flags and exit codes are unchanged. Check thresholds and badges set on
+1.x numbers; the [2.0 release notes](docs/releases/2.0.0.md) have the details. Coming from 0.x,
+read the [1.0 migration notes](docs/releases/1.0.0.md) first.
 
 ## Getting started
 
@@ -176,7 +178,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v1.7.1
+  - uses: ANcpLua/dotcov/.github/actions/badge@v2.0.0
     with:
       reports: TestResults
       min-line: 80
@@ -222,5 +224,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/1.7.1.md) ·
+[Release notes](docs/releases/2.0.0.md) ·
 [MIT](LICENSE)
