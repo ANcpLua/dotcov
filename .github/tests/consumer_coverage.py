@@ -88,10 +88,11 @@ def measure(args):
         for file in actual["files"]
     }
     assert actual_files == files, f"Per-file mismatch: native {files}; DotCov {actual_files}"
-    # ItsDangerous's upstream reporting config also names tests as a source root.
-    # Keep the diagnostic and prove file attribution against the native JSON above.
+    # ItsDangerous's upstream reporting config also names tests as a source root. Every
+    # measured file exists under exactly one root, so DotCov attributes it without the
+    # multi-root warning; the per-file comparison above proves that attribution.
     warnings = [warning["kind"] for warning in actual.get("warnings", [])]
-    assert warnings == (["FileIdentityAmbiguous"] if args.language == "python" else []), warnings
+    assert warnings == [], warnings
     # Both real suites have missing lines and branches. No report is edited to manufacture failure.
     line_hit, line_total, branch_hit, branch_total = total
     assert 0.9 <= line_hit / line_total < 1
