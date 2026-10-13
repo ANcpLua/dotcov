@@ -235,6 +235,68 @@ public sealed class CoberturaParserTests
     }
 
     [Test]
+    public async Task Parse_IstanbulLayout_MethodDeclarationLinesAreNotFileLines()
+    {
+        // istanbul (Jest, Vitest) lists each function's declaration line under <methods>; the
+        // class-level <lines> are its line coverage and need not contain that line.
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="x.ts" filename="x.ts">
+                               <methods>
+                                 <method name="run" hits="2" signature="()V">
+                                   <lines><line number="3" hits="2" /></lines>
+                                 </method>
+                               </methods>
+                               <lines>
+                                 <line number="4" hits="2" branch="false" />
+                                 <line number="5" hits="0" branch="true" condition-coverage="50% (1/2)" />
+                               </lines>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var file = CoberturaParser.Parse(stream).Files.Single();
+
+        await Assert.That(file.LinesTotal).IsEqualTo(2);
+        await Assert.That(file.LinesHit).IsEqualTo(1);
+        await Assert.That(file.UncoveredLines).IsEquivalentTo([5], CollectionOrdering.Matching);
+        await Assert.That(file.BranchesHit).IsEqualTo(1);
+        await Assert.That(file.BranchesTotal).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Parse_ClassWithoutClassLevelLines_CountsItsMethodLines()
+    {
+        const string xml = """
+                           <?xml version="1.0"?>
+                           <coverage><packages><package><classes>
+                             <class name="X" filename="x.cs">
+                               <methods>
+                                 <method name="A" signature="()">
+                                   <lines>
+                                     <line number="10" hits="1" branch="False" />
+                                     <line number="11" hits="1" branch="True" condition-coverage="50% (1/2)">
+                                       <conditions><condition number="0" type="jump" coverage="50%" /></conditions>
+                                     </line>
+                                   </lines>
+                                 </method>
+                               </methods>
+                             </class>
+                           </classes></package></packages></coverage>
+                           """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var file = CoberturaParser.Parse(stream).Files.Single();
+
+        await Assert.That(file.LinesTotal).IsEqualTo(2);
+        await Assert.That(file.LinesHit).IsEqualTo(2);
+        await Assert.That(file.BranchesByLine[11]).IsEqualTo((1, 2));
+        await Assert.That(file.ConditionsByLine[11][0]).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Parse_BranchedLines_PopulatesBranchesByLineFromXml()
     {
         const string xml = """
