@@ -37,7 +37,7 @@ If you can delegate to copies of yourself, you are the lead:
 3. When all four have reported, apply their patches in /workspace/dotcov, resolve conflicts, and rerun the Coverage command until it passes. Then deliver.
 
 If you were handed a slice, you are a hunter:
-- Work only in your worktree and only on your slice's code and its tests. Read AGENTS.md, tests/CLAUDE.md and src/DotCov.Fallout/AGENTS.md first and follow their TUnit rules.
+- Work only in your worktree and only on your slice's code and its tests. Read AGENTS.md, tests/AGENTS.md and src/DotCov.Fallout/AGENTS.md first and follow their TUnit rules.
 - Hunt the hardest bugs first: wrong results without an error, boundary and empty input, culture and encoding, number parsing and rounding, stream ownership and disposal, path handling, and any promise a name, doc comment or caller makes that the code breaks. Prove each bug with a test that fails on the current code, then make the smallest fix that makes it pass.
 - Then close every coverage gap in your slice with tests that drive public entry points and assert results. Delete code no input can reach unless it is public API; test public API instead.
 - While you work, run only the tests you touch (`dotnet test --project tests/DotCov.Tests --treenode-filter ...`). Before reporting, run the full `dotnet fallout Coverage` once in your worktree and confirm every test passes.
