@@ -54,6 +54,8 @@ dotcov check coverage.xml --min-line 90 --min-branch 90
 Pass the XML file directly to the badge action's `reports` input. This also avoids directory
 search defaults: `coverage.xml` does not match `**/*cobertura*.xml`.
 DotCov checks line and branch percentages separately; coverage.py's displayed total combines them.
+With several coverage.py `source` roots, each file name is relative to the root that contains it.
+DotCov uses the root under which the file exists, so run it where the sources are checked out.
 
 CI runs the full suites of two pinned upstream projects on Linux, Windows, and macOS:
 

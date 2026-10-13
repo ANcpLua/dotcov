@@ -40,9 +40,9 @@ internal static class PathIdentity
     /// Whether two reports' declared roots genuinely differ — the single predicate behind
     /// both the merge's ambiguity scan and the diff's unconditional name-pairing arm, so
     /// the two can never disagree about what counts as a convention change. Compares
-    /// normalized SEQUENCES, not sets: root order is semantic (relative filenames resolve
-    /// against the FIRST root), so the same roots reordered can key a relative file
-    /// differently and must count as differing. Root-less on both sides is "same" —
+    /// normalized SEQUENCES, not sets: root order is semantic (a relative filename falls back to
+    /// the FIRST root when the disk cannot decide), so the same roots reordered can key a
+    /// relative file differently and must count as differing. Root-less on both sides is "same" —
     /// hand-built reports never trip the cross-convention machinery.
     /// </summary>
     internal static bool RootsDiffer(IReadOnlyList<string> a, IReadOnlyList<string> b)
