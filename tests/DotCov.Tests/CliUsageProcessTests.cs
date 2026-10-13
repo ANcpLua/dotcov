@@ -22,7 +22,7 @@ public sealed class CliUsageProcessTests : IDisposable
         await Assert.That(command.ExitCode).IsEqualTo(0);
         await Assert.That(alias.ExitCode).IsEqualTo(0);
         await Assert.That(alias.StdOut).IsEqualTo(command.StdOut);
-        await Assert.That(alias.StdOut).IsEqualTo($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version}{Environment.NewLine}");
+        await Assert.That(alias.StdOut).IsEqualTo($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version!.ToString(3)}{Environment.NewLine}");
         await Assert.That(alias.StdErr).IsEmpty();
         await Assert.That(command.StdErr).IsEmpty();
     }
@@ -35,8 +35,10 @@ public sealed class CliUsageProcessTests : IDisposable
     public async Task MissingArgument_AndSuppliedNonexistentPath_HaveDistinctExitCodes(
         string command, CancellationToken cancellationToken)
     {
+        // check has no default threshold: the nonexistent path must be the only thing wrong.
+        string[] threshold = command is "check" ? ["--min-line", "80"] : [];
         var missing = await Run(cancellationToken, command);
-        var nonexistent = await Run(cancellationToken, command, _ws.PathOf("absent.xml"));
+        var nonexistent = await Run(cancellationToken, [command, _ws.PathOf("absent.xml"), .. threshold]);
 
         await Assert.That(missing.ExitCode).IsEqualTo(DotCovCli.UsageExitCode);
         await Assert.That(nonexistent.ExitCode).IsEqualTo(DotCovCli.ErrorExitCode);

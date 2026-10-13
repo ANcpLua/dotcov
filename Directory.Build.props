@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">2.0.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">3.0.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -26,6 +26,16 @@
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
     <!-- Common core; each packable project appends its own specifics via $(PackageTags). -->
     <PackageTags>coverage;cobertura;code-coverage;testing</PackageTags>
+    <!-- The release's contract changes first, then the fixes with the direction each number moves;
+         docs/releases/$(VersionPrefix).md holds the full notes. -->
+    <PackageReleaseNotes>
+DotCov 3.0.0 changes three gate contracts; every number a gate decides on may move.
+1. Thresholds are explicit: check, test, the Fallout target and the badge action have no default --min-line 80. Pass --min-line, --min-branch, or both (0 to 100); without either the command exits 2 before reading a report.
+2. The CRAP gate needs every method scored: one unscored method makes it NODATA (exit 3). Emitters without a usable complexity attribute need --metrics.
+3. File identity is deterministic: several source roots no longer trigger a disk probe; unresolved files make check, crap and test NODATA until --probe-sources or --source-root.
+Fixes: contradictory condition detail and empty class summaries no longer inflate branch and line rates; condition identity no longer depends on XML packaging; CRAP rows stay per file and per overload, raising diluted scores; ./src/C.cs and src/C.cs count once; ParseAsync finishes method-only classes.
+New: --exclude-test-code. Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
+    </PackageReleaseNotes>
   </PropertyGroup>
 
   <!-- Package README: without PackageReadmeFile nuget.org renders only <Description> and shows a

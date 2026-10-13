@@ -72,11 +72,12 @@ public sealed class CrapAnalysisEdgeTests
     {
         // `IEnumerator IEnumerable.GetEnumerator() { yield ... }`: the method is
         // System.Collections.IEnumerable.GetEnumerator, its state machine
-        // <System-Collections-IEnumerable-GetEnumerator>d__3.
+        // <System-Collections-IEnumerable-GetEnumerator>d__3. The kickoff stub holds no lines
+        // of its own: the whole body is the state machine's.
         var stub = Method("MyApp.Bag", "System.Collections.IEnumerable.GetEnumerator", "()", complexity: 1,
-            lines: [(12, 1)]);
+            lines: []);
         var sm = Method("MyApp.Bag/<System-Collections-IEnumerable-GetEnumerator>d__3", "MoveNext", "()",
-            complexity: 3, lines: [(13, 0)]);
+            complexity: 3, lines: [(12, 1), (13, 0)]);
 
         var report = CrapAnalysis.Analyze([stub, sm]);
 
@@ -415,16 +416,15 @@ public sealed class CrapAnalysisEdgeTests
     }
 
     [Test]
-    public async Task ExcludeFiles_NoPatterns_ReturnsTheInputUnchanged()
+    public async Task Exclude_NoPatterns_ReturnsTheReportUnchanged()
     {
-        IReadOnlyList<MethodCoverage> methods =
-        [
-            Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs"),
-        ];
+        var report = new MethodCoverageReport(
+            [Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs")], [], []);
 
-        var filtered = CrapAnalysis.ExcludeFiles(methods, [], keep: ["src/Migrations/X.cs"]);
+        var filtered = report.Exclude([], keep: ["src/Migrations/X.cs"]);
 
-        await Assert.That(filtered).IsSameReferenceAs(methods);
+        await Assert.That(filtered).IsSameReferenceAs(report);
+        await Assert.That(filtered.Exclusion.IsActive).IsFalse();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

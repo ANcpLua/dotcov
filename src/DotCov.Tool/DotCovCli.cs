@@ -55,12 +55,14 @@ public static partial class DotCovCli
             // Expected failure modes — missing/unreadable paths, malformed metrics XML — get a
             // one-line actionable message, never a stack trace.
             await stderr.WriteLineAsync($"error: {ex.Message}");
-            return ex is UsageError ? UsageExitCode : ErrorExitCode;
+            // A --source-root no report declares is a request that cannot be honored, not a
+            // report that could not be read.
+            return ex is UsageError or UndeclaredSourceRootException ? UsageExitCode : ErrorExitCode;
         }
     }
 
     static bool IsExpectedFailure(Exception ex) =>
-        ex is UsageError or CliError or XmlException or IOException or UnauthorizedAccessException;
+        ex is UsageError or CliError or UndeclaredSourceRootException or XmlException or IOException or UnauthorizedAccessException;
 
     // Not async: each arm hands back its command's Task, so a synchronous command's exception
     // still surfaces inside RunAsync's try, and the switch stays one branch per command.
@@ -90,7 +92,7 @@ public static partial class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated]");
+            await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated] [--exclude-test-code]");
             return UsageExitCode;
         }
 
@@ -105,7 +107,7 @@ public static partial class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
-        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
 
         var output = format switch
@@ -124,7 +126,9 @@ public static partial class DotCovCli
             WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
 
         // The table shows only a warning count; markdown and JSON already list each warning.
-        WriteDiagnostics(path, inputs, format is "table" ? report.Warnings : [], stderr);
+        // JSON carries the exclusion itself; the other formats name it on stderr.
+        WriteDiagnostics(path, inputs, format is "table" ? report.Warnings : [],
+            format is "json" ? FileExclusion.None : report.Exclusion, stderr);
         return exitCode;
     }
 
@@ -132,20 +136,15 @@ public static partial class DotCovCli
     {
         if (!opts.TryGetValue("file", out var path))
         {
-            await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> --min-line N [--min-branch N] [--exclude-generated]");
+            await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> [--min-line N] [--min-branch N] (at least one) [--exclude-generated] [--exclude-test-code]");
             return UsageExitCode;
         }
 
-        if (!TryParsePercent("min-line", opts.GetValueOrDefault("min-line", "80"), stderr, out var minLine))
-            return UsageExitCode;
-
-        if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
-            return UsageExitCode;
-
+        if (!TryGetThresholds("check", opts, stderr, out var minLine, out var minBranch)) return UsageExitCode;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
         if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
-        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
         return await Gate(report, report.Evaluate(minLine, minBranch), path, inputs, opts, stdout, stderr);
     }
@@ -178,7 +177,7 @@ public static partial class DotCovCli
             var badgeWritten = WriteBadge(opts, gate, stderr);
             var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
             WriteSummary();
-            WriteDiagnostics(path, inputs, report.Warnings, stderr);
+            WriteDiagnostics(path, inputs, report.Warnings, report.Exclusion, stderr);
             return badgeWritten ? exitCode : ErrorExitCode;
         }
 
@@ -197,7 +196,7 @@ public static partial class DotCovCli
         }
 
         WriteSummary();
-        WriteDiagnostics(path, inputs, report.Warnings, stderr);
+        WriteDiagnostics(path, inputs, report.Warnings, report.Exclusion, stderr);
 
         // Failing runs write their badge and upload too — red runs are the ones a badge and a
         // coverage dashboard most need to show. The non-passing gate's exit code wins regardless
@@ -229,17 +228,17 @@ public static partial class DotCovCli
         // Default 30 — the original CRAP threshold (crap4j). A fully covered method scores its
         // own complexity, so a lower default fails well-tested code on complexity alone;
         // --max-crap 6 opts into that stricter gate.
-        if (!TryParsePercent("max-crap", opts.GetValueOrDefault("max-crap", "30"), stderr, out var maxCrap))
+        if (!TryParseNumber("max-crap", opts.GetValueOrDefault("max-crap", "30"), stderr, out var maxCrap))
             return UsageExitCode;
 
         if (!TryGetTop(opts, stderr, out var top)) return UsageExitCode;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var inputs = ResolveInputs(path, pattern);
-        var parsed = CoberturaParser.ParseMethods(inputs, maxChars);
-        var methods = ApplyMethodExclusions(parsed.Methods, opts);
-        var report = CrapAnalysis.Analyze(methods, LoadMetrics(opts, maxChars));
+        var parsed = CoberturaParser.ParseMethods(inputs, maxChars, Identity(opts));
+        var report = CrapAnalysis.Analyze(ApplyExclusions(parsed, opts), LoadMetrics(opts, maxChars));
         var gate = report.Evaluate(maxCrap);
+        var exclusion = format is "json" ? FileExclusion.None : report.Exclusion;
 
         stdout.Write(RenderCrap(format, report, gate, top, color));
 
@@ -258,14 +257,14 @@ public static partial class DotCovCli
             if (format is not "json")
                 stdout.WriteLine(gate.ToString());
             WriteSummary();
-            WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
+            WriteDiagnostics(path, inputs, parsed.Warnings, exclusion, stderr);
             return 0;
         }
 
         // Use the same distinct non-passing outcomes as check and test.
         stderr.WriteLine(gate.ToString());
         WriteSummary();
-        WriteDiagnostics(path, inputs, parsed.Warnings, stderr);
+        WriteDiagnostics(path, inputs, parsed.Warnings, exclusion, stderr);
         return NonPassingGateExitCode(gate.Outcome);
     }
 
@@ -316,8 +315,9 @@ public static partial class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
-        var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars);
-        var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars);
+        var identity = Identity(opts);
+        var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars, identity);
+        var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars, identity);
         var result = CoverageDiff.Compare(beforeReport, afterReport);
 
         stdout.Write(format switch
@@ -327,8 +327,8 @@ public static partial class DotCovCli
             _ => TableFormatter.FormatDiff(result, color)
         });
 
-        WriteDiagnostics(before, beforeInputs, beforeReport.Warnings, stderr);
-        WriteDiagnostics(after, afterInputs, afterReport.Warnings, stderr);
+        WriteDiagnostics(before, beforeInputs, beforeReport.Warnings, FileExclusion.None, stderr);
+        WriteDiagnostics(after, afterInputs, afterReport.Warnings, FileExclusion.None, stderr);
         return 0;
     }
 
@@ -342,7 +342,7 @@ public static partial class DotCovCli
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
-        var (merged, inputs) = ParseInput(path, pattern, maxChars);
+        var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
         var fileHash = HashInputs(inputs);
 
@@ -376,9 +376,10 @@ public static partial class DotCovCli
         return exitCode;
     }
 
+    // The package version's three components: the assembly version's fourth is always 0.
     static int Version(TextWriter stdout)
     {
-        stdout.WriteLine($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version}");
+        stdout.WriteLine($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version!.ToString(3)}");
         return 0;
     }
 
@@ -396,26 +397,39 @@ public static partial class DotCovCli
 
             Commands:
               report   <path> [--format table|json|md] [--threshold N]    Parse and display coverage
-              check    <path> --min-line N [--min-branch N]               CI gate (exit 1 if below)
+              check    <path> --min-line N and/or --min-branch N          CI gate (exit 1 if below)
               crap     <path> [--metrics <file>] [--max-crap N] [--top N] CRAP gate: comp^2*(1-cov)^3+comp
                        [--format table|json|md]                           per method (exit 1 if any method
                                                                           is strictly above --max-crap;
-                                                                          at-threshold passes; default 30)
+                                                                          at-threshold passes; default 30;
+                                                                          every method must be scored)
               diff     <before> <after> [--format table|json|md]          Compare two reports
               snapshot <path> [--commit SHA] [--branch B] [--project P]   Create pipeline-ready JSON
                                                                           (identity defaults to 'unknown')
-              test     [<project>] [--min-line N] [--min-branch N]        Run dotnet test with coverage into
+              test     [<project>] --min-line N and/or --min-branch N     Run dotnet test with coverage into
                        [-- <dotnet test arguments>]                       a fresh TestResults/<run>, then
                                                                           report and gate it like check
               version, --version                                          Show version
 
+            Thresholds (check, test) are percentages from 0 to 100, and there is no default: pass
+            --min-line, --min-branch, or both. A dimension left out is not checked; 0 disables one.
+            Without either, check and test exit 2 before reading a report or running a test.
+
             Shared flags (a flag the command does not use is an error, never ignored):
               --exclude-generated       Skip generated files, migrations, GlobalUsings.cs, Program.cs
                                         (report, check, crap, snapshot, test)
-              --keep <substrings>       Exempt comma-separated paths from --exclude-generated by
+              --exclude-test-code       Skip test projects and fixtures: *.Tests/, TestSupport/,
+                                        TestFixtures/ (report, check, crap, snapshot, test)
+              --keep <substrings>       Exempt comma-separated paths from both exclusions by
                                         case-insensitive substring match, not globs; requires
-                                        --exclude-generated (e.g. --keep Program.cs to measure a
-                                        CLI tool's entry point)
+                                        --exclude-generated or --exclude-test-code (e.g. --keep
+                                        Program.cs to measure a CLI tool's entry point)
+              --probe-sources           Resolve a relative filename under several <source> roots
+                                        against the root that holds it on this machine's disk;
+                                        the result depends on where dotcov runs
+              --source-root <path>      Resolve those filenames against this declared root instead
+                                        (--probe-sources and --source-root: every command that
+                                        reads a report)
               --pattern <glob>          Report filename to scan directories for: 'filename'
                                         (top level only) or '**/filename' (recursive)
                                         (default {{ReportPattern.DefaultText}})
@@ -430,6 +444,15 @@ public static partial class DotCovCli
             Every match is merged; when there is more than one, stderr lists them after the result.
             Give each test run a fresh results directory so an earlier run's report is not merged.
 
+            With an exclusion active, stderr lists its rules and every excluded file once; JSON
+            output (report --format json, crap --format json, snapshot) carries them as "excluded"
+            and "exclusionRules" instead.
+
+            A report that declares several <source> roots does not say which root a relative
+            filename belongs to. By default dotcov never guesses from the disk: the file is keyed
+            under the first root with a warning, report prints as usual, and check, crap, and test
+            exit 3 (NODATA) until --probe-sources or --source-root resolves it.
+
             test passes the coverage options of the runner dotnet test uses in this directory
             (DOTNET_TEST_RUNNER, else global.json test.runner, else VSTest). MTP test projects need
             Microsoft.Testing.Extensions.CodeCoverage; VSTest projects get the Code Coverage collector
@@ -439,25 +462,29 @@ public static partial class DotCovCli
             Exit codes:
               0  success; check, crap, and test require a measured pass
               1  FAIL: below a threshold
-              2  usage error: unknown command/flag, invalid value, missing/extra argument
-              3  NODATA: missing measurements
+              2  usage error: unknown command/flag, invalid value, missing/extra argument, no
+                 threshold (check, test), a --source-root no report declares
+              3  NODATA: missing measurements, an unscored CRAP method, an ambiguous file identity
               4  DISABLED: no active threshold
               5  error: supplied path unavailable, parse/IO/size-cap error, upload or badge write failure,
                  failed test run
             A non-passing gate keeps its exit code even if an upload or badge write also fails.
 
-            crap needs cyclomatic complexity per method: coverlet embeds it in the coverage XML
+            crap needs cyclomatic complexity for every method: coverlet embeds it in the coverage XML
             (used automatically); for other emitters pass --metrics <file> produced by
-            `dotnet msbuild /t:Metrics` (Microsoft.CodeAnalysis.Metrics package).
+            `dotnet msbuild /t:Metrics` (Microsoft.CodeAnalysis.Metrics package). A method without
+            it is listed as unscored, and the gate exits 3 rather than vouch for code it did not score.
 
             Examples:
               dotcov report TestResults/
               dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
               dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
               dotcov check TestResults/ --min-line 90 --min-branch 80 --badge-dir badge
+              dotcov check TestResults/ --min-branch 75 --exclude-test-code
               dotcov crap TestResults/ --max-crap 6 --github-summary
               dotcov crap coverage.cobertura.xml --metrics MyApp.Metrics.xml --top 10
               dotcov report gcovr-output/ --pattern "**/coverage.xml"   # non-Coverlet report names
+              dotcov check coverage.xml --min-line 85 --source-root src   # several <source> roots
               dotcov report TestResults/ --exclude-generated --keep Program.cs   # measure host bootstrap
               dotcov snapshot TestResults/ --commit abc123 --branch main --project MyApp --upload https://qyl/api/v1/coverage
               dotcov diff before.cobertura.xml after.cobertura.xml --format md
@@ -495,11 +522,22 @@ public static partial class DotCovCli
     }
 
     /// <summary>Parse and merge what <paramref name="path"/> resolves to; the inputs come back so they can be named.</summary>
-    static (CoverageReport Report, IReadOnlyList<ReportInput> Inputs) ParseInput(string path, ReportPattern pattern, long maxChars)
+    static (CoverageReport Report, IReadOnlyList<ReportInput> Inputs) ParseInput(
+        string path, ReportPattern pattern, long maxChars, FileIdentity identity)
     {
         var inputs = ResolveInputs(path, pattern);
-        return (CoberturaParser.Parse(inputs, maxChars), inputs);
+        return (CoberturaParser.Parse(inputs, maxChars, identity), inputs);
     }
+
+    /// <summary>
+    /// --probe-sources / --source-root: how relative filenames resolve under several declared
+    /// roots. Lexical by default, so the same report gives the same keys on every machine.
+    /// The two flags were checked for conflict and emptiness before anything was read.
+    /// </summary>
+    static FileIdentity Identity(Dictionary<string, string> opts) =>
+        opts.TryGetValue("source-root", out var root) ? FileIdentity.FromSourceRoot(root)
+        : opts.ContainsKey("probe-sources") ? FileIdentity.ProbeSources
+        : FileIdentity.Lexical;
 
     /// <summary>
     /// Every report a path resolved to, when there was more than one. All matches are merged, so
@@ -515,12 +553,30 @@ public static partial class DotCovCli
             stderr.WriteLine($"  {input.SourceName}");
     }
 
-    /// <summary>A gate's diagnostics, after its verdict: every warning, then the merged reports.</summary>
+    /// <summary>A gate's diagnostics, after its verdict: every warning, the exclusion, then the merged reports.</summary>
     static void WriteDiagnostics(
-        string path, IReadOnlyList<ReportInput> inputs, IReadOnlyList<CoverageWarning> warnings, TextWriter stderr)
+        string path, IReadOnlyList<ReportInput> inputs, IReadOnlyList<CoverageWarning> warnings,
+        FileExclusion exclusion, TextWriter stderr)
     {
         WriteWarnings(warnings, stderr);
+        WriteExclusion(exclusion, stderr);
         WriteInputs(path, inputs, stderr);
+    }
+
+    /// <summary>
+    /// An active exclusion, named once: its rules, the --keep exemptions, and every file it
+    /// removed — a number computed without them must say so.
+    /// </summary>
+    static void WriteExclusion(FileExclusion exclusion, TextWriter stderr)
+    {
+        if (!exclusion.IsActive) return;
+
+        stderr.WriteLine($"exclusion rules: {string.Join(", ", exclusion.Patterns)}");
+        if (exclusion.Keep.Count > 0)
+            stderr.WriteLine($"kept by --keep: {string.Join(", ", exclusion.Keep)}");
+        stderr.WriteLine(FormattableString.Invariant($"excluded {exclusion.ExcludedFiles.Count} files:"));
+        foreach (var file in exclusion.ExcludedFiles)
+            stderr.WriteLine($"  {file}");
     }
 
     /// <summary>
@@ -545,18 +601,9 @@ public static partial class DotCovCli
         return Convert.ToHexStringLower(sha256.GetHashAndReset());
     }
 
-    /// <summary>Method-level twin of <see cref="ApplyExclusions"/> — same flags, same rule set.</summary>
-    static IReadOnlyList<MethodCoverage> ApplyMethodExclusions(
-        IReadOnlyList<MethodCoverage> methods, Dictionary<string, string> opts)
-    {
-        if (!opts.ContainsKey("exclude-generated")) return methods;
-
-        var keep = opts.TryGetValue("keep", out var raw)
-            ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            : [];
-
-        return CrapAnalysis.ExcludeFiles(methods, ExclusionRules.WellKnown, keep);
-    }
+    /// <summary>Method-level twin of <see cref="ApplyExclusions(CoverageReport, Dictionary{string, string})"/> — same flags, same rule set.</summary>
+    static MethodCoverageReport ApplyExclusions(MethodCoverageReport report, Dictionary<string, string> opts) =>
+        report.Exclude(ExclusionPatterns(opts), KeepPatterns(opts));
 
     /// <summary>Resolve --pattern / --max-chars for the commands that parse coverage input.</summary>
     static bool TryGetParseOptions(
@@ -627,9 +674,41 @@ public static partial class DotCovCli
         return false;
     }
 
-    // NaN is rejected alongside unparseable input: every comparison against NaN is false, so a
-    // NaN threshold renders as "NaN%" while gating nothing.
+    /// <summary>
+    /// --min-line / --min-branch for check and test. There is no default: a gate nobody set
+    /// a threshold for would pass on a number nobody chose. One flag checks its dimension and
+    /// disables the other; both at 0 is the DISABLED gate.
+    /// </summary>
+    static bool TryGetThresholds(
+        string command, Dictionary<string, string> opts, TextWriter stderr, out double minLine, out double minBranch)
+    {
+        minLine = minBranch = 0;
+        var hasLine = opts.TryGetValue("min-line", out var line);
+        var hasBranch = opts.TryGetValue("min-branch", out var branch);
+        if (!hasLine && !hasBranch)
+        {
+            stderr.WriteLine($"error: missing threshold: '{command}' needs --min-line N, --min-branch N, or both (0 to 100; 0 disables a dimension).");
+            return false;
+        }
+
+        return (!hasLine || TryParsePercent("min-line", line!, stderr, out minLine)) &&
+               (!hasBranch || TryParsePercent("min-branch", branch!, stderr, out minBranch));
+    }
+
+    // A percentage is a finite number from 0 to 100. NaN is rejected alongside unparseable
+    // input: every comparison against NaN is false, so a NaN threshold renders as "NaN%" while
+    // gating nothing; 150 or infinity could never pass, and a negative value never fails.
     static bool TryParsePercent(string flag, string raw, TextWriter stderr, out double value)
+    {
+        if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && value is >= 0 and <= 100)
+            return true;
+
+        stderr.WriteLine($"error: Invalid --{flag} value: '{raw}' (expected a number from 0 to 100).");
+        return false;
+    }
+
+    // Any number but NaN: an infinite --max-crap is the documented way to disable the CRAP gate.
+    static bool TryParseNumber(string flag, string raw, TextWriter stderr, out double value)
     {
         if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !double.IsNaN(value))
             return true;
@@ -638,16 +717,22 @@ public static partial class DotCovCli
         return false;
     }
 
-    static CoverageReport ApplyExclusions(CoverageReport report, Dictionary<string, string> opts)
-    {
-        if (!opts.ContainsKey("exclude-generated")) return report;
+    static CoverageReport ApplyExclusions(CoverageReport report, Dictionary<string, string> opts) =>
+        report.Exclude(ExclusionPatterns(opts), KeepPatterns(opts));
 
-        var keep = opts.TryGetValue("keep", out var raw)
+    /// <summary>The rule sets the exclusion flags select; empty when neither is set, which excludes nothing.</summary>
+    static List<string> ExclusionPatterns(Dictionary<string, string> opts)
+    {
+        List<string> patterns = [];
+        if (opts.ContainsKey("exclude-generated")) patterns.AddRange(ExclusionRules.WellKnown);
+        if (opts.ContainsKey("exclude-test-code")) patterns.AddRange(ExclusionRules.TestCode);
+        return patterns;
+    }
+
+    static string[] KeepPatterns(Dictionary<string, string> opts) =>
+        opts.TryGetValue("keep", out var raw)
             ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
-
-        return report.Exclude(ExclusionRules.WellKnown, keep);
-    }
 
     // Display flooring for a rate in a FAILING dimension, one decimal: 79.96% renders 79.9%,
     // never a rounded-up 80.0% that reads as equal to the minimum it missed. GateResult owns
@@ -719,15 +804,21 @@ public static partial class DotCovCli
     {
         ["help"] = [],
         ["version"] = [],
-        ["report"] = Accept("file", "format", "threshold", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload"),
-        ["check"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "pattern", "max-chars", "github-summary", "upload", "badge-dir"),
-        ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", "exclude-generated", "keep", "pattern", "max-chars", "github-summary"),
-        ["diff"] = Accept("before", "after", "format", "pattern", "max-chars"),
-        ["snapshot"] = Accept("file", "commit", "branch", "project", "exclude-generated", "keep", "pattern", "max-chars", "upload"),
-        ["test"] = Accept("file", "min-line", "min-branch", "exclude-generated", "keep", "github-summary", "badge-dir"),
+        ["report"] = Accept("file", "format", "threshold", Exclusion, Identities, "pattern", "max-chars", "github-summary", "upload"),
+        ["check"] = Accept("file", "min-line", "min-branch", Exclusion, Identities, "pattern", "max-chars", "github-summary", "upload", "badge-dir"),
+        ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", Exclusion, Identities, "pattern", "max-chars", "github-summary"),
+        ["diff"] = Accept("before", "after", "format", Identities, "pattern", "max-chars"),
+        ["snapshot"] = Accept("file", "commit", "branch", "project", Exclusion, Identities, "pattern", "max-chars", "upload"),
+        ["test"] = Accept("file", "min-line", "min-branch", Exclusion, Identities, "github-summary", "badge-dir"),
     };
 
-    static HashSet<string> Accept(params string[] names) => new(names, StringComparer.OrdinalIgnoreCase);
+    // Option groups several commands share: the exclusion flags and the file-identity flags.
+    const string Exclusion = "exclude-generated exclude-test-code keep";
+    const string Identities = "probe-sources source-root";
+
+    static HashSet<string> Accept(params string[] names) =>
+        new(names.SelectMany(static n => n.Split(' ')), StringComparer.OrdinalIgnoreCase);
+
 
     /// <summary>Fail before any report is read or test is run when an argument would otherwise be ignored.</summary>
     static void RejectUnusedArguments(
@@ -740,50 +831,63 @@ public static partial class DotCovCli
 
         foreach (var (key, value) in options)
         {
-            if (accepted.Contains(key))
-            {
-                if (value.Length is 0 && (IsPathSlot(command, key) || key.Equals("metrics", StringComparison.OrdinalIgnoreCase)))
-                    throw new UsageError("missing path: the path argument is empty.");
-                continue;
-            }
-
-            // Parse files every path beyond the ones a command takes as "arg<N>".
-            if (key.StartsWith("arg", StringComparison.Ordinal) &&
-                int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
-                throw new UsageError(command is "test"
-                    ? $"Unexpected argument '{value}' for 'test'. Pass dotnet test arguments after '--'."
-                    : $"Unexpected argument '{value}' for '{command}'. To merge several reports, pass their directory.");
-
-            var equalsSign = key.IndexOf('=');
-            throw new UsageError(equalsSign > 0
-                // A valueless flag written with a value: the space-separated form would fail
-                // again, its value becoming a stray positional argument.
-                ? ValuelessFlags.Contains(key[..equalsSign])
-                    ? $"Unknown option '--{key}' for '{command}'. '--{key[..equalsSign]}' takes no value."
-                    : $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
-                : command is "test"
-                    ? $"Unknown option '--{key}' for 'test'. Pass dotnet test arguments after '--'."
-                    : $"Unknown option '--{key}' for '{command}'.");
+            if (!accepted.Contains(key)) throw UnknownOption(command, key, value);
+            if (value.Length is 0 && (IsPathSlot(command, key) || key.Equals("metrics", StringComparison.OrdinalIgnoreCase)))
+                throw new UsageError("missing path: the path argument is empty.");
         }
 
         // What the dictionary cannot show: a flag that got no value, or one spelled like a path.
         if (malformed.Count > 0)
             throw new UsageError(malformed[0]);
 
+        RejectInvalidValues(options);
+    }
+
+    /// <summary>The error for an option the command does not take, worded for what it most likely is.</summary>
+    static UsageError UnknownOption(string command, string key, string value)
+    {
+        // Parse files every path beyond the ones a command takes as "arg<N>".
+        if (key.StartsWith("arg", StringComparison.Ordinal) &&
+            int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            return new UsageError(command is "test"
+                ? $"Unexpected argument '{value}' for 'test'. Pass dotnet test arguments after '--'."
+                : $"Unexpected argument '{value}' for '{command}'. To merge several reports, pass their directory.");
+
+        var equalsSign = key.IndexOf('=');
+        return new UsageError(equalsSign > 0
+            // A valueless flag written with a value: the space-separated form would fail
+            // again, its value becoming a stray positional argument.
+            ? ValuelessFlags.Contains(key[..equalsSign])
+                ? $"Unknown option '--{key}' for '{command}'. '--{key[..equalsSign]}' takes no value."
+                : $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
+            : command is "test"
+                ? $"Unknown option '--{key}' for 'test'. Pass dotnet test arguments after '--'."
+                : $"Unknown option '--{key}' for '{command}'.");
+    }
+
+    /// <summary>Accepted options whose value, or whose combination with another, cannot be honored.</summary>
+    static void RejectInvalidValues(Dictionary<string, string> options)
+    {
         if (options.TryGetValue("upload", out var url) &&
             (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
             throw new UsageError($"Invalid --upload value: '{url}' (expected an absolute http(s) URL).");
 
-        // --keep only exempts files from --exclude-generated; on its own it would change nothing.
-        if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated"))
-            throw new UsageError("--keep only applies together with --exclude-generated.");
+        // --keep only exempts files from an exclusion; on its own it would change nothing.
+        if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated") && !options.ContainsKey("exclude-test-code"))
+            throw new UsageError("--keep only applies together with --exclude-generated or --exclude-test-code.");
+
+        if (options.ContainsKey("probe-sources") && options.ContainsKey("source-root"))
+            throw new UsageError("--probe-sources and --source-root are alternatives: pass one of them.");
+
+        if (options.TryGetValue("source-root", out var root) && string.IsNullOrWhiteSpace(root))
+            throw new UsageError($"Invalid --source-root value: '{root}' (expected a declared <source> root).");
     }
 
     // Flags that never take a value. Recorded as "true" the moment the token is seen, so a
     // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
     // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
     static readonly HashSet<string> ValuelessFlags =
-        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "github-summary" };
+        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "probe-sources", "github-summary" };
 
     /// <summary>
     /// Maps argv to the command and its options, plus an error for each flag the dictionary

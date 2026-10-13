@@ -5,10 +5,10 @@ namespace DotCov.Tests;
 
 public sealed class ParserSourceTests
 {
-    private static CoverageReport ParseXml(string xml)
+    private static CoverageReport ParseXml(string xml, FileIdentity? identity = null)
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        return CoberturaParser.Parse(stream);
+        return CoberturaParser.Parse(stream, identity: identity);
     }
 
     /// <summary>One class per filename, with optional <c>&lt;source&gt;</c> roots (raw, unescaped).</summary>
@@ -45,8 +45,9 @@ public sealed class ParserSourceTests
     [Test]
     public async Task Parse_MultipleRoots_WarningIsReportScopedWithEmptyFile()
     {
-        // Ambiguous roots concern the report, not a particular file or line.
-        var report = ParseXml(Doc("<sources><source>/a</source><source>/b</source></sources>", "x.cs"));
+        // Probing a disk that holds neither candidate: the ambiguity concerns the report, not a
+        // particular file or line.
+        var report = ParseXml(Doc("<sources><source>/a</source><source>/b</source></sources>", "x.cs"), FileIdentity.ProbeSources);
 
         var w = await Assert.That(report.Warnings).HasSingleItem();
         await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
@@ -65,11 +66,13 @@ public sealed class ParserSourceTests
         ws.Write("src/pkg/app.py", "");
         ws.Write("tests/test_app.py", "");
 
-        var report = ParseXml(Doc($"<sources><source>{src}</source><source>{tests}</source></sources>", "pkg/app.py", "test_app.py"));
+        var report = ParseXml(Doc($"<sources><source>{src}</source><source>{tests}</source></sources>", "pkg/app.py", "test_app.py"),
+            FileIdentity.ProbeSources);
 
         await Assert.That(report.Files.Select(f => f.Path).Order(StringComparer.Ordinal))
             .IsEquivalentTo(new[] { $"{src}/pkg/app.py", $"{tests}/test_app.py" }.Order(StringComparer.Ordinal));
         await Assert.That(report.Warnings).IsEmpty();
+        await Assert.That(report.AmbiguousFiles).IsEmpty();
     }
 
     [Test]
@@ -81,7 +84,7 @@ public sealed class ParserSourceTests
         ws.Write("a/x.py", "");
         ws.Write("b/x.py", "");
 
-        var report = ParseXml(Doc($"<sources><source>{a}</source><source>{b}</source></sources>", "x.py"));
+        var report = ParseXml(Doc($"<sources><source>{a}</source><source>{b}</source></sources>", "x.py"), FileIdentity.ProbeSources);
 
         await Assert.That(report.Files.Single().Path).IsEqualTo($"{a}/x.py");
         var w = await Assert.That(report.Warnings).HasSingleItem();
@@ -96,7 +99,7 @@ public sealed class ParserSourceTests
         var src = RootOf(ws, "src");
         ws.Write("src/pkg/app.py", "");
 
-        var report = ParseXml(Doc($"<sources><source>.</source><source>{src}</source></sources>", "pkg/app.py"));
+        var report = ParseXml(Doc($"<sources><source>.</source><source>{src}</source></sources>", "pkg/app.py"), FileIdentity.ProbeSources);
 
         await Assert.That(report.Files.Single().Path).IsEqualTo($"{src}/pkg/app.py");
         await Assert.That(report.Warnings).IsEmpty();

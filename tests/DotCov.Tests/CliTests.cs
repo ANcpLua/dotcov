@@ -199,13 +199,13 @@ public sealed class CliTests : IDisposable
     }
 
     [Test]
-    public async Task Keep_WithoutExcludeGenerated_IsAnError()
+    public async Task Keep_WithoutAnExclusion_IsAnError()
     {
-        // --keep only exempts files from --exclude-generated, so alone it would change nothing.
+        // --keep only exempts files from an exclusion, so alone it would change nothing.
         var (code, _, stderr) = await Run("report", HalfCovered(), "--keep", "Program.cs");
 
         await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated.");
+        await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated or --exclude-test-code.");
     }
 
     [Test]

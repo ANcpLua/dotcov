@@ -311,7 +311,9 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Arguments("snapshot")]
     public async Task InvalidMaxChars_IsRejectedBeforeAnyReportIsRead(string command)
     {
-        var (code, stdout, stderr) = await Run(command, HalfCovered(), "--max-chars", "-1");
+        string[] threshold = command is "check" ? ["--min-line", "80"] : [];
+
+        var (code, stdout, stderr) = await Run([command, HalfCovered(), .. threshold, "--max-chars", "-1"]);
 
         await AssertOneLineError(code, stdout, stderr, "error: Invalid --max-chars value: '-1'");
     }
@@ -443,12 +445,13 @@ public sealed class DotCovCliEdgeTests : IDisposable
     [Test]
     public async Task Report_DocumentScopedWarning_IsWrittenWithoutALocation()
     {
-        // Two <source> roots: the warning belongs to the document, not to a file or line.
+        // Two <source> roots probed on a disk that holds neither file: the warning belongs to the
+        // document, not to a file or line.
         var path = _ws.Write("roots.cobertura.xml", Cobertura.NewDoc()
             .WithSource("/a").WithSource("/b")
             .AddClass("x/Foo.cs", c => c.Line(1, hits: 1)));
 
-        var (code, _, stderr) = await Run("report", path);
+        var (code, _, stderr) = await Run("report", path, "--probe-sources");
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stderr).StartsWith("warning: multiple <source> roots - resolving relative filenames against the first ('/a')");

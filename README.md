@@ -5,13 +5,23 @@
 Turn Cobertura XML into a build decision — a table, a markdown block, a JSON payload, and an
 exit code your CI can act on. Local by default; uploads are opt-in.
 
-## Migrating from 1.x
+## Migrating to 3.0
 
-Version 2.0 counts some reports differently. Line totals of istanbul reports (Jest, Vitest) drop
-to the tool's own, and coverage.py reports with several `source` roots resolve each file against
-its own root. Commands, flags and exit codes are unchanged. Check thresholds and badges set on
-1.x numbers; the [2.0 release notes](docs/releases/2.0.0.md) have the details. Coming from 0.x,
-read the [1.0 migration notes](docs/releases/1.0.0.md) first.
+Version 3.0 changes three gate contracts, so every number a gate decides on may move:
+
+- **Thresholds are explicit.** `check`, `test`, the Fallout target and the badge action no longer
+  assume `--min-line 80`. Pass `--min-line`, `--min-branch`, or both (0 to 100); without either,
+  the command stops with exit `2` before it reads a report or runs a test.
+- **CRAP needs complete scoring.** One method `crap` cannot score makes the gate `NODATA` (exit
+  `3`) instead of passing it over. Emitters without a usable `complexity` attribute (gcovr
+  placeholders, ReportGenerator merges, some converters) now need `--metrics` to pass at all.
+- **File identity is deterministic.** A report with several `<source>` roots no longer makes
+  DotCov look at the disk. Its relative files stay unresolved, and `check`, `crap` and `test`
+  return `NODATA` until you pass `--probe-sources` (2.0's disk probe) or `--source-root`.
+
+Seven parser and CRAP fixes also move numbers; the [3.0 release notes](docs/releases/3.0.0.md)
+list each one and its direction. Coming from 1.x, read the [2.0 notes](docs/releases/2.0.0.md)
+too; from 0.x, start with the [1.0 migration notes](docs/releases/1.0.0.md).
 
 ## Getting started
 
@@ -60,8 +70,11 @@ dotcov check coverage.xml --min-line 90 --min-branch 90
 Pass the XML file directly to the badge action's `reports` input. This also avoids directory
 search defaults: `coverage.xml` does not match `**/*cobertura*.xml`.
 DotCov checks line and branch percentages separately; coverage.py's displayed total combines them.
-With several coverage.py `source` roots, each file name is relative to the root that contains it.
-DotCov uses the root under which the file exists, so run it where the sources are checked out.
+With several coverage.py `source` roots, each file name is relative to the root that contains it,
+and the report does not say which. DotCov does not guess: it keys such a file under the first
+root, warns, and its gates answer `NODATA`. Where the sources are checked out, add
+`--probe-sources` to resolve each file against the root that holds it on disk; anywhere else,
+`--source-root <root>` names the root.
 
 CI runs the full suites of two pinned upstream projects on Linux, Windows, and macOS:
 
@@ -119,8 +132,8 @@ Package READMEs cover CLI flags, library APIs, and Fallout parameters.
 | Command | Effect |
 |---|---|
 | `dotcov report <path>` | Parse and render as `table`, `json`, or `md`; `--threshold N` highlights files below N% |
-| `dotcov check <path>` | CI gate on `--min-line` (default `80`) and `--min-branch` (default `0`); `--badge-dir <dir>` writes the verdict as a [badge](#badge) |
-| `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `30`), `--top N`, `--metrics <file>` |
+| `dotcov check <path>` | CI gate on `--min-line`, `--min-branch`, or both, 0 to 100, with no default; a dimension left out is not checked. `--badge-dir <dir>` writes the verdict as a [badge](#badge) |
+| `dotcov crap <path>` | Per-method risk gate, `comp² · (1 − cov)³ + comp`, worst first; `--max-crap` (default `30`), `--top N`, `--metrics <file>`. Every method must be scored |
 | `dotcov diff <before> <after>` | Per-file deltas plus lines that flipped in files the change never touched |
 | `dotcov snapshot <path>` | Versioned JSON with `--commit`, `--branch`, `--project`, and a SHA-256 of the reports it read |
 | `dotcov test [<project>]` | Runs `dotnet test` with Microsoft Code Coverage into a fresh `TestResults/<run>`, then reports and gates it like `check`, `--badge-dir` included; arguments after `--` go to `dotnet test` |
@@ -131,12 +144,23 @@ endpoint you control, and `dotcov --help` prints the full flag reference with ex
 the command does not use, a misspelled flag, `--name=value`, or a second path is an error, never
 a silently applied default.
 
+`--exclude-generated` drops generated code, build output, migrations, `GlobalUsings.cs` and
+`Program.cs`; `--exclude-test-code` drops test projects and fixtures (`*.Tests/`,
+`TestSupport/`, `TestFixtures/`); `--keep <substrings>` exempts paths from either. Test code is
+included unless you exclude it. An active exclusion is never silent: stderr lists its rules and
+every excluded file, and JSON output carries them as `excluded` and `exclusionRules`.
+
+`--probe-sources` and `--source-root <root>` decide which `<source>` root a relative file name
+belongs to when a report declares several (see [TypeScript and Python](#typescript-and-python)).
+Probing reads the disk of the machine running DotCov, so its answer depends on where it runs.
+
 Run `dotcov version` or `dotcov --version` to print the version.
 
 ## Outcomes
 
 Since 1.7, usage errors exit `2` (formerly `5`); execution errors remain `5`.
-Omitting a path exits `2`; supplying a nonexistent path exits `5`. Update script branches.
+Omitting a path exits `2`; supplying a nonexistent path exits `5`. Since 3.0, omitting both
+thresholds of `check` or `test` exits `2` as well. Update script branches.
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed,
 including when the input contains no coverage data. That is command success, not a coverage
@@ -146,10 +170,10 @@ pass. `check`, `crap`, and `test` return `0` only for a measured pass. Outcomes:
 |---|---|---|
 | `PASS:` | Thresholds met | 0 |
 | `FAIL:` | Below a threshold | 1 |
-| `NODATA:` | The gate lacks the data needed to evaluate | 3 |
+| `NODATA:` | The gate lacks the data needed to evaluate: nothing measured, a requested dimension missing, an unscored CRAP method, or a file whose `<source>` root is unresolved | 3 |
 | `DISABLED:` | Both `check` thresholds are `0`, or `crap --max-crap` is infinite | 4 |
 | `error:` | Unreadable/nonexistent path, parse/size-cap error, upload or badge write failure, failed test run | 5 |
-| `error:` or unknown command | Usage: unknown command/flag, invalid value, missing/extra argument | 2 |
+| `error:` or unknown command | Usage: unknown command/flag, invalid value (a threshold outside 0 to 100 included), missing/extra argument, no threshold for `check` or `test`, a `--source-root` no report declares | 2 |
 
 Use `check` when CI must require measured coverage. Branch on the exit code. See the [CLI exit-code contract](src/DotCov.Tool/README.md#exit-codes)
 for details. Percentages are invariant-formatted, so CI logs read `62.0%` on every
@@ -178,7 +202,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v2.0.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v3.0.0
     with:
       reports: TestResults
       min-line: 80
@@ -196,7 +220,8 @@ Then show it in your README:
 To render it through shields.io instead, use
 `https://img.shields.io/endpoint?url=<raw url of coverage-badge.json>`.
 
-The step commits only when the badge's contents change, then fails unless the gate passed.
+`min-line` and `min-branch` have no default: set one or both, as for `check`. The step commits
+only when the badge's contents change, then fails unless the gate passed.
 `fail-on-gate: false` keeps `FAIL`, `NODATA` and `DISABLED` green; an error such as an unreadable
 report still fails. The other inputs are `pattern`, `args` (further `dotcov check` flags, such as
 `--exclude-generated`), `branch`, `version` (the `DotCov.Tool` version to install), and `command`
@@ -224,5 +249,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/2.0.0.md) ·
+[Release notes](docs/releases/3.0.0.md) ·
 [MIT](LICENSE)

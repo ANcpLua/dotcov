@@ -19,13 +19,9 @@ public static partial class DotCovCli
     static async Task<int> Test(
         Dictionary<string, string> opts, string[] forwarded, TextWriter stdout, TextWriter stderr, bool color)
     {
-        // Flag values are checked before anything runs: a typo must not cost a test run.
-        if (!TryParsePercent("min-line", opts.GetValueOrDefault("min-line", "80"), stderr, out var minLine))
-            return UsageExitCode;
-
-        if (!TryParsePercent("min-branch", opts.GetValueOrDefault("min-branch", "0"), stderr, out var minBranch))
-            return UsageExitCode;
-
+        // Flag values are checked before anything runs: a typo, or a missing threshold, must not
+        // cost a test run.
+        if (!TryGetThresholds("test", opts, stderr, out var minLine, out var minBranch)) return UsageExitCode;
         if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
         // A fresh directory per run, so the gate reads this run's reports and nothing an earlier
@@ -39,7 +35,7 @@ public static partial class DotCovCli
         if (exitCode is not 0)
             throw new CliError($"dotnet test exited with code {exitCode}; coverage was not evaluated.");
 
-        var (merged, inputs) = ParseInput(results, ReportPattern.Default, DefaultMaxChars);
+        var (merged, inputs) = ParseInput(results, ReportPattern.Default, DefaultMaxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
         // The table is rendered from the same evaluation as the verdict, so a failing dimension's
         // TOTAL floors like the verdict does: 19999/20000 against --min-line 100 reads 99.9%

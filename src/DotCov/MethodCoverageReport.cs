@@ -1,9 +1,9 @@
 namespace DotCov;
 
 /// <summary>
-/// Result of <see cref="CoberturaParser.ParseMethods(Stream, long)"/> and friends: the raw
-/// per-method entries plus the diagnostics and source roots observed while reading them, so
-/// nothing the parser noticed is lost on the method-level path.
+/// Result of <see cref="CoberturaParser.ParseMethods(Stream, long, FileIdentity)"/> and friends:
+/// the raw per-method entries plus the diagnostics and source roots observed while reading them,
+/// so nothing the parser noticed is lost on the method-level path.
 /// </summary>
 public sealed class MethodCoverageReport
 {
@@ -30,4 +30,36 @@ public sealed class MethodCoverageReport
     /// identity — the same rule <see cref="CoverageReport.SourceRoots"/> follows.
     /// </summary>
     public IReadOnlyList<string> SourceRoots { get; }
+
+    /// <summary>
+    /// Files whose identity the parse could not resolve — the method-level twin of
+    /// <see cref="CoverageReport.AmbiguousFiles"/>. A <see cref="CrapReport"/> analyzed from
+    /// this report answers <see cref="GateOutcome.NoData"/> while any remain.
+    /// </summary>
+    public IReadOnlyList<AmbiguousFile> AmbiguousFiles { get; init; } = [];
+
+    /// <summary>The exclusions applied to this report and the files they removed.</summary>
+    public FileExclusion Exclusion { get; init; } = FileExclusion.None;
+
+    /// <summary>
+    /// Remove every method whose file matches <paramref name="patterns"/>, unless it matches
+    /// <paramref name="keep"/> — exactly the substring-match semantics of
+    /// <see cref="CoverageReport.Exclude(IEnumerable{string}, IEnumerable{string})"/>; the two
+    /// share one predicate, so <c>--exclude-generated</c> and <c>--exclude-test-code</c> mean
+    /// the same thing to <c>crap</c> as they do to <c>report</c> and <c>check</c>.
+    /// </summary>
+    public MethodCoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
+    {
+        var rules = patterns.ToList();
+        if (rules.Count is 0) return this;
+
+        var keepRules = keep.ToList();
+        var (kept, excluded) = ExclusionRules.Partition(Methods, static m => m.File, rules, keepRules);
+
+        return new MethodCoverageReport(kept, Warnings, SourceRoots)
+        {
+            AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
+            Exclusion = Exclusion.Then(rules, keepRules, excluded)
+        };
+    }
 }

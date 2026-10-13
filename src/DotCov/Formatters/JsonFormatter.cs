@@ -34,6 +34,7 @@ public static class JsonFormatter
         writer.WriteEndArray();
 
         WriteWarnings(writer, report);
+        WriteExclusion(writer, report.Exclusion);
 
         writer.WriteEndObject();
     });
@@ -91,6 +92,7 @@ public static class JsonFormatter
         // Warnings travel with the snapshot: remote sinks are exactly the consumers the
         // anomaly channel exists for, and "absent key == clean" holds here as well.
         WriteWarnings(writer, snapshot.Report);
+        WriteExclusion(writer, snapshot.Report.Exclusion);
 
         writer.WriteEndObject();
     });
@@ -126,6 +128,25 @@ public static class JsonFormatter
             writer.WriteString("detail", w.Detail);
             writer.WriteEndObject();
         }
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// What an active exclusion left out: <c>excluded</c> (the removed paths) and
+    /// <c>exclusionRules</c> (the patterns applied). Both keys are absent when no exclusion was
+    /// applied and present — <c>excluded</c> possibly empty — whenever one was, so a consumer can
+    /// tell "nothing excluded" from "nothing matched".
+    /// </summary>
+    internal static void WriteExclusion(Utf8JsonWriter writer, FileExclusion exclusion)
+    {
+        if (!exclusion.IsActive) return;
+
+        writer.WriteStartArray("excluded");
+        foreach (var path in exclusion.ExcludedFiles) writer.WriteStringValue(path);
+        writer.WriteEndArray();
+
+        writer.WriteStartArray("exclusionRules");
+        foreach (var pattern in exclusion.Patterns) writer.WriteStringValue(pattern);
         writer.WriteEndArray();
     }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using System.Xml;
+using static System.FormattableString;
 
 namespace DotCov;
 
@@ -13,9 +14,9 @@ namespace DotCov;
 /// <para>
 /// Both aggregations share one traversal and one set of decoding rules (file-name identity,
 /// line numbers, hit counts); they differ only in what they collect. The file aggregation
-/// (<see cref="Parse(Stream, long)"/>) folds every <c>&lt;line&gt;</c> of a source file into
+/// (<see cref="Parse(Stream, long, FileIdentity)"/>) folds every <c>&lt;line&gt;</c> of a source file into
 /// one per-file line set — including the class-level summary lines. The method aggregation
-/// (<see cref="ParseMethods(Stream, long)"/>) keeps every <c>&lt;method&gt;</c> distinct and
+/// (<see cref="ParseMethods(Stream, long, FileIdentity)"/>) keeps every <c>&lt;method&gt;</c> distinct and
 /// ignores the class-level summary.
 /// </para>
 /// </summary>
@@ -23,25 +24,28 @@ public static partial class CoberturaParser
 {
     private const long DefaultMaxChars = 50_000_000;
 
-    public static CoverageReport Parse(Stream stream, long maxChars = DefaultMaxChars)
+    /// <summary>
+    /// Parse one document the caller owns (the stream is not disposed). <paramref name="identity"/>
+    /// decides how relative filenames resolve under several declared roots; null is
+    /// <see cref="FileIdentity.Lexical"/>.
+    /// </summary>
+    public static CoverageReport Parse(Stream stream, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
     {
-        using var reader = CreateReader(stream, maxChars, async: false);
-        var document = new DocumentContext();
-        var files = new FileCollector();
-
-        while (reader.Read())
-            Visit(reader, document, files, methods: null);
-
-        return files.Materialize(document);
+        var scope = new IdentityScope(identity);
+        var report = ParseDocument(stream, maxChars, scope, sourceName: null);
+        scope.RequireDeclaredRoot();
+        return report;
     }
 
+    /// <inheritdoc cref="Parse(Stream, long, FileIdentity)"/>
     public static async Task<CoverageReport> ParseAsync(
-        Stream stream, long maxChars = DefaultMaxChars, CancellationToken ct = default)
+        Stream stream, long maxChars = DefaultMaxChars, FileIdentity? identity = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var scope = new IdentityScope(identity);
         using var reader = CreateReader(stream, maxChars, async: true);
-        var document = new DocumentContext();
-        var files = new FileCollector();
+        var document = new DocumentContext(scope, sourceName: null);
+        var files = new FileCollector(document);
 
         while (await reader.ReadAsync())
         {
@@ -50,7 +54,9 @@ public static partial class CoberturaParser
         }
 
         ct.ThrowIfCancellationRequested();
-        return files.Materialize(document);
+        document.Finish();
+        scope.RequireDeclaredRoot();
+        return files.Materialize();
     }
 
     /// <summary>
@@ -58,13 +64,41 @@ public static partial class CoberturaParser
     /// disposed here, whatever happens. Malformed XML surfaces as
     /// <see cref="ReportParseException"/> naming the input.
     /// </summary>
-    public static CoverageReport Parse(ReportInput input, long maxChars = DefaultMaxChars)
+    public static CoverageReport Parse(ReportInput input, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
     {
         ArgumentNullException.ThrowIfNull(input);
+        var scope = new IdentityScope(identity);
+        var report = ParseInput(input, maxChars, scope);
+        scope.RequireDeclaredRoot();
+        return report;
+    }
+
+    /// <summary>
+    /// Parse and merge every input in the given order. An empty input set yields an empty
+    /// report; whether that is acceptable is the caller's decision (see <see cref="ReportResolver"/>).
+    /// </summary>
+    public static CoverageReport Parse(IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        var scope = new IdentityScope(identity);
+        CoverageReport? merged = null;
+        foreach (var input in inputs)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            var report = ParseInput(input, maxChars, scope);
+            merged = merged is null ? report : CoverageReport.Merge(merged, report);
+        }
+
+        scope.RequireDeclaredRoot();
+        return merged ?? CoverageReport.Empty;
+    }
+
+    private static CoverageReport ParseInput(ReportInput input, long maxChars, IdentityScope scope)
+    {
         using var stream = input.OpenStream();
         try
         {
-            return Parse(stream, maxChars);
+            return ParseDocument(stream, maxChars, scope, input.SourceName);
         }
         catch (XmlException ex)
         {
@@ -72,21 +106,17 @@ public static partial class CoberturaParser
         }
     }
 
-    /// <summary>
-    /// Parse and merge every input in the given order. An empty input set yields an empty
-    /// report; whether that is acceptable is the caller's decision (see <see cref="ReportResolver"/>).
-    /// </summary>
-    public static CoverageReport Parse(IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars)
+    private static CoverageReport ParseDocument(Stream stream, long maxChars, IdentityScope scope, string? sourceName)
     {
-        ArgumentNullException.ThrowIfNull(inputs);
-        CoverageReport? merged = null;
-        foreach (var input in inputs)
-        {
-            var report = Parse(input, maxChars);
-            merged = merged is null ? report : CoverageReport.Merge(merged, report);
-        }
+        using var reader = CreateReader(stream, maxChars, async: false);
+        var document = new DocumentContext(scope, sourceName);
+        var files = new FileCollector(document);
 
-        return merged ?? CoverageReport.Empty;
+        while (reader.Read())
+            Visit(reader, document, files, methods: null);
+
+        document.Finish();
+        return files.Materialize();
     }
 
     // ── XML reader ────────────────────────────────────────────────────────────
@@ -109,12 +139,48 @@ public static partial class CoberturaParser
 
     // ── Traversal ─────────────────────────────────────────────────────────────
 
-    /// <summary>Per-document state: the declared source roots and the warnings raised while decoding.</summary>
-    private sealed class DocumentContext
+    /// <summary>
+    /// The file-identity policy of one parse call and what its documents declared. One per
+    /// call, never shared: the explicit-root check spans every document of the call (some
+    /// document must declare the chosen root), so it needs state no single document has.
+    /// </summary>
+    private sealed class IdentityScope(FileIdentity? identity)
+    {
+        private readonly List<string> _declared = [];
+        private bool _anyDocument;
+
+        public FileIdentity Identity { get; } = identity ?? FileIdentity.Lexical;
+
+        public void Record(IReadOnlyList<string> roots)
+        {
+            _anyDocument = true;
+            foreach (var root in roots)
+                if (!_declared.Contains(root)) _declared.Add(root);
+        }
+
+        /// <summary>An explicitly chosen root that no document of the call declares is an invalid request.</summary>
+        public void RequireDeclaredRoot()
+        {
+            if (Identity.SourceRoot is { } root && _anyDocument && !_declared.Contains(root))
+                throw new UndeclaredSourceRootException(root, _declared, sourceName: null);
+        }
+    }
+
+    /// <summary>
+    /// Per-document state: the declared source roots, the warnings raised while decoding, and the
+    /// files whose identity the roots left unresolved.
+    /// </summary>
+    private sealed class DocumentContext(IdentityScope scope, string? sourceName)
     {
         public readonly List<string> SourceRoots = [];
         public readonly List<CoverageWarning> Warnings = [];
+        public readonly List<AmbiguousFile> AmbiguousFiles = [];
         private readonly HashSet<CoverageWarning> _seen = [];
+        private readonly HashSet<string> _ambiguous = new(StringComparer.Ordinal);
+
+        public FileIdentity Identity => scope.Identity;
+
+        public string? SourceName => sourceName;
 
         /// <summary>
         /// Record a warning once per document: coverlet repeats every line under its method and
@@ -124,6 +190,15 @@ public static partial class CoberturaParser
         {
             if (_seen.Add(warning)) Warnings.Add(warning);
         }
+
+        /// <summary>Record a file keyed under the first of several candidate roots, once per document.</summary>
+        public void MarkAmbiguous(string key)
+        {
+            if (_ambiguous.Add(key)) AmbiguousFiles.Add(new AmbiguousFile(key, SourceRoots.ToArray()));
+        }
+
+        /// <summary>The document is read to its end: its roots count toward the call's explicit-root check.</summary>
+        public void Finish() => scope.Record(SourceRoots);
     }
 
     /// <summary>
@@ -166,16 +241,7 @@ public static partial class CoberturaParser
                 if (root is not null) RecordSource(root, document);
                 break;
             case "class":
-                if (CreateClassContext(reader, document, files, methods: null) is not { } context) return;
-                if (reader.IsEmptyElement) return;
-                var depth = reader.Depth;
-                // Disposing an unfinished subtree reader drains it synchronously, including on cancellation.
-                while (await reader.ReadAsync())
-                {
-                    ct.ThrowIfCancellationRequested();
-                    if (reader.NodeType is XmlNodeType.EndElement && reader.Depth == depth) break;
-                    context.Visit(reader);
-                }
+                await ConsumeClassAsync(reader, document, files, ct);
                 break;
         }
     }
@@ -185,8 +251,8 @@ public static partial class CoberturaParser
     /// sentinel, which <see cref="ResolveFileKey"/> reads as "leave relative filenames
     /// unprefixed". The sentinel is recorded, not discarded: a no-op declared alongside real
     /// roots is a second resolution convention, so it is a candidate root like any other and
-    /// keeps its document-order slot (the FIRST declared root wins when the disk cannot
-    /// decide). Respellings of one root are deduplicated so they cannot fake that multiplicity.
+    /// keeps its document-order slot (the FIRST declared root is the deterministic key).
+    /// Respellings of one root are deduplicated so they cannot fake that multiplicity.
     /// <para>
     /// The root is the element's own character content: every text and CDATA child,
     /// concatenated. A comment or processing instruction splits that text without ending it,
@@ -221,7 +287,8 @@ public static partial class CoberturaParser
     /// <c>&lt;methods&gt;&lt;method&gt;</c> reach the method collector (attributed to the enclosing
     /// method) and reach the file collector only when the class has no class-level
     /// <c>&lt;lines&gt;</c>; that summary, when present, alone decides the file's lines.
-    /// <c>ReadSubtree</c> leaves the outer reader on the closing tag when done.
+    /// <c>ReadSubtree</c> leaves the outer reader on the closing tag when done. The async walk
+    /// (<see cref="ConsumeClassAsync"/>) ends in the same <see cref="ClassContext.Complete"/>.
     /// </summary>
     private static void ConsumeClass(XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods)
     {
@@ -230,6 +297,26 @@ public static partial class CoberturaParser
         {
             while (sub.Read())
                 context.Visit(sub);
+        }
+
+        context.Complete();
+    }
+
+    private static async ValueTask ConsumeClassAsync(
+        XmlReader reader, DocumentContext document, FileCollector files, CancellationToken ct)
+    {
+        if (CreateClassContext(reader, document, files, methods: null) is not { } context) return;
+        if (!reader.IsEmptyElement)
+        {
+            var depth = reader.Depth;
+            // Not ReadSubtree: disposing an unfinished subtree reader drains it synchronously,
+            // including on cancellation.
+            while (await reader.ReadAsync())
+            {
+                ct.ThrowIfCancellationRequested();
+                if (reader.NodeType is XmlNodeType.EndElement && reader.Depth == depth) break;
+                context.Visit(reader);
+            }
         }
 
         context.Complete();
@@ -247,52 +334,78 @@ public static partial class CoberturaParser
         private MethodCollector.Entry? _methodAcc;
         // Method lines wait for the class end: istanbul lists each function's declaration line
         // there, which is not a line of its own line coverage, so a class-level summary wins.
-        private readonly LineAccumulator? _methodLines = fileAcc is null ? null : new LineAccumulator();
+        private readonly LineAccumulator? _methodLines = fileAcc is null ? null : new LineAccumulator(file, document);
         private bool _inMethod;
+        // The class-level <lines> ELEMENT, not a line under it: an empty summary (<lines/>) is
+        // still the class's own statement that it has no lines.
         private bool _hasClassLines;
 
         private LineAccumulator? LineTarget => _inMethod ? _methodLines : fileAcc;
 
-        /// <summary>At the class end, method lines stand in for a class without class-level lines.</summary>
+        /// <summary>
+        /// The one finalisation of a class, shared by the sync and async walks: pending condition
+        /// detail is validated, and method lines stand in for a class without a class-level summary.
+        /// </summary>
         public void Complete()
         {
+            _methodLines?.Flush();
+            fileAcc?.Flush();
             if (!_hasClassLines) fileAcc?.AddFrom(_methodLines!);
         }
 
         public void Visit(XmlReader sub)
         {
-            switch (sub.NodeType, sub.LocalName)
+            if (sub.NodeType is XmlNodeType.EndElement)
             {
-                case (XmlNodeType.Element, "method"):
-                    _methodAcc = methods?.For(
-                        new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
-                        DecodeComplexity(sub.GetAttribute("complexity")));
-                    _inMethod = !sub.IsEmptyElement;
-                    if (sub.IsEmptyElement) _methodAcc = null;
-                    break;
+                if (sub.LocalName is "method") EndMethod();
+                return;
+            }
 
-                case (XmlNodeType.EndElement, "method"):
-                    _methodAcc = null;
-                    _inMethod = false;
-                    break;
+            if (sub.NodeType is not XmlNodeType.Element) return;
 
-                case (XmlNodeType.Element, "line"):
+            switch (sub.LocalName)
+            {
+                case "method":
+                    BeginMethod(sub);
+                    break;
+                case "lines":
                     _hasClassLines |= !_inMethod;
-                    if (!TryDecodeLine(sub, file, document, out var line))
-                    {
-                        // A skipped line takes its nested <condition>s with it; they must not
-                        // attach to the previous branched line.
-                        LineTarget?.SkipLine();
-                        break;
-                    }
-                    LineTarget?.AddLine(sub, line, file, document);
-                    _methodAcc?.AddLine(line);
                     break;
-
-                case (XmlNodeType.Element, "condition"):
+                case "line":
+                    AddLine(sub);
+                    break;
+                case "condition":
                     LineTarget?.AddCondition(sub);
                     break;
             }
+        }
+
+        private void BeginMethod(XmlReader sub)
+        {
+            _methodAcc = methods?.For(
+                new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
+                DecodeComplexity(sub.GetAttribute("complexity")));
+            _inMethod = !sub.IsEmptyElement;
+            if (sub.IsEmptyElement) _methodAcc = null;
+        }
+
+        private void EndMethod()
+        {
+            _methodAcc = null;
+            _inMethod = false;
+        }
+
+        private void AddLine(XmlReader sub)
+        {
+            if (!TryDecodeLine(sub, file, document, out var line))
+            {
+                // A skipped line takes its nested <condition>s with it; they must not
+                // attach to the previous branched line.
+                LineTarget?.SkipLine();
+                return;
+            }
+            LineTarget?.AddLine(sub, line);
+            _methodAcc?.AddLine(line);
         }
     }
 
@@ -303,14 +416,15 @@ public static partial class CoberturaParser
 
     /// <summary>
     /// The file identity key of a <c>&lt;class filename&gt;</c>: separators normalized to '/'
-    /// (Windows coverlet writes '\'), the document's <c>&lt;source&gt;</c> root applied
-    /// to relative names, and a leading drive letter uppercased. Both aggregations key on this
-    /// string, so method entries join against <see cref="FileCoverage.Path"/> on the same key.
-    /// Returns null for a class without a filename, which carries no attributable data.
+    /// (Windows coverlet writes '\'), redundant <c>.</c> segments removed, the document's
+    /// <c>&lt;source&gt;</c> root applied to relative names, and a leading drive letter
+    /// uppercased. Both aggregations key on this string, so method entries join against
+    /// <see cref="FileCoverage.Path"/> on the same key. Returns null for a class without a
+    /// filename, which carries no attributable data.
     /// </summary>
     private static string? DecodeFileName(XmlReader reader, DocumentContext document) =>
         reader.GetAttribute("filename") is { } filename
-            ? ResolveFileKey(filename.Replace('\\', '/'), document)
+            ? ResolveFileKey(PathIdentity.RemoveDotSegments(filename.Replace('\\', '/')), document)
             : null;
 
     /// <summary>
@@ -368,8 +482,9 @@ public static partial class CoberturaParser
     /// The rooted check is manual (leading '/' or a drive-letter prefix) because
     /// <c>Path.IsPathRooted("C:/x")</c> is false on Linux and reports cross machines. A single
     /// root is applied unconditionally, never only on collision — a conditional prefix would make
-    /// a file's identity unstable across runs. Several roots follow <see cref="ResolveRoot"/>.
-    /// A no-op root (the "" sentinel) resolves as "no prefix".
+    /// a file's identity unstable across runs. Several roots follow the parse's
+    /// <see cref="FileIdentity"/> (<see cref="ResolveRoot"/>). A no-op root (the "" sentinel)
+    /// resolves as "no prefix".
     /// </summary>
     private static string ResolveFileKey(string filename, DocumentContext document)
     {
@@ -377,23 +492,45 @@ public static partial class CoberturaParser
         if (roots.Count > 0 && !IsRooted(filename))
             filename = JoinRoot(roots.Count is 1 ? roots[0] : ResolveRoot(filename, document), filename);
 
-        // Uppercase a leading drive letter so `c:\x\A.cs` and `C:/x/A.cs` — the same file
-        // emitted by different Windows toolchains — produce one Ordinal key. Key normalization,
-        // not a case-insensitive comparer: a Dictionary has a single comparer for every key.
-        if (filename.Length >= 3 && char.IsAsciiLetterLower(filename[0]) && filename[1] == ':' && filename[2] == '/')
-            filename = char.ToUpperInvariant(filename[0]) + filename[1..];
-
-        return filename;
+        return PathIdentity.UppercaseDriveLetter(filename);
     }
 
     /// <summary>
-    /// Pick the root for a relative filename in a document that declares several. coverage.py
-    /// writes each file relative to the source root that contains it, so the one root under which
-    /// the file exists on disk is the file's own. When it exists under none (a report read away
-    /// from its sources) or under several, the first declared root applies and the document
-    /// carries one report-scoped warning.
+    /// Pick the root for a relative filename in a document that declares several. Lexical (the
+    /// default) never reads the disk: the first root is the deterministic key, and the file is
+    /// recorded as ambiguous with one warning naming its candidate roots. Probing and an
+    /// explicit root resolve it.
     /// </summary>
-    private static string ResolveRoot(string filename, DocumentContext document)
+    private static string ResolveRoot(string filename, DocumentContext document) => document.Identity.Mode switch
+    {
+        FileIdentityMode.ProbeSources => ProbeRoot(filename, document),
+        FileIdentityMode.SourceRoot => DeclaredRoot(document),
+        _ => FirstRootAmbiguous(filename, document)
+    };
+
+    private static string FirstRootAmbiguous(string filename, DocumentContext document)
+    {
+        var roots = document.SourceRoots;
+        var key = PathIdentity.UppercaseDriveLetter(JoinRoot(roots[0], filename));
+        document.MarkAmbiguous(key);
+        document.Warn(new CoverageWarning(
+            CoverageWarningKind.FileIdentityAmbiguous,
+            key,
+            0,
+            $"relative filename '{filename}' could belong to any of {roots.Count} <source> roots " +
+            $"({string.Join(", ", roots.Select(static r => $"'{AmbiguousFile.Display(r)}'"))}) - " +
+            $"keyed under the first, identity unresolved"));
+        return roots[0];
+    }
+
+    /// <summary>
+    /// <see cref="FileIdentityMode.ProbeSources"/>: coverage.py writes each file relative to the
+    /// source root that contains it, so the one root under which the file exists on THIS disk is
+    /// taken as the file's own. When it exists under none (a report read away from its sources)
+    /// or under several, the first declared root applies and the document carries one
+    /// report-scoped warning.
+    /// </summary>
+    private static string ProbeRoot(string filename, DocumentContext document)
     {
         string? match = null;
         foreach (var root in document.SourceRoots)
@@ -419,6 +556,15 @@ public static partial class CoberturaParser
         return first;
     }
 
+    /// <summary><see cref="FileIdentityMode.SourceRoot"/>: the chosen root, which a document with several roots must declare.</summary>
+    private static string DeclaredRoot(DocumentContext document)
+    {
+        var root = document.Identity.SourceRoot!;
+        return document.SourceRoots.Contains(root)
+            ? root
+            : throw new UndeclaredSourceRootException(root, document.SourceRoots.ToArray(), document.SourceName ?? "the report");
+    }
+
     private static string JoinRoot(string root, string filename) =>
         root.Length is 0 ? filename : root.EndsWith('/') ? root + filename : $"{root}/{filename}";
 
@@ -432,11 +578,12 @@ public static partial class CoberturaParser
     // produces several: the source class itself, each compiler-synthesized state-machine
     // class for async methods, each nested record's Equals/GetHashCode shim, and so on.
     // Within one block, every `<method><lines>` and the class-level summary `<lines>`
-    // repeat the same line numbers with the same or different hit counts. Every per-line
-    // datum — hit counts, branch (Covered, Total) pairs, per-condition outcomes — is
-    // reconciled with Math.Max.
+    // repeat the same line numbers with the same or different hit counts. Hit counts and
+    // branch (Covered, Total) pairs are reconciled with Math.Max; per-condition detail
+    // unions only between equal condition-number sets, exactly as FileCoverage.MergeWith
+    // does across documents.
 
-    private sealed class FileCollector
+    private sealed class FileCollector(DocumentContext document)
     {
         // Ordinal, not OrdinalIgnoreCase: case-differing filenames are genuinely distinct
         // files on the Linux filesystems the format's native emitters run on. Windows
@@ -446,11 +593,11 @@ public static partial class CoberturaParser
         public LineAccumulator For(string file)
         {
             if (!_files.TryGetValue(file, out var acc))
-                _files[file] = acc = new LineAccumulator();
+                _files[file] = acc = new LineAccumulator(file, document);
             return acc;
         }
 
-        public CoverageReport Materialize(DocumentContext document)
+        public CoverageReport Materialize()
         {
             var result = new List<FileCoverage>(_files.Count);
             foreach (var (filename, acc) in _files)
@@ -464,12 +611,27 @@ public static partial class CoberturaParser
                 // keep the sentinel so Merge can tell ('.', '/real') apart from ('/real').
                 SourceRoots = document.SourceRoots.Count is 1 && document.SourceRoots[0].Length is 0
                     ? []
-                    : document.SourceRoots
+                    : document.SourceRoots,
+                AmbiguousFiles = document.AmbiguousFiles
             };
         }
     }
 
-    private sealed class LineAccumulator
+    /// <summary>
+    /// One branched <c>&lt;line&gt;</c> whose <c>&lt;condition&gt;</c> children are being read:
+    /// its own aggregate and the detail seen so far, validated together once the line ends.
+    /// </summary>
+    private sealed class PendingConditions(int line, int covered, int total)
+    {
+        public readonly int Line = line;
+        public readonly int Covered = covered;
+        public readonly int Total = total;
+        public readonly Dictionary<int, int> Conditions = new();
+        /// <summary>A condition whose number or coverage could not be parsed.</summary>
+        public bool Malformed;
+    }
+
+    private sealed class LineAccumulator(string file, DocumentContext document)
     {
         private readonly Dictionary<int, int> _lineHits = new();
 
@@ -479,51 +641,92 @@ public static partial class CoberturaParser
         private readonly Dictionary<int, (int Covered, int Total)> _branchesByLine = new();
 
         // line → (coverlet condition `number` → covered outcomes of that 2-way jump, 0–2).
-        // Keyed per condition so the cross-report merge can union by condition identity.
+        // Keyed per condition so the cross-report merge can union by condition identity. An
+        // EMPTY set is the poison sentinel: the line's blocks disagreed on condition identity.
         private readonly Dictionary<int, Dictionary<int, int>> _conditionsByLine = new();
 
         // Coverlet nests <conditions><condition number= coverage=/></conditions> inside each
         // branched <line>. In document order conditions follow their line, so they are
-        // attributed to the most recent branched line; -1 means "no per-condition detail".
-        private int _conditionLine = -1;
+        // attributed to the most recent branched line; null means "no line to attribute to".
+        private PendingConditions? _pending;
 
         /// <summary>A <c>&lt;line&gt;</c> that could not be decoded: conditions that follow belong to no line.</summary>
-        public void SkipLine() => _conditionLine = -1;
+        public void SkipLine() => Flush();
 
-        public void AddLine(XmlReader reader, LineData line, string file, DocumentContext document)
+        public void AddLine(XmlReader reader, LineData line)
         {
-            _conditionLine = -1;
+            Flush();
             MergeHits(line.Number, line.Hits);
 
             // Emitters disagree on casing: original Cobertura/JaCoCo write `branch="true"`,
             // Coverlet writes `branch="True"`. A literal compare would silently drop Coverlet
             // branches and render branch coverage as a fake 100%.
-            if (!string.Equals(reader.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase) ||
-                reader.GetAttribute("condition-coverage") is not { } cond)
+            if (!string.Equals(reader.GetAttribute("branch"), "true", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            if (TryParseConditionCoverage(cond, out var covered, out var total))
+            if (reader.GetAttribute("condition-coverage") is not { } cond)
             {
-                MergeBranches(line.Number, covered, total);
-                _conditionLine = line.Number;
+                Warn(CoverageWarningKind.MalformedConditionCoverage, line.Number,
+                    "branch=\"true\" without a condition-coverage attribute - no branch counted");
+                return;
             }
-            else
+
+            if (!TryParseConditionCoverage(cond, out var covered, out var total))
             {
-                document.Warn(new CoverageWarning(
-                    CoverageWarningKind.MalformedConditionCoverage,
-                    file,
-                    line.Number,
-                    $"condition-coverage='{cond}' could not be parsed"));
+                Warn(CoverageWarningKind.MalformedConditionCoverage, line.Number,
+                    $"condition-coverage='{cond}' could not be parsed");
+                return;
             }
+
+            MergeBranches(line.Number, covered, total);
+            _pending = new PendingConditions(line.Number, covered, total);
         }
 
         public void AddCondition(XmlReader reader)
         {
-            if (_conditionLine < 0) return;
-            if (!int.TryParse(reader.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) return;
-            if (!TryParseConditionOutcomes(reader.GetAttribute("coverage"), out var covered)) return;
+            if (_pending is not { } pending) return;
 
-            MergeCondition(_conditionLine, number, covered);
+            if (int.TryParse(reader.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) &&
+                TryParseConditionOutcomes(reader.GetAttribute("coverage"), out var covered))
+                // A number repeated within one line unions like every other per-line datum.
+                pending.Conditions[number] = Math.Max(pending.Conditions.GetValueOrDefault(number), covered);
+            else
+                pending.Malformed = true;
+        }
+
+        /// <summary>
+        /// Validate the pending line's detail against that line's own aggregate, then union it.
+        /// Detail that does not describe 2-outcome jumps (two outcomes per condition do not make
+        /// the line's total: coverlet's switch tables, grcov's one-condition-per-outcome counts)
+        /// never stood for the aggregate and is left out, as it always was. Detail in that shape
+        /// must also reproduce the covered count, or one run would claim more coverage than it
+        /// reports — a condition at 100% would lift a <c>(0/2)</c> line to <c>(2/2)</c>. Such
+        /// detail, and detail that cannot be parsed, is dropped with a warning.
+        /// </summary>
+        public void Flush()
+        {
+            if (_pending is not { } pending) return;
+            _pending = null;
+
+            if (pending.Malformed)
+            {
+                Warn(CoverageWarningKind.MalformedConditionCoverage, pending.Line,
+                    "a <condition> could not be parsed - using the line aggregate");
+                return;
+            }
+
+            if (pending.Conditions.Count is 0 || pending.Conditions.Count * 2 != pending.Total) return;
+
+            var sum = pending.Conditions.Values.Sum();
+            if (sum != pending.Covered)
+            {
+                Warn(CoverageWarningKind.MalformedConditionCoverage, pending.Line,
+                    Invariant($"{pending.Conditions.Count} conditions with {sum} covered outcomes disagree with ") +
+                    Invariant($"condition-coverage ({pending.Covered}/{pending.Total}) - using the line aggregate"));
+                return;
+            }
+
+            MergeConditionSet(pending.Line, pending.Conditions);
         }
 
         /// <summary>Fold another accumulator's lines, branches and conditions into this one.</summary>
@@ -531,8 +734,7 @@ public static partial class CoberturaParser
         {
             foreach (var (line, hits) in other._lineHits) MergeHits(line, hits);
             foreach (var (line, (covered, total)) in other._branchesByLine) MergeBranches(line, covered, total);
-            foreach (var (line, conds) in other._conditionsByLine)
-                foreach (var (number, covered) in conds) MergeCondition(line, number, covered);
+            foreach (var (line, conds) in other._conditionsByLine) MergeConditionSet(line, conds);
         }
 
         private void MergeHits(int line, int hits) =>
@@ -543,24 +745,54 @@ public static partial class CoberturaParser
                 ? (Math.Max(existing.Covered, covered), Math.Max(existing.Total, total))
                 : (covered, total);
 
-        private void MergeCondition(int line, int number, int covered)
+        /// <summary>
+        /// The condition-identity rule of <see cref="FileCoverage.MergeWith"/>, applied between the
+        /// blocks of one document: the same number set unions per number with <c>Math.Max</c>; a
+        /// different set warns once and poisons the line to its raw aggregate, absorbingly.
+        /// </summary>
+        private void MergeConditionSet(int line, Dictionary<int, int> incoming)
         {
-            if (!_conditionsByLine.TryGetValue(line, out var conds))
-                _conditionsByLine[line] = conds = new Dictionary<int, int>();
-            conds[number] = conds.TryGetValue(number, out var existing) ? Math.Max(existing, covered) : covered;
+            if (!_conditionsByLine.TryGetValue(line, out var existing))
+            {
+                _conditionsByLine[line] = new Dictionary<int, int>(incoming);
+                return;
+            }
+
+            // Either side already poisoned (it warned then): absorbing, no second warning.
+            if (existing.Count is 0 || incoming.Count is 0)
+            {
+                existing.Clear();
+                return;
+            }
+
+            if (existing.Count == incoming.Count && incoming.Keys.All(existing.ContainsKey))
+            {
+                foreach (var (number, covered) in incoming)
+                    existing[number] = Math.Max(existing[number], covered);
+                return;
+            }
+
+            Warn(CoverageWarningKind.ConditionIdentityMismatch, line,
+                $"condition numbers [{string.Join(",", existing.Keys.Order())}] vs " +
+                $"[{string.Join(",", incoming.Keys.Order())}] - using the line aggregate");
+            existing.Clear();
         }
+
+        private void Warn(CoverageWarningKind kind, int line, string detail) =>
+            document.Warn(new CoverageWarning(kind, file, line, detail));
 
         public FileCoverage Materialize(string filename)
         {
-            // Keep per-condition detail only where it reconstructs the line aggregate as
-            // 2-outcome jumps (the universal case for &&/||/?:/??/?.). If a switch jump-table
-            // makes it inconsistent, drop to the line aggregate so merge never invents a total
-            // the emitter didn't report — the invariant Merge's per-condition union relies on.
+            // Keep per-condition detail where it reconstructs the line aggregate as 2-outcome
+            // jumps, and keep the poison sentinel. Detail can still fall short of a line whose
+            // larger total came from a block without detail; it then drops to the line
+            // aggregate so merge never invents a total the emitter didn't report — the
+            // invariant Merge's per-condition union relies on.
             var conditionsByLine = new Dictionary<int, IReadOnlyDictionary<int, int>>();
             foreach (var (line, conds) in _conditionsByLine)
                 // Every line in _conditionsByLine has a _branchesByLine entry by construction —
-                // AddCondition only fires after the aggregate is recorded.
-                if (conds.Count * 2 == _branchesByLine[line].Total)
+                // detail is only recorded after the aggregate is.
+                if (conds.Count is 0 || conds.Count * 2 == _branchesByLine[line].Total)
                     conditionsByLine[line] = new Dictionary<int, int>(conds);
 
             return FileCoverage.FromLineData(filename, _lineHits, _branchesByLine, conditionsByLine);

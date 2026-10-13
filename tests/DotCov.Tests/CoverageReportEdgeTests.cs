@@ -207,11 +207,15 @@ public sealed class CoverageReportEdgeTests
     {
         // Per-line data on both sides never takes the count fallback: union of lines,
         // per-condition union, and a poisoned line keeps only its raw aggregate, even though
-        // one side's own count (2 covered, from its condition overlay) is higher.
-        var a = Cobertura.NewDoc().AddClass("src/W.cs", c => c
+        // one side's own count (2 covered, from the condition union of its two class blocks)
+        // is higher.
+        var a = Cobertura.NewDoc()
+            .AddClass("src/W.cs", c => c
                 .Line(1, 3).Line(2, 0)
-                .BranchWithConditions(5, "25% (1/4)", (1, "100%"), (2, "0%"))
+                .BranchWithConditions(5, "25% (1/4)", (1, "50%"), (2, "0%"))
                 .Branch(9, "50% (1/2)"))
+            .AddClass("src/W.cs", "W/<Run>d__0", c => c
+                .BranchWithConditions(5, "25% (1/4)", (1, "0%"), (2, "50%")))
             .Parse();
         var b = Cobertura.NewDoc().AddClass("src/W.cs", c => c
                 .Line(2, 1).Line(3, 0)

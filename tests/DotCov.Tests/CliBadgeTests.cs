@@ -111,7 +111,7 @@ public sealed class CliBadgeTests : IDisposable
     {
         var missing = _ws.PathOf("missing.xml");
 
-        var (code, stdout, stderr) = await Run("check", missing, "--badge-dir", "");
+        var (code, stdout, stderr) = await Run("check", missing, "--min-line", "80", "--badge-dir", "");
 
         await Assert.That(code).IsEqualTo(2);
         await Assert.That(stdout).IsEmpty();
@@ -121,7 +121,7 @@ public sealed class CliBadgeTests : IDisposable
     [Test]
     public async Task Test_EmptyBadgeDir_FailsBeforeAnyTestRuns()
     {
-        var (code, stdout, stderr) = await Run("test", "--badge-dir", "");
+        var (code, stdout, stderr) = await Run("test", "--min-line", "80", "--badge-dir", "");
 
         await Assert.That(code).IsEqualTo(2);
         // No echoed "> dotnet test" line: nothing was started.

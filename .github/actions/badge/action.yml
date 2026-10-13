@@ -21,11 +21,15 @@ inputs:
     description: Report file name to scan a directory for ('filename' or '**/filename'). Empty uses dotcov's default.
     default: ''
   min-line:
-    description: Minimum line coverage percentage.
-    default: '80'
+    description: >-
+      Minimum line coverage percentage, 0 to 100. There is no default threshold: set min-line,
+      min-branch, or both; a dimension left empty is not checked.
+    default: ''
   min-branch:
-    description: Minimum branch coverage percentage; above 0 the badge shows the branch rate too.
-    default: '0'
+    description: >-
+      Minimum branch coverage percentage, 0 to 100; above 0 the badge shows the branch rate too.
+      Set min-line, min-branch, or both.
+    default: ''
   args:
     description: Further `dotcov check` arguments, split on whitespace, e.g. `--exclude-generated`.
     default: ''
@@ -42,7 +46,7 @@ inputs:
     default: 'true'
   version:
     description: dotcov.tool version to install.
-    default: '2.0.0'
+    default: '3.0.0'
   command:
     description: >-
       Command that runs dotcov instead of installing it, split on whitespace, e.g.

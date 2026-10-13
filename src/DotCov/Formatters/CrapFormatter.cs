@@ -193,6 +193,8 @@ public static class CrapFormatter
                 writer.WriteEndArray();
             }
 
+            JsonFormatter.WriteExclusion(writer, report.Exclusion);
+
             writer.WriteEndObject();
         }
 

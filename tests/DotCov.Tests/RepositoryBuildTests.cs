@@ -105,7 +105,7 @@ public sealed class RepositoryBuildTests : IDisposable
             "--badge-directory", "out/badge");
 
         await Assert.That(run.ExitCode).IsNotEqualTo(0);
-        await Assert.That(run.Output).Contains("Invalid --min-line value: 'abc' (expected a number).");
+        await Assert.That(run.Output).Contains("Invalid --min-line value: 'abc' (expected a number from 0 to 100).");
         await Assert.That(Directory.Exists(_workspace.PathOf("out/badge"))).IsFalse();
     }
 
@@ -134,6 +134,22 @@ public sealed class RepositoryBuildTests : IDisposable
 
         await Assert.That(run.ExitCode).IsNotEqualTo(0);
         await Assert.That(run.Output).Contains("NODATA:");
+    }
+
+    [Test]
+    public async Task Crap_UnscoredMethod_FailsWithNoData_ThoughEveryScoredMethodPasses(CancellationToken cancellationToken)
+    {
+        // The target's gate needs every method scored: the one without complexity withholds it.
+        var report = _workspace.Write("reports/dotcov.coverage.cobertura.456.xml", Cobertura.NewDoc()
+            .AddClass("src/Example.cs", "Example", c => c
+                .Method("Scored", "()", "1", m => m.Line(1, 1))
+                .Method("Unscored", "()", null, m => m.Line(5, 0))));
+
+        var run = await Run(cancellationToken, "Crap", "--reports", report);
+
+        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.Output).Contains("NODATA: worst CRAP 1.0 (max 30) - 1 of 2 methods could not be scored");
+        await Assert.That(run.Output).Contains("dotcov crap exited with code 3");
     }
 
     [Test]

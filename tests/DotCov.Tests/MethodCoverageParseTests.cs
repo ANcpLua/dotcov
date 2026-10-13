@@ -264,10 +264,11 @@ public sealed class MethodCoverageParseTests
 
         await Assert.That(report.Warnings.Select(w => (w.Kind, w.File, w.Line))).IsEquivalentTo(
         [
-            (CoverageWarningKind.FileIdentityAmbiguous, "", 0),
+            (CoverageWarningKind.FileIdentityAmbiguous, "/a/x.cs", 0),
             (CoverageWarningKind.MalformedHits, "/a/x.cs", 3),
             (CoverageWarningKind.MalformedHits, "y.cs", 4),
         ], CollectionOrdering.Matching);
+        await Assert.That(report.AmbiguousFiles.Select(a => a.Path)).IsEquivalentTo(["/a/x.cs"]);
         await Assert.That(report.Methods.Select(m => m.LineHits.Values.Single())).IsEquivalentTo([0, 0], CollectionOrdering.Matching);
     }
 

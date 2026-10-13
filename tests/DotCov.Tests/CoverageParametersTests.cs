@@ -5,21 +5,71 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// The parameter grammar of <see cref="ICoverageReport"/>, validated once at the build
-/// boundary by <see cref="CoverageParameters"/>: invariant numbers, digits-only cap, strict
-/// booleans, case-sensitive formats with the <c>md</c> alias, and the pattern shapes. The
-/// consuming-build tests in <see cref="FalloutBuildTests"/> prove the same grammar through a
-/// real Fallout process.
+/// boundary by <see cref="CoverageParameters"/>: no default threshold, percentages from 0 to
+/// 100, digits-only cap, strict booleans, case-sensitive formats with the <c>md</c> alias, the
+/// pattern shapes, and one file-identity mode. The consuming-build tests in
+/// <see cref="FalloutBuildTests"/> prove the same grammar through a real Fallout process.
 /// </summary>
 public sealed class CoverageParametersTests
 {
-    [Test]
-    public async Task Parse_Defaults_MatchTheDocumentedTable()
-    {
-        var p = CoverageParameters.Parse(
-            CoverageParameters.DefaultMinLine, CoverageParameters.DefaultMinBranch, CoverageParameters.DefaultFormat,
-            CoverageParameters.DefaultExcludeGenerated, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars);
+    private static CoverageParameters ParseWithDefaults(
+        string? minLine, string? minBranch, string probeSources = CoverageParameters.DefaultProbeSources, string? sourceRoot = null) =>
+        CoverageParameters.Parse(
+            minLine, minBranch, CoverageParameters.DefaultFormat, CoverageParameters.DefaultExcludeGenerated,
+            CoverageParameters.DefaultExcludeTestCode, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars,
+            probeSources, sourceRoot);
 
-        await Assert.That(p).IsEqualTo(new CoverageParameters(80, 0, CoverageFormat.Table, false, ReportPattern.Default, 50_000_000));
+    [Test]
+    public async Task Parse_OneThreshold_ChecksItAndDisablesTheOther_WithTheDocumentedDefaults()
+    {
+        var p = ParseWithDefaults("80", minBranch: null);
+
+        await Assert.That(p).IsEqualTo(new CoverageParameters(
+            80, 0, CoverageFormat.Table, false, false, ReportPattern.Default, 50_000_000, FileIdentity.Lexical));
+        await Assert.That(ParseWithDefaults(minLine: null, "70").MinBranch).IsEqualTo(70);
+        await Assert.That(ParseWithDefaults(minLine: null, "70").MinLine).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_NoThreshold_FailsNamingBothParameters()
+    {
+        var ex = Assert.ThrowsExactly<ArgumentException>(() => ParseWithDefaults(minLine: null, minBranch: null));
+
+        await Assert.That(ex.Message).Contains("Missing Coverage MinLine and Coverage MinBranch");
+        await Assert.That(ex.Message).Contains("--coverage-min-line");
+    }
+
+    [Test]
+    public async Task ExclusionPatterns_SelectEachRuleSetByItsFlag()
+    {
+        static IReadOnlyList<string> Patterns(string generated, string testCode) => CoverageParameters.Parse(
+            "80", null, "table", generated, testCode, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars,
+            "false", null).ExclusionPatterns;
+
+        await Assert.That(Patterns("false", "false")).IsEmpty();
+        await Assert.That(Patterns("true", "false")).IsEquivalentTo(ExclusionRules.WellKnown);
+        await Assert.That(Patterns("false", "true")).IsEquivalentTo(ExclusionRules.TestCode);
+        await Assert.That(Patterns("true", "true")).IsEquivalentTo([.. ExclusionRules.WellKnown, .. ExclusionRules.TestCode]);
+    }
+
+    [Test]
+    public async Task ParseIdentity_SelectsOneOfTheThreeModes()
+    {
+        await Assert.That(CoverageParameters.ParseIdentity(false, null)).IsSameReferenceAs(FileIdentity.Lexical);
+        await Assert.That(CoverageParameters.ParseIdentity(false, "  ")).IsSameReferenceAs(FileIdentity.Lexical);
+        await Assert.That(CoverageParameters.ParseIdentity(true, null)).IsSameReferenceAs(FileIdentity.ProbeSources);
+
+        var explicitRoot = CoverageParameters.ParseIdentity(false, @"c:\repo\src\");
+        await Assert.That(explicitRoot.Mode).IsEqualTo(FileIdentityMode.SourceRoot);
+        await Assert.That(explicitRoot.SourceRoot).IsEqualTo("C:/repo/src");
+    }
+
+    [Test]
+    public async Task ParseIdentity_ProbeAndRootTogether_FailsNamingBothParameters()
+    {
+        var ex = Assert.ThrowsExactly<ArgumentException>(() => ParseWithDefaults("80", null, "true", "/repo"));
+
+        await Assert.That(ex.Message).Contains("Coverage ProbeSourcesParam and Coverage SourceRoot");
     }
 
     [Test]
@@ -48,6 +98,7 @@ public sealed class CoverageParametersTests
     [Arguments("80", 80.0)]
     [Arguments("0", 0.0)]
     [Arguments("72.5", 72.5)]
+    [Arguments("100", 100.0)]
     public async Task ParseThreshold_ValidNumber_Parses(string value, double expected) =>
         await Assert.That(CoverageParameters.ParseThreshold(value, "Coverage MinLine")).IsEqualTo(expected);
 
@@ -55,6 +106,10 @@ public sealed class CoverageParametersTests
     [Arguments("eighty")]
     [Arguments("80,5")] // invariant culture: comma is not a decimal separator
     [Arguments("")]
+    [Arguments("NaN")]
+    [Arguments("Infinity")]
+    [Arguments("-1")]
+    [Arguments("100.5")]
     public async Task ParseThreshold_Garbage_ThrowsNamingTheParameter(string value)
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(
@@ -134,7 +189,8 @@ public sealed class CoverageParametersTests
     [Test]
     public async Task Parse_NegativeMaxChars_IsBlamedOnMaxChars_NotThePattern()
     {
-        var ex = Assert.ThrowsExactly<ArgumentException>(() => CoverageParameters.Parse("80", "0", "table", "false", "coverage.cobertura.xml", "-1"));
+        var ex = Assert.ThrowsExactly<ArgumentException>(() => CoverageParameters.Parse(
+            "80", "0", "table", "false", "false", "coverage.cobertura.xml", "-1", "false", null));
 
         await Assert.That(ex.Message).Contains("Coverage MaxCharsParam");
         await Assert.That(ex.Message).DoesNotContain("Coverage Pattern");

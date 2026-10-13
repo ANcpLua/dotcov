@@ -115,6 +115,24 @@ public sealed class CorePathIdentityTests
         await Assert.That(report.SourceRoots).IsEquivalentTo(["", "/usr/lib/python3/dist-packages"], CollectionOrdering.Matching);
         var w = await Assert.That(report.Warnings).HasSingleItem();
         await Assert.That(w.Kind).IsEqualTo(CoverageWarningKind.FileIdentityAmbiguous);
+        await Assert.That(w.File).IsEqualTo("app/main.py");
+        await Assert.That(w.Detail).Contains("('.', '/usr/lib/python3/dist-packages')");
+        var ambiguous = await Assert.That(report.AmbiguousFiles).HasSingleItem();
+        await Assert.That(ambiguous.CandidateRoots).IsEquivalentTo(["", "/usr/lib/python3/dist-packages"], CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task Parse_Probe_NoOpRootFirst_FileOnNoDisk_StaysUnprefixed_AndWarnsForTheDocument()
+    {
+        // The 2.0.0 behaviour, now opt-in: probing finds the file under neither root, so the
+        // first root applies — a no-op, so no prefix — with one document-level warning.
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(Doc([".", "/usr/lib/python3/dist-packages"], "app/main.py")));
+        var report = CoberturaParser.Parse(stream, identity: FileIdentity.ProbeSources);
+
+        await Assert.That(report.Files.Single().Path).IsEqualTo("app/main.py");
+        await Assert.That(report.AmbiguousFiles).IsEmpty();
+        var w = await Assert.That(report.Warnings).HasSingleItem();
+        await Assert.That(w.File).IsEqualTo("");
         await Assert.That(w.Detail).Contains("unprefixed");
     }
 
