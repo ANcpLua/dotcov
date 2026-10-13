@@ -218,18 +218,21 @@ public static partial class CoberturaParser
 
     /// <summary>
     /// Walk one <c>&lt;class&gt;</c> subtree once and feed both collectors. Lines under
-    /// <c>&lt;methods&gt;&lt;method&gt;</c> reach the file collector AND the method collector
-    /// (attributed to the enclosing method); the trailing class-level <c>&lt;lines&gt;</c>
-    /// summary reaches only the file collector. <c>ReadSubtree</c> leaves the outer reader on
-    /// the closing tag when done.
+    /// <c>&lt;methods&gt;&lt;method&gt;</c> reach the method collector (attributed to the enclosing
+    /// method) and reach the file collector only when the class has no class-level
+    /// <c>&lt;lines&gt;</c>; that summary, when present, alone decides the file's lines.
+    /// <c>ReadSubtree</c> leaves the outer reader on the closing tag when done.
     /// </summary>
     private static void ConsumeClass(XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods)
     {
         if (CreateClassContext(reader, document, files, methods) is not { } context) return;
-        using var sub = reader.ReadSubtree();
+        using (var sub = reader.ReadSubtree())
+        {
+            while (sub.Read())
+                context.Visit(sub);
+        }
 
-        while (sub.Read())
-            context.Visit(sub);
+        context.Complete();
     }
 
     private static ClassContext? CreateClassContext(
@@ -242,6 +245,19 @@ public static partial class CoberturaParser
         string file, string className, DocumentContext document, LineAccumulator? fileAcc, MethodCollector? methods)
     {
         private MethodCollector.Entry? _methodAcc;
+        // Method lines wait for the class end: istanbul lists each function's declaration line
+        // there, which is not a line of its own line coverage, so a class-level summary wins.
+        private readonly LineAccumulator? _methodLines = fileAcc is null ? null : new LineAccumulator();
+        private bool _inMethod;
+        private bool _hasClassLines;
+
+        private LineAccumulator? LineTarget => _inMethod ? _methodLines : fileAcc;
+
+        /// <summary>At the class end, method lines stand in for a class without class-level lines.</summary>
+        public void Complete()
+        {
+            if (!_hasClassLines) fileAcc?.AddFrom(_methodLines!);
+        }
 
         public void Visit(XmlReader sub)
         {
@@ -251,27 +267,30 @@ public static partial class CoberturaParser
                     _methodAcc = methods?.For(
                         new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
                         DecodeComplexity(sub.GetAttribute("complexity")));
+                    _inMethod = !sub.IsEmptyElement;
                     if (sub.IsEmptyElement) _methodAcc = null;
                     break;
 
                 case (XmlNodeType.EndElement, "method"):
                     _methodAcc = null;
+                    _inMethod = false;
                     break;
 
                 case (XmlNodeType.Element, "line"):
+                    _hasClassLines |= !_inMethod;
                     if (!TryDecodeLine(sub, file, document, out var line))
                     {
                         // A skipped line takes its nested <condition>s with it; they must not
                         // attach to the previous branched line.
-                        fileAcc?.SkipLine();
+                        LineTarget?.SkipLine();
                         break;
                     }
-                    fileAcc?.AddLine(sub, line, file, document);
+                    LineTarget?.AddLine(sub, line, file, document);
                     _methodAcc?.AddLine(line);
                     break;
 
                 case (XmlNodeType.Element, "condition"):
-                    fileAcc?.AddCondition(sub);
+                    LineTarget?.AddCondition(sub);
                     break;
             }
         }
@@ -474,9 +493,7 @@ public static partial class CoberturaParser
         public void AddLine(XmlReader reader, LineData line, string file, DocumentContext document)
         {
             _conditionLine = -1;
-            _lineHits[line.Number] = _lineHits.TryGetValue(line.Number, out var existing)
-                ? Math.Max(existing, line.Hits)
-                : line.Hits;
+            MergeHits(line.Number, line.Hits);
 
             // Emitters disagree on casing: original Cobertura/JaCoCo write `branch="true"`,
             // Coverlet writes `branch="True"`. A literal compare would silently drop Coverlet
@@ -487,9 +504,7 @@ public static partial class CoberturaParser
 
             if (TryParseConditionCoverage(cond, out var covered, out var total))
             {
-                _branchesByLine[line.Number] = _branchesByLine.TryGetValue(line.Number, out var existingBranch)
-                    ? (Math.Max(existingBranch.Covered, covered), Math.Max(existingBranch.Total, total))
-                    : (covered, total);
+                MergeBranches(line.Number, covered, total);
                 _conditionLine = line.Number;
             }
             else
@@ -508,8 +523,30 @@ public static partial class CoberturaParser
             if (!int.TryParse(reader.GetAttribute("number"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) return;
             if (!TryParseConditionOutcomes(reader.GetAttribute("coverage"), out var covered)) return;
 
-            if (!_conditionsByLine.TryGetValue(_conditionLine, out var conds))
-                _conditionsByLine[_conditionLine] = conds = new Dictionary<int, int>();
+            MergeCondition(_conditionLine, number, covered);
+        }
+
+        /// <summary>Fold another accumulator's lines, branches and conditions into this one.</summary>
+        public void AddFrom(LineAccumulator other)
+        {
+            foreach (var (line, hits) in other._lineHits) MergeHits(line, hits);
+            foreach (var (line, (covered, total)) in other._branchesByLine) MergeBranches(line, covered, total);
+            foreach (var (line, conds) in other._conditionsByLine)
+                foreach (var (number, covered) in conds) MergeCondition(line, number, covered);
+        }
+
+        private void MergeHits(int line, int hits) =>
+            _lineHits[line] = _lineHits.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
+
+        private void MergeBranches(int line, int covered, int total) =>
+            _branchesByLine[line] = _branchesByLine.TryGetValue(line, out var existing)
+                ? (Math.Max(existing.Covered, covered), Math.Max(existing.Total, total))
+                : (covered, total);
+
+        private void MergeCondition(int line, int number, int covered)
+        {
+            if (!_conditionsByLine.TryGetValue(line, out var conds))
+                _conditionsByLine[line] = conds = new Dictionary<int, int>();
             conds[number] = conds.TryGetValue(number, out var existing) ? Math.Max(existing, covered) : covered;
         }
 

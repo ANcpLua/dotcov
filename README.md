@@ -43,6 +43,10 @@ npm test -- --coverage --coverageProvider=v8 --coverageReporters=cobertura
 dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
 ```
 
+Jest's and Vitest's Cobertura writer (istanbul) attaches branches only to lines that hold
+statements. A branch on any other line is missing from the report's lines, so DotCov's
+branch count can be lower than the tool's own summary. Line counts match.
+
 For Python with coverage.py and pytest installed, select your package as the coverage source:
 
 ```bash
