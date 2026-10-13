@@ -14,27 +14,54 @@ internal static class PathIdentity
 
     /// <summary>
     /// Canonical form of a declared <c>&lt;source&gt;</c> root: trimmed, separators flipped
-    /// to <c>/</c>, a leading <c>./</c> stripped, the no-op spellings (<c>.</c>, <c>./</c>,
-    /// empty) collapsed to <c>""</c> (the no-op sentinel), a lowercase drive letter
-    /// uppercased (the same rule the parser applies to file KEYS, so root identity and key
-    /// identity agree), and trailing <c>/</c> trimmed — but never below one character, so
-    /// Coverlet's bare <c>&lt;source&gt;/&lt;/source&gt;</c> root survives intact and the
-    /// documented <c>/</c>-vs-<c>/_/</c> cross-convention detection keeps its operands.
+    /// to <c>/</c>, redundant <c>.</c> segments removed by <see cref="RemoveDotSegments"/>
+    /// (the rule file keys follow too), the no-op spellings (<c>.</c>, <c>./</c>, empty)
+    /// collapsed to <c>""</c> (the no-op sentinel), a lowercase drive letter uppercased (the
+    /// same rule the parser applies to file KEYS, so root identity and key identity agree),
+    /// and trailing <c>/</c> trimmed — but never below one character, so Coverlet's bare
+    /// <c>&lt;source&gt;/&lt;/source&gt;</c> root survives intact and the documented
+    /// <c>/</c>-vs-<c>/_/</c> cross-convention detection keeps its operands.
     /// Applied at parse time in <c>ConsumeSource</c> AND at comparison time in
     /// <see cref="RootsDiffer"/>, so hand-built reports whose roots were never
     /// parser-normalized still compare by identity rather than spelling.
     /// </summary>
     internal static string NormalizeRoot(string root)
     {
-        root = root.Trim().Replace('\\', '/');
-        if (root.StartsWith("./", StringComparison.Ordinal)) root = root[2..];
-        if (root is ".") return "";
-        if (root.Length >= 3 && char.IsAsciiLetterLower(root[0]) && root[1] == ':' && root[2] == '/')
-            root = char.ToUpperInvariant(root[0]) + root[1..];
+        root = UppercaseDriveLetter(RemoveDotSegments(root.Trim().Replace('\\', '/')));
         while (root.Length > 1 && root.EndsWith('/'))
             root = root[..^1];
         return root;
     }
+
+    /// <summary>
+    /// Drop every redundant <c>.</c> segment of a <c>/</c>-separated path — a leading
+    /// <c>./</c>, an inner <c>/./</c>, a trailing <c>/.</c> — so <c>./src/C.cs</c>,
+    /// <c>src/./C.cs</c> and <c>src/C.cs</c> name one file. Lexical only: <c>..</c> is kept
+    /// (resolving it needs the file system's view of links) and the disk is never read. A
+    /// path of only dot segments (<c>.</c>, <c>./</c>) becomes <c>""</c>, the no-op root.
+    /// </summary>
+    internal static string RemoveDotSegments(string path)
+    {
+        // A separator doubled after a leading "./" (".//src") is part of that no-op prefix; left
+        // in place it would turn the relative name into an absolute one.
+        while (path.StartsWith("./", StringComparison.Ordinal))
+            path = path[2..].TrimStart('/');
+        while (path.Contains("/./", StringComparison.Ordinal))
+            path = path.Replace("/./", "/", StringComparison.Ordinal);
+        if (path.EndsWith("/.", StringComparison.Ordinal))
+            path = path[..^1];
+        return path is "." ? "" : path;
+    }
+
+    /// <summary>
+    /// Uppercase a leading drive letter, so <c>c:/x/A.cs</c> and <c>C:/x/A.cs</c> — the same
+    /// file emitted by different Windows toolchains — are one Ordinal key. Key normalization,
+    /// not a case-insensitive comparer: a Dictionary has a single comparer for every key.
+    /// </summary>
+    internal static string UppercaseDriveLetter(string path) =>
+        path.Length >= 3 && char.IsAsciiLetterLower(path[0]) && path[1] == ':' && path[2] == '/'
+            ? char.ToUpperInvariant(path[0]) + path[1..]
+            : path;
 
     /// <summary>
     /// Whether two reports' declared roots genuinely differ — the single predicate behind

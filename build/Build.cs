@@ -170,11 +170,12 @@ class Build : FalloutBuild
         File.WriteAllText(Path.Combine(directory, BadgeFormatter.JsonFileName), BadgeFormatter.ShieldsJson(gate));
     }
 
-    // The thresholds the badge's title names; check validates them on every other path.
+    // The thresholds the badge's title names, under check's grammar; check validates them on
+    // every other path.
     private static double Percent(string value, string flag) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent)
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent) && percent is >= 0 and <= 100
             ? percent
-            : throw new ArgumentException($"Invalid --{flag} value: '{value}' (expected a number).");
+            : throw new ArgumentException($"Invalid --{flag} value: '{value}' (expected a number from 0 to 100).");
 
     private static async Task RunDotCov(string[] args, TextWriter? output = null, string? failure = null)
     {

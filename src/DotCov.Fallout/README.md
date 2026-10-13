@@ -34,7 +34,9 @@ class Build : FalloutBuild, ICoverageReport { }
 fallout ReportCoverage --coverage-min-line 80 --coverage-exclude-generated-param true
 ```
 
-That is the whole setup. `ReportCoverage` searches `RootDirectory / "TestResults"` for
+That is the whole setup. There is no default threshold: set `--coverage-min-line`,
+`--coverage-min-branch`, or both, or the target fails naming them before it reads a report.
+`ReportCoverage` searches `RootDirectory / "TestResults"` for
 `**/*cobertura*.xml` (including timestamped MTP reports and hidden directories), merges everything it finds, renders
 the chosen format, appends a markdown block to `$GITHUB_STEP_SUMMARY` when that variable is
 set, and fails the build when line or branch coverage is below threshold.
@@ -46,10 +48,13 @@ build without requiring you to implement `ICompile`.
 
 | Parameter | Default | Effect |
 |---|---|---|
-| `--coverage-min-line` | `80` | Minimum line coverage percentage (invariant number) |
-| `--coverage-min-branch` | `0` | Minimum branch coverage percentage |
+| `--coverage-min-line` | none | Minimum line coverage percentage, 0 to 100 (invariant number); set it, `--coverage-min-branch`, or both |
+| `--coverage-min-branch` | none | Minimum branch coverage percentage, 0 to 100; a dimension left unset is not checked |
 | `--coverage-format` | `table` | `table`, `json`, `markdown`, or `md` |
 | `--coverage-exclude-generated-param` | `false` | `true`/`false`: apply `ExclusionRules.WellKnown` before gating |
+| `--coverage-exclude-test-code-param` | `false` | `true`/`false`: apply `ExclusionRules.TestCode` before gating; the excluded files are logged |
+| `--coverage-probe-sources-param` | `false` | `true`/`false`: resolve a relative file name under several `<source>` roots against the root that holds it on this machine's disk |
+| `--coverage-source-root` | empty (off) | Resolve such file names against this declared root instead |
 | `--coverage-pattern` | `**/*cobertura*.xml` | `filename` (top level) or `**/filename` (recursive) |
 | `--coverage-max-chars-param` | `50000000` | Per-file XML character cap; `0` disables it |
 | `--coverage-badge-directory` | empty (off) | Write `coverage-badge.svg` and `coverage-badge.json` here, relative to the root, for every outcome |
@@ -64,14 +69,17 @@ somewhere other than `RootDirectory / "TestResults"`.
 |---|---|
 | Search directory missing | Target fails: `Coverage search directory '…' does not exist` |
 | Directory exists, no matching report | Target fails: `No files matching '…' found in …` |
+| No threshold set, or one outside 0 to 100 | Target fails before reading a report, naming `Coverage MinLine`/`Coverage MinBranch` |
 | Reports parsed, but nothing measured | Target fails: `Coverage could not be measured: NODATA: …` |
+| Several `<source>` roots, file identity unresolved | Target fails: `Coverage could not be measured: NODATA: … ambiguous identity …` |
+| `--coverage-source-root` not declared by any report | Target fails: `Invalid Coverage SourceRoot: …` |
 | Coverage below a threshold | Target fails: `Coverage below threshold: FAIL: …` |
 | Every threshold is `0` | Target fails: `Coverage gate is disabled …` |
 | Thresholds met | Target succeeds; the verdict is logged |
 | Thresholds met, badge directory unwritable | Target fails: `Coverage gate passed, but its badge could not be written: …` |
 
-Parser warnings (malformed hit counts, ambiguous source roots, …) are logged one per line
-and never change the verdict. The badge is written before a failing verdict fails the target, so
+Parser warnings (malformed hit counts, contradictory branch data, ambiguous source roots, …) are
+logged one per line. Only an unresolved file identity changes the verdict, to `NODATA`. The badge is written before a failing verdict fails the target, so
 a drop turns it red; its colour is the outcome, and its message the line rate, plus the branch
 rate when a branch minimum is set. A non-passing gate keeps its own failure message when the badge
 cannot be written. To publish it to a branch, pass the directory to the

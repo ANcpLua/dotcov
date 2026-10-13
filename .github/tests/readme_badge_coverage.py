@@ -132,7 +132,8 @@ def measure(args):
         assert len(historical) == 14, "Missing upstream per-file evidence"
         assert files == historical, f"Fresh coverage differs from the published Python 3.12 run: {files}"
 
-    actual = json.loads(run(["dotnet", tool, "report", report, "--format", "json"]))
+    # --probe-sources: the report is read beside the checked-out sources (dotcov's default is lexical).
+    actual = json.loads(run(["dotnet", tool, "report", report, "--format", "json", "--probe-sources"]))
     (output / "dotcov.json").write_text(json.dumps(actual, indent=2), encoding="utf-8")
     actual_files = {file_key(file["path"], root): tuple(file[key] for key in
                     ("linesHit", "linesTotal", "branchesHit", "branchesTotal")) for file in actual["files"]}
@@ -164,13 +165,13 @@ def measure(args):
                                           ("line-fail", 100, minimum_branch, 1),
                                           ("branch-fail", minimum_line, 100, 1)]:
             text = run(["dotnet", tool, "check", report, "--min-line", line, "--min-branch", branch,
-                        "--badge-dir", output / f"cli-{phase}"], expected=code)
+                        "--probe-sources", "--badge-dir", output / f"cli-{phase}"], expected=code)
             assert ("PASS:" if code == 0 else "FAIL:") in text
         badge_details = {"badgeMessages": messages}
     else:
         assert Decimal(str(summary["lineRate"])) == percent
         text = run(["dotnet", tool, "check", report, "--min-line", percent,
-                    "--min-branch", 100 if total[3] else 0, "--badge-dir", output / "cli-badge"])
+                    "--min-branch", 100 if total[3] else 0, "--probe-sources", "--badge-dir", output / "cli-badge"])
         assert "PASS:" in text
         badge_details = {"badgeMessages": {"pass": f"{percent:.1f}%"}}
     expected = {"target": args.target, "commit": config["commit"],

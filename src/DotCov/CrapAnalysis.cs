@@ -91,6 +91,16 @@ public sealed class CrapReport
         UnmatchedMetricsMembers = unmatchedMetricsMembers;
     }
 
+    /// <summary>
+    /// Files whose identity the parse could not resolve, carried from the
+    /// <see cref="MethodCoverageReport"/> this report was analyzed from. While any remain,
+    /// <see cref="Evaluate"/> answers <see cref="GateOutcome.NoData"/>.
+    /// </summary>
+    public IReadOnlyList<AmbiguousFile> AmbiguousFiles { get; internal init; } = [];
+
+    /// <summary>The exclusions applied to the analyzed methods and the files they removed.</summary>
+    public FileExclusion Exclusion { get; internal init; } = FileExclusion.None;
+
     /// <summary>Scored methods in document order; formatters apply worst-first ordering.</summary>
     public IReadOnlyList<CrapMethod> Methods { get; }
 
@@ -105,31 +115,37 @@ public sealed class CrapReport
     public IReadOnlyList<string> UnmatchedMetricsMembers { get; }
 
     /// <summary>
-    /// Decide whether every scored method is at or below <paramref name="maxCrap"/>. A method
-    /// exactly AT the threshold passes — the gate fires only strictly above, mirroring
-    /// <c>check</c>'s at-threshold-passes semantics (see <see cref="CrapAnalysis.Exceeds"/>).
-    /// Zero scored methods is <see cref="GateOutcome.NoData"/>, never a pass: a gate that
-    /// cannot see cannot vouch for anything.
+    /// Decide whether every method is at or below <paramref name="maxCrap"/>. A method exactly AT
+    /// the threshold passes — the gate fires only strictly above, mirroring <c>check</c>'s
+    /// at-threshold-passes semantics (see <see cref="CrapAnalysis.Exceeds"/>). The verdict needs
+    /// COMPLETE scoring: a single <see cref="Unscored"/> method makes it
+    /// <see cref="GateOutcome.NoData"/>, because the method the gate cannot score may be the
+    /// one above the limit; zero scored methods is NoData too, and so is a report with
+    /// <see cref="AmbiguousFiles"/>. A gate that cannot see everything cannot vouch for anything.
     /// </summary>
     public CrapGateResult Evaluate(double maxCrap)
     {
+        double? worst = Methods.Count is 0 ? null : Methods.Max(static m => m.Score);
+        var above = Methods.Count(m => CrapAnalysis.Exceeds(m.Score, maxCrap));
+
         // Nothing can exceed an infinite threshold, so the gate cannot fail — reported as
         // Disabled, like check's 0/0, never as a pass.
         if (double.IsPositiveInfinity(maxCrap))
-            return new CrapGateResult(GateOutcome.Disabled, maxCrap, Methods.Count, 0,
-                Methods.Count is 0 ? null : Methods.Max(static m => m.Score),
+            return new CrapGateResult(GateOutcome.Disabled, maxCrap, Methods.Count, 0, worst,
                 "no finite threshold - this gate cannot fail");
 
-        if (Methods.Count is 0)
-        {
-            var reason = Unscored.Count > 0
-                ? Invariant($"{Unscored.Count} methods have coverage but no usable complexity - supply --metrics <file> (dotnet msbuild /t:Metrics)")
-                : "report carries no method-level data - nothing was measured per method";
-            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null, reason);
-        }
+        if (AmbiguousFiles.Count > 0)
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
+                AmbiguousFile.GateReason(AmbiguousFiles));
 
-        var worst = Methods.Max(static m => m.Score);
-        var above = Methods.Count(m => CrapAnalysis.Exceeds(m.Score, maxCrap));
+        if (Unscored.Count > 0)
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
+                Invariant($"{Unscored.Count} of {Methods.Count + Unscored.Count} methods could not be scored - ") +
+                "supply --metrics <file> (dotnet msbuild /t:Metrics); a verdict needs every method scored");
+
+        if (Methods.Count is 0)
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
+                "report carries no method-level data - nothing was measured per method");
 
         return above is 0
             ? new CrapGateResult(GateOutcome.Pass, maxCrap, Methods.Count, 0, worst,
@@ -177,12 +193,28 @@ public static class CrapAnalysis
         Exceeds(score, maxCrap) ? Math.Ceiling(score * 10 - GateResult.RateEpsilon) / 10 : score;
 
     /// <summary>
+    /// Score every method of a parsed report: <see cref="Analyze(IReadOnlyList{MethodCoverage}, IReadOnlyList{CodeMetricsMember})"/>
+    /// over its methods, with the report's unresolved file identities and exclusions carried
+    /// onto the result, where <see cref="CrapReport.Evaluate"/> and the formatters read them.
+    /// </summary>
+    public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        var analysis = Analyze(report.Methods, metricsMembers);
+        return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
+        {
+            AmbiguousFiles = report.AmbiguousFiles,
+            Exclusion = report.Exclusion
+        };
+    }
+
+    /// <summary>
     /// Score every method: fold compiler-synthesized methods into their source-method identity,
     /// resolve complexity (coverage-embedded first, metrics file second), and compute CRAP.
     /// Methods that cannot be scored and metrics members that match nothing are returned on the
     /// report's honesty channels — listed, never silently dropped.
     /// </summary>
-    /// <param name="methods">Raw per-method coverage from <see cref="CoberturaParser.ParseMethods"/>.</param>
+    /// <param name="methods">Raw per-method coverage from <see cref="CoberturaParser.ParseMethods(Stream, long, FileIdentity)"/>.</param>
     /// <param name="metricsMembers">
     /// Optional complexity table from <see cref="CodeMetricsReader"/>. Used only for methods the
     /// coverage report carries no usable complexity for — the embedded value wins because it
@@ -203,17 +235,20 @@ public static class CrapAnalysis
     }
 
     /// <summary>
-    /// Step 1: fold raw coverage entries into logical source methods. Direct entries key by the
-    /// raw IL SIGNATURE, not arity: same-arity overloads (<c>Frob(Int32)</c> vs
-    /// <c>Frob(String)</c>) are distinct source methods, and collapsing them would dilute an
-    /// uncovered overload's CRAP with a covered sibling's lines. Folded entries (state machines,
-    /// lambdas) lost their origin's signature, so all synthetic material for one origin name
-    /// shares a single folded group. Types key by their arity-preserving identity for the same
-    /// reason: <c>Result</c> and <c>Result`1</c> display alike but are different types.
+    /// Step 1: fold raw coverage entries into logical source methods, per FILE: the same type
+    /// and method name in two files — two assemblies' <c>Ns.T.M(Int32)</c>, or two parts of a
+    /// partial class — are two rows, never one averaged row. Direct entries key by the raw IL
+    /// SIGNATURE, not arity: same-arity overloads (<c>Frob(Int32)</c> vs <c>Frob(String)</c>)
+    /// are distinct source methods, and collapsing them would dilute an uncovered overload's
+    /// CRAP with a covered sibling's lines. Folded entries (state machines, lambdas) lost their
+    /// origin's signature, so they key by the origin's method ordinal instead: everything
+    /// synthesized for one source method is one group, and the groups of two overloads stay
+    /// apart. Types key by their arity-preserving identity for the same reason: <c>Result</c>
+    /// and <c>Result`1</c> display alike but are different types.
     /// </summary>
     private static List<LogicalMethod> FoldRawEntries(IReadOnlyList<MethodCoverage> methods)
     {
-        var byKey = new Dictionary<string, LogicalMethod>(StringComparer.Ordinal);
+        var byKey = new Dictionary<(MethodName Name, string Discriminator), LogicalMethod>();
         var order = new List<LogicalMethod>();
 
         foreach (var mc in methods)
@@ -222,18 +257,16 @@ public static class CrapAnalysis
             // non-MoveNext surface of iterators) has no source-method identity to fold into —
             // and no lines a source method is missing.
             if (!MethodIdentity.TryNormalize(mc.ClassName, mc.MethodName,
-                    out var typeKey, out var typeIdentity, out var methodKey, out var folded))
+                    out var typeKey, out var typeIdentity, out var methodKey, out var origin))
                 continue;
 
-            int? arity = folded ? null : MethodIdentity.SignatureArity(mc.Signature);
-
-            var key = folded
-                ? Invariant($"{typeIdentity}|{methodKey}|<folded>")
-                : Invariant($"{typeIdentity}|{methodKey}|{mc.Signature}");
+            var name = new MethodName(mc.File, typeIdentity, methodKey);
+            var key = (name, origin is { } o ? $"<folded:{o.Ordinal}>" : mc.Signature);
 
             if (!byKey.TryGetValue(key, out var logical))
             {
-                logical = new LogicalMethod(typeKey, typeIdentity, methodKey, arity, folded, mc.File);
+                int? arity = origin is null ? MethodIdentity.SignatureArity(mc.Signature) : null;
+                logical = new LogicalMethod(name, typeKey, arity, origin);
                 byKey[key] = logical;
                 order.Add(logical);
             }
@@ -248,32 +281,28 @@ public static class CrapAnalysis
     /// <summary>
     /// Step 2: fold synthetic groups into their origin method. A lambda's lines belong inside
     /// its origin method's body: merging them makes cov(m) span the same code Roslyn's
-    /// complexity counts. Only an UNAMBIGUOUS origin (exactly one same-named overload) absorbs;
-    /// otherwise — including same-arity overload sets, which step 1 keeps distinct — the folded
-    /// group stands as its own row rather than guessing.
+    /// complexity counts. A group attaches only when its origin is established — exactly one
+    /// same-named method in the same file and type, and exactly one synthetic origin of that
+    /// name — and never on name alone: a method's own async/iterator body
+    /// (<see cref="SyntheticOrigin.OwnBody"/>) does not attach to an entry that has lines of its
+    /// own, because that entry is a different, synchronous overload. Everything else stands as
+    /// its own scored row rather than guessing.
     /// </summary>
     private static void FoldSyntheticGroups(List<LogicalMethod> order)
     {
-        var byName = new Dictionary<string, List<LogicalMethod>>(StringComparer.Ordinal);
-        foreach (var logical in order)
-        {
-            if (logical.Folded) continue;
-            var nameKey = $"{logical.TypeIdentity}|{logical.MethodKey}";
-            if (!byName.TryGetValue(nameKey, out var list)) byName[nameKey] = list = [];
-            list.Add(logical);
-        }
+        var direct = order.Where(static l => !l.Folded).ToLookup(static l => l.Name);
 
-        foreach (var logical in order)
+        foreach (var synthetic in order.Where(static l => l.Folded).GroupBy(static l => l.Name))
         {
-            if (!logical.Folded) continue;
-            if (!byName.TryGetValue($"{logical.TypeIdentity}|{logical.MethodKey}", out var candidates) ||
-                candidates.Count != 1)
-                continue;
+            var candidates = direct[synthetic.Key].ToList();
+            if (candidates.Count != 1 || synthetic.Count() != 1) continue;
 
-            var origin = candidates[0];
-            origin.MergeLines(logical.Lines);
-            origin.MergeEmbeddedComplexity(logical.EmbeddedComplexity);
-            logical.FoldedAway = true;
+            var (origin, group) = (candidates[0], synthetic.First());
+            if (group.Origin!.Value.OwnBody && origin.Lines.Count > 0) continue;
+
+            origin.MergeLines(group.Lines);
+            origin.MergeEmbeddedComplexity(group.EmbeddedComplexity);
+            group.FoldedAway = true;
         }
     }
 
@@ -290,7 +319,7 @@ public static class CrapAnalysis
         foreach (var logical in order)
         {
             if (logical.FoldedAway) continue;
-            var display = $"{logical.TypeKey}.{logical.MethodKey}";
+            var display = $"{logical.TypeKey}.{logical.Name.Method}";
 
             if (logical.Lines.Count is 0)
             {
@@ -332,30 +361,18 @@ public static class CrapAnalysis
         return unmatched;
     }
 
-    /// <summary>
-    /// Filter methods by file path, with exactly the substring-match semantics of
-    /// <see cref="CoverageReport.Exclude(IEnumerable{string}, IEnumerable{string})"/> — the two
-    /// share <see cref="ExclusionRules.Excluded"/>, so <c>--exclude-generated</c> means the same
-    /// thing to <c>crap</c> as it does to <c>report</c> and <c>check</c>.
-    /// </summary>
-    public static IReadOnlyList<MethodCoverage> ExcludeFiles(
-        IReadOnlyList<MethodCoverage> methods, IEnumerable<string> patterns, IEnumerable<string> keep)
-    {
-        var rules = patterns.ToList();
-        if (rules.Count is 0) return methods;
-        var keepRules = keep.ToList();
+    /// <summary>A logical method's name: file identity key, arity-preserving type identity, method name.</summary>
+    private readonly record struct MethodName(string File, string TypeIdentity, string Method);
 
-        return methods.Where(m => !ExclusionRules.Excluded(m.File, rules, keepRules)).ToList();
-    }
-
-    private sealed class LogicalMethod(string typeKey, string typeIdentity, string methodKey, int? arity, bool folded, string file)
+    private sealed class LogicalMethod(MethodName name, string typeKey, int? arity, SyntheticOrigin? origin)
     {
+        public readonly MethodName Name = name;
         public readonly string TypeKey = typeKey;
-        public readonly string TypeIdentity = typeIdentity;
-        public readonly string MethodKey = methodKey;
         public readonly int? Arity = arity;
-        public readonly bool Folded = folded;
-        public readonly string File = file;
+        /// <summary>Set for compiler-synthesized material; null for a method the source names directly.</summary>
+        public readonly SyntheticOrigin? Origin = origin;
+        public bool Folded => Origin is not null;
+        public string File => Name.File;
         public readonly Dictionary<int, int> Lines = new();
         public int? EmbeddedComplexity;
         public bool FoldedAway;
@@ -459,7 +476,7 @@ public static class CrapAnalysis
     {
         if (members is null) return null;
 
-        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.MethodKey)}";
+        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         if (metricsIndex.TryGetValue(key, out var candidates))
         {
             // Overload disambiguation by arity when both sides know it. When arity is unknown

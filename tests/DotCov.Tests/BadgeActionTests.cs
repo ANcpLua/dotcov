@@ -69,6 +69,22 @@ public sealed class BadgeActionTests : IDisposable
     }
 
     [Test]
+    public async Task NoThreshold_FailsWithDotcovsUsageError_AndPublishesNothing(CancellationToken cancellationToken)
+    {
+        // The action has no default threshold either: an implicit 80 would gate on a number
+        // nobody chose.
+        await Init(cancellationToken);
+
+        var run = await RunAction(cancellationToken);
+
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
+        await Assert.That(run.Outputs["exit-code"]).IsEqualTo("2");
+        await Assert.That(run.Output).Contains("error: missing threshold: 'check' needs --min-line N, --min-branch N, or both");
+        await Assert.That(run.Output).Contains("dotcov check exited 2 without writing a badge; nothing was published.");
+        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+    }
+
+    [Test]
     public async Task FailOnGateFalse_KeepsGateOutcomesGreen(CancellationToken cancellationToken)
     {
         await Init(cancellationToken);
@@ -85,7 +101,7 @@ public sealed class BadgeActionTests : IDisposable
     {
         await Init(cancellationToken);
 
-        var run = await RunAction(cancellationToken, ("reports", _ws.PathOf("missing")), ("fail-on-gate", "false"));
+        var run = await RunAction(cancellationToken, ("reports", _ws.PathOf("missing")), ("min-line", "80"), ("fail-on-gate", "false"));
 
         await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
         await Assert.That(run.Output).Contains("::error::dotcov check exited 5 without writing a badge; nothing was published.");
@@ -98,7 +114,7 @@ public sealed class BadgeActionTests : IDisposable
     {
         await Init(cancellationToken);
 
-        var run = await RunAction(cancellationToken, ("publish", "false"));
+        var run = await RunAction(cancellationToken, ("min-line", "80"), ("publish", "false"));
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         await Assert.That(File.Exists(Path.Combine(run.Outputs["directory"], "coverage-badge.svg"))).IsTrue();
@@ -187,7 +203,7 @@ public sealed class BadgeActionTests : IDisposable
     {
         var values = new Dictionary<string, string>
         {
-            ["reports"] = _report, ["badge-directory"] = "", ["pattern"] = "", ["min-line"] = "80", ["min-branch"] = "0", ["args"] = "",
+            ["reports"] = _report, ["badge-directory"] = "", ["pattern"] = "", ["min-line"] = "", ["min-branch"] = "", ["args"] = "",
             ["branch"] = "badges", ["publish"] = "true", ["fail-on-gate"] = "true", ["version"] = "unused",
             ["command"] = DotcovCommand(),
         };

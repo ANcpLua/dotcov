@@ -256,6 +256,7 @@ jobs:
           min-line: '90'
           min-branch: '90'
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+          args: --probe-sources
       - name: Publish a red badge when the real branch rate fails
         id: fail
         continue-on-error: true
@@ -265,6 +266,7 @@ jobs:
           min-line: '90'
           min-branch: '100'
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+          args: --probe-sources
       - name: Verify badge values, action outputs and published files
         env:
           PASS_CODE: ${{ steps.pass.outputs.exit-code }}
@@ -383,6 +385,7 @@ jobs:
           min-line: ${{ matrix.min-line }}
           min-branch: ${{ matrix.min-branch }}
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+          args: --probe-sources
       - name: Compare the action badge with the published upstream percentage
         env:
           BADGE_CODE: ${{ steps.badge.outputs.exit-code }}
@@ -398,6 +401,7 @@ jobs:
           min-line: '100'
           min-branch: ${{ matrix.min-branch }}
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+          args: --probe-sources
       - name: Require the line gate failure and exact published badge
         if: matrix.target == 'peek-readable'
         env:
@@ -415,6 +419,7 @@ jobs:
           min-line: ${{ matrix.min-line }}
           min-branch: '100'
           command: dotnet src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll
+          args: --probe-sources
       - name: Require the branch gate failure and exact published badge
         if: matrix.target == 'peek-readable'
         env:

@@ -44,6 +44,21 @@ no rate, and treating that as 0% would fail a build that simply measured nothing
 structured flags (`LineBelowThreshold`, `BranchBelowThreshold`, `IsInconclusive`) rather than
 parsing `Reason`.
 
+## File identity
+
+A report that declares several `<source>` roots names its files relative to one of them without
+saying which. Every `CoberturaParser` entry point takes a `FileIdentity`; the default,
+`FileIdentity.Lexical`, never reads the disk, so the same XML gives the same keys on every
+machine. Such a file is keyed under the first root, listed in `report.AmbiguousFiles` with its
+candidate roots, and warned about, and `Evaluate` answers `NoData` while any remain.
+`FileIdentity.ProbeSources` resolves against the root that holds the file on the reading
+machine's disk; `FileIdentity.FromSourceRoot(root)` names the root, and a root no report declares
+throws `UndeclaredSourceRootException`.
+
+```csharp
+var report = CoberturaParser.Parse(inputs, identity: FileIdentity.FromSourceRoot("src"));
+```
+
 ## What else is in the box
 
 ```csharp
@@ -60,9 +75,16 @@ await using var stream = File.OpenRead("coverage.cobertura.xml");
 var report = await CoberturaParser.ParseAsync(stream, ct: cancellationToken);
 
 // Per-method detail — complexity and line hits, the input behind the CRAP gate
-var methods = CoberturaParser.ParseMethods(ReportResolver.Resolve("TestResults/"));
-// methods.Methods, methods.Warnings, methods.SourceRoots
+var methods = CoberturaParser.ParseMethods(ReportResolver.Resolve("TestResults/"))
+                             .Exclude(ExclusionRules.TestCode, keep: []);
+var crap = CrapAnalysis.Analyze(methods);
+var verdict = crap.Evaluate(maxCrap: 30);   // NoData while any method is unscored
 ```
+
+`Exclude` records what it removed: `report.Exclusion` holds the patterns, the keep exemptions and
+the excluded paths, and `JsonFormatter` writes them as `excluded` and `exclusionRules`.
+`ExclusionRules.WellKnown` covers generated code and build output, `ExclusionRules.TestCode` test
+projects and fixtures.
 
 `TableFormatter`, `MarkdownFormatter`, and `JsonFormatter` render a report for a terminal, a PR
 comment, or a pipeline. `BadgeFormatter.Svg(gate)` and `BadgeFormatter.ShieldsJson(gate)` draw an

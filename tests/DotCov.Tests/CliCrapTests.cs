@@ -315,4 +315,45 @@ public sealed class CliCrapTests : IDisposable
         await Assert.That(withFlag).IsEqualTo(0);
         await Assert.That(stdout).DoesNotContain("Program");
     }
+
+    // ── Complete scoring: one unscored method withholds the verdict ──
+
+    /// <summary>A scored method well below the gate beside one the report gives no complexity for.</summary>
+    private string PartlyScored() =>
+        _ws.Write("partly.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("Scored", "()", "1", m => m.Line(1, hits: 1))
+                .Method("Unscored", "()", null, m => m.Line(5, hits: 0)))
+            .ToBytes());
+
+    [Test]
+    [Arguments("table")]
+    [Arguments("md")]
+    [Arguments("json")]
+    public async Task Crap_OneUnscoredMethod_IsNoData_Exits3_AndStillListsIt(string format)
+    {
+        // 2.x passed this report: the only scored method sits far below 30, and the method it could
+        // not score was listed and ignored. That method may be the one above the limit.
+        var (code, stdout, stderr) = await Run("crap", PartlyScored(), "--format", format);
+
+        await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
+        await Assert.That(stderr).StartsWith("NODATA: worst CRAP 1.0 (max 30) - 1 of 2 methods could not be scored - supply --metrics <file>");
+        await Assert.That(stdout).DoesNotContain("PASS:");
+        await Assert.That(stdout).Contains("MyApp.A.Unscored");
+        await Assert.That(stdout).Contains(format is "json" ? "\"outcome\": \"nodata\"" : "no complexity in the coverage report");
+    }
+
+    [Test]
+    public async Task Crap_MetricsFileScoringTheRest_TurnsTheSameReportIntoAMeasuredPass()
+    {
+        // The remedy the reason names: --metrics supplies the missing complexity.
+        var metrics = _ws.Write("A.Metrics.xml", CodeMetricsReportBuilder.Create()
+            .Namespace("MyApp", t => t.Type("A", m => m.Method("void A.Unscored()", 1)))
+            .ToBytes());
+
+        var (code, stdout, _) = await Run("crap", PartlyScored(), "--metrics", metrics);
+
+        await Assert.That(code).IsEqualTo(0).Because(stdout);
+        await Assert.That(stdout).Contains("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold");
+    }
 }

@@ -24,7 +24,7 @@ public sealed class DotCovCliTestCommandEdgeTests : IDisposable
         // IOException: a file named TestResults occupies the place of the run directory.
         _ws.Write("TestResults", "not a directory");
 
-        var run = await Dotcov(cancellationToken, "test", "missing.csproj");
+        var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "80");
 
         await Assert.That(run.ExitCode).IsEqualTo(5);
         // No echoed "> dotnet test" line: nothing was started.

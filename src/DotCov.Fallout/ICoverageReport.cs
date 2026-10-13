@@ -14,24 +14,34 @@ namespace DotCov.Fallout;
 ///   fallout ReportCoverage --coverage-min-line 80
 ///
 /// <see cref="ReportCoverage"/> attaches itself to <see cref="ICompile"/> when the build
-/// implements it and runs on its own otherwise. The gate policy is fail-closed: only
-/// <see cref="GateOutcome.Pass"/> succeeds; a failed, unmeasurable, or disabled gate fails
-/// the target with a distinct message.
+/// implements it and runs on its own otherwise. There is no default threshold: MinLine,
+/// MinBranch, or both must be set, or the target fails before reading a report. The gate
+/// policy is fail-closed: only <see cref="GateOutcome.Pass"/> succeeds; a failed, unmeasurable,
+/// or disabled gate fails the target with a distinct message.
 /// </summary>
 [ParameterPrefix("Coverage")]
 public interface ICoverageReport : IFalloutBuild
 {
-    [Parameter("Minimum line coverage percentage")]
-    string MinLine => TryGetValue(() => MinLine) ?? CoverageParameters.DefaultMinLine;
+    [Parameter("Minimum line coverage percentage, 0 to 100; set MinLine, MinBranch, or both")]
+    string? MinLine => TryGetValue(() => MinLine);
 
-    [Parameter("Minimum branch coverage percentage")]
-    string MinBranch => TryGetValue(() => MinBranch) ?? CoverageParameters.DefaultMinBranch;
+    [Parameter("Minimum branch coverage percentage, 0 to 100; set MinLine, MinBranch, or both")]
+    string? MinBranch => TryGetValue(() => MinBranch);
 
     [Parameter("Output format: table, json, markdown (md)")]
     string Format => TryGetValue(() => Format) ?? CoverageParameters.DefaultFormat;
 
     [Parameter("Exclude generated files, migrations, GlobalUsings.cs, Program.cs (true/false)")]
     string ExcludeGeneratedParam => TryGetValue(() => ExcludeGeneratedParam) ?? CoverageParameters.DefaultExcludeGenerated;
+
+    [Parameter("Exclude test projects and fixtures: *.Tests/, TestSupport/, TestFixtures/ (true/false)")]
+    string ExcludeTestCodeParam => TryGetValue(() => ExcludeTestCodeParam) ?? CoverageParameters.DefaultExcludeTestCode;
+
+    [Parameter("Resolve a relative filename under several <source> roots against the root that holds it on this machine's disk (true/false)")]
+    string ProbeSourcesParam => TryGetValue(() => ProbeSourcesParam) ?? CoverageParameters.DefaultProbeSources;
+
+    [Parameter("Resolve a relative filename under several <source> roots against this declared root")]
+    string? SourceRoot => TryGetValue(() => SourceRoot);
 
     [Parameter("Report file name pattern: 'filename' or '**/filename' (gcovr and coverage.py emit coverage.xml)")]
     string Pattern => TryGetValue(() => Pattern) ?? CoverageParameters.DefaultPattern;
@@ -50,7 +60,8 @@ public interface ICoverageReport : IFalloutBuild
         .Executes(() =>
         {
             var parameters = CoverageParameters.Parse(
-                MinLine, MinBranch, Format, ExcludeGeneratedParam, Pattern, MaxCharsParam);
+                MinLine, MinBranch, Format, ExcludeGeneratedParam, ExcludeTestCodeParam, Pattern, MaxCharsParam,
+                ProbeSourcesParam, SourceRoot);
 
             var searchDirectory = CoverageSearchDirectory.ToString();
             Assert.True(Directory.Exists(searchDirectory),
@@ -66,13 +77,17 @@ public interface ICoverageReport : IFalloutBuild
                 Log.Information("Merging {Count} coverage reports: {Reports}",
                     inputs.Count, inputs.Select(static input => input.SourceName));
 
-            var report = ParseReports(inputs, parameters.MaxChars);
-            if (parameters.ExcludeGenerated)
-                report = report.Exclude(ExclusionRules.WellKnown);
+            var report = ParseReports(inputs, parameters.MaxChars, parameters.Identity)
+                .Exclude(parameters.ExclusionPatterns);
 
             foreach (var warning in report.Warnings)
                 Log.Warning("Coverage warning ({Kind}) {File}:{Line}: {Detail}",
                     warning.Kind, warning.File, warning.Line, warning.Detail);
+
+            // A number computed without some files says which, like the CLI's stderr listing.
+            if (report.Exclusion.IsActive)
+                Log.Information("Excluded {Count} files by {Rules}: {Files}",
+                    report.Exclusion.ExcludedFiles.Count, report.Exclusion.Patterns, report.Exclusion.ExcludedFiles);
 
             var gate = report.Evaluate(parameters.MinLine, parameters.MinBranch);
 
@@ -121,24 +136,32 @@ public interface ICoverageReport : IFalloutBuild
             }
         });
 
-    /// <summary>Parse at the target boundary: a malformed report fails the target naming the file and XML coordinates.</summary>
-    private static CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars)
+    /// <summary>
+    /// Parse at the target boundary: a malformed report fails the target naming the file and XML
+    /// coordinates, and a SourceRoot no report declares fails naming the parameter.
+    /// </summary>
+    private static CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars, FileIdentity identity)
     {
         CoverageReport? report = null;
-        ReportParseException? failure = null;
+        Exception? failure = null;
+        string? message = null;
         try
         {
-            report = CoberturaParser.Parse(inputs, maxChars);
+            report = CoberturaParser.Parse(inputs, maxChars, identity);
         }
         catch (ReportParseException ex)
         {
-            failure = ex;
+            (failure, message) = (ex, $"Could not parse coverage report {ex.SourceName} (line {ex.LineNumber}, position {ex.LinePosition}): {ex.Message}");
+        }
+        catch (UndeclaredSourceRootException ex)
+        {
+            (failure, message) = (ex, $"Invalid Coverage SourceRoot: {ex.Message}");
         }
 
-        // Failed outside the catch block, so no statement has to follow Assert.Fail, which
+        // Failed outside the catch blocks, so no statement has to follow Assert.Fail, which
         // throws: only a successful parse reaches the return.
         if (failure is not null)
-            Assert.Fail($"Could not parse coverage report {failure.SourceName} (line {failure.LineNumber}, position {failure.LinePosition}): {failure.Message}", failure);
+            Assert.Fail(message!, failure);
 
         return report!;
     }

@@ -40,7 +40,10 @@ else
     dotcov=("$tools/dotcov")
   fi
 
-  args=(check "$DOTCOV_REPORTS" --min-line "$DOTCOV_MIN_LINE" --min-branch "$DOTCOV_MIN_BRANCH" --badge-dir "$badge_dir")
+  # Only the thresholds that were set: dotcov has no default, and rejects a gate without one.
+  args=(check "$DOTCOV_REPORTS" --badge-dir "$badge_dir")
+  if [ -n "$DOTCOV_MIN_LINE" ]; then args+=(--min-line "$DOTCOV_MIN_LINE"); fi
+  if [ -n "$DOTCOV_MIN_BRANCH" ]; then args+=(--min-branch "$DOTCOV_MIN_BRANCH"); fi
   if [ -n "$DOTCOV_PATTERN" ]; then args+=(--pattern "$DOTCOV_PATTERN"); fi
   if [ -n "${DOTCOV_ARGS//[[:space:]]/}" ]; then
     read -ra extra <<<"$DOTCOV_ARGS"

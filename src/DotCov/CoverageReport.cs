@@ -29,22 +29,27 @@ public enum CoverageWarningKind
     BranchTotalMismatch,
 
     /// <summary>
-    /// A Cobertura <c>&lt;line&gt;</c> carried <c>branch="true"</c> but its
-    /// <c>condition-coverage</c> attribute didn't match the <c>(covered/total)</c>
-    /// shape, the numbers overflowed <see cref="int"/>, or it claimed more covered outcomes
-    /// than its total (e.g. <c>150% (3/2)</c>). The parser drops the branch
-    /// entry; this warning makes the omission observable so emitter regressions
-    /// (e.g. malformed Coverlet output) don't silently zero out branch coverage.
+    /// A Cobertura <c>&lt;line&gt;</c> carried invalid branch data. Either its branch
+    /// aggregate is unusable — <c>branch="true"</c> without a <c>condition-coverage</c>
+    /// attribute, a value that doesn't match the <c>(covered/total)</c> shape, numbers that
+    /// overflow <see cref="int"/>, or more covered outcomes than its total (e.g.
+    /// <c>150% (3/2)</c>) — and the parser counts no branch for the line; or its
+    /// <c>&lt;condition&gt;</c> detail is unparseable or disagrees with that line's own
+    /// aggregate, and the parser drops the detail and keeps the aggregate. Either way this
+    /// warning makes the omission observable, so emitter regressions can neither silently zero
+    /// out branch coverage nor inflate it.
     /// </summary>
     MalformedConditionCoverage,
 
     /// <summary>
-    /// Two reports both carried per-condition detail for the same source line but with
-    /// different condition <c>number</c> sets. Coverlet's condition numbers are IL branch
-    /// offsets — stable only for the identical assembly build — so unioning across
-    /// mismatched sets would invent branch totals neither emitter reported.
-    /// <see cref="FileCoverage.MergeWith"/> falls back to the line-level <c>Math.Max</c>
-    /// union for that line and records the downgrade here.
+    /// Per-condition detail for the same source line arrived with different condition
+    /// <c>number</c> sets — from two reports, or from two <c>&lt;class&gt;</c> blocks of one
+    /// document. Coverlet's condition numbers are IL branch offsets, stable only within one
+    /// IL method of one build, so unioning mismatched sets would invent branch totals no
+    /// emitter reported. The parser and <see cref="FileCoverage.MergeWith"/> apply the same
+    /// rule: the line falls back to its raw line-level aggregate, and the downgrade is
+    /// recorded here once per line and document or merge — so the same measurements give the
+    /// same numbers however the XML packages them.
     /// </summary>
     ConditionIdentityMismatch,
 
@@ -58,10 +63,14 @@ public enum CoverageWarningKind
     MalformedHits,
 
     /// <summary>
-    /// File identity could not be established unambiguously. Emitted in two situations:
-    /// (1) a report declared multiple <c>&lt;source&gt;</c> roots — relative filenames are
-    /// resolved against the first, deterministically, because the analyzing machine cannot
-    /// probe the disk the report came from; (2) <see cref="CoverageReport.Merge"/> combined
+    /// File identity could not be established unambiguously. Emitted in three situations:
+    /// (1) under <see cref="FileIdentityMode.Lexical"/>, a relative filename in a report that
+    /// declares several <c>&lt;source&gt;</c> roots — one warning per file, naming the
+    /// candidate roots; the file is keyed under the first and listed in
+    /// <see cref="CoverageReport.AmbiguousFiles"/>, which turns every gate into NoData;
+    /// (2) under <see cref="FileIdentityMode.ProbeSources"/>, a relative filename that exists
+    /// under no declared root or under several on the reading machine — one warning per
+    /// document, and the first root applies; (3) <see cref="CoverageReport.Merge"/> combined
     /// reports whose source roots differ and found files unique to each side that share the
     /// same file name — the same source file uploaded under two path conventions (e.g.
     /// Coverlet default vs <c>DeterministicSourcePaths</c>) looks exactly like this, and if
@@ -198,7 +207,19 @@ public readonly record struct FileCoverage(
     /// order reports are folded in. A poisoned line contributes only its raw line-level
     /// aggregate. Detail present on only one side is carried forward unchanged so a later
     /// merge can still union it; the line aggregate never regresses below what the
-    /// line-level union observed.
+    /// line-level union observed. The parser applies the same rule to the
+    /// <c>&lt;class&gt;</c> blocks of one document, so one document with two blocks and two
+    /// merged documents give the same numbers and the same warnings.
+    /// </para>
+    /// <para>
+    /// Two different checks guard the derived aggregate. Within one document, a
+    /// <c>&lt;line&gt;</c>'s 2-way detail must reproduce that line's own
+    /// <c>condition-coverage</c> exactly: its covered outcomes must sum to the line's covered
+    /// count. Detail that disagrees is dropped with a
+    /// <see cref="CoverageWarningKind.MalformedConditionCoverage"/> warning, because one run
+    /// cannot have covered more than it reports. Across reports the derived aggregate MAY
+    /// exceed either side's: two runs that exercised different conditions of the same line
+    /// legitimately raise each other, which is the point of the per-condition union.
     /// </para>
     /// </summary>
     public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine
@@ -488,8 +509,8 @@ public readonly record struct FileCoverage(
 
     /// <summary>
     /// The condition-identity poison sentinel: an empty condition set. Safe to overload as a
-    /// sentinel because neither the parser's Materialize nor AddCondition ever produces an
-    /// empty <see cref="ConditionsByLine"/> entry — only a mismatch downgrade does.
+    /// sentinel because real detail always holds at least one condition — only a mismatch
+    /// downgrade, here or in the parser's per-document union, produces an empty entry.
     /// </summary>
     private static readonly IReadOnlyDictionary<int, int> PoisonedConditions =
         ReadOnlyDictionary<int, int>.Empty;
@@ -606,6 +627,21 @@ public sealed class CoverageReport
     /// </summary>
     public IReadOnlyList<string> SourceRoots { get; init; } = [];
 
+    /// <summary>
+    /// Files whose identity the parse could not resolve (<see cref="FileIdentityMode.Lexical"/>
+    /// with several declared roots): each is present in <see cref="Files"/> under its
+    /// deterministic first-root key, but nothing proves that root is its own. While any remain,
+    /// <see cref="Evaluate"/> answers <see cref="GateOutcome.NoData"/>. <see cref="Exclude(IEnumerable{string}, IEnumerable{string})"/>
+    /// drops the excluded ones; <see cref="Merge"/> unions both sides.
+    /// </summary>
+    public IReadOnlyList<AmbiguousFile> AmbiguousFiles { get; init; } = [];
+
+    /// <summary>
+    /// The exclusions applied to this report and the files they removed;
+    /// <see cref="FileExclusion.None"/> until <see cref="Exclude(IEnumerable{string}, IEnumerable{string})"/> runs.
+    /// </summary>
+    public FileExclusion Exclusion { get; init; } = FileExclusion.None;
+
     public int TotalLines => Files.Sum(static f => f.LinesTotal);
     public int TotalLinesHit => Files.Sum(static f => f.LinesHit);
     public int TotalBranches => Files.Sum(static f => f.BranchesTotal);
@@ -648,7 +684,9 @@ public sealed class CoverageReport
     /// <summary>
     /// Decide whether this report clears the given thresholds. Returns the full verdict rather
     /// than a bool so callers can tell a real failure from an unanswerable question from a gate
-    /// that was never armed — three outcomes a bool collapses into "false".
+    /// that was never armed — three outcomes a bool collapses into "false". A report with
+    /// <see cref="AmbiguousFiles"/> is <see cref="GateOutcome.NoData"/>: its numbers may count a
+    /// file under a root that is not its own.
     /// </summary>
     public GateResult Evaluate(double minLinePercent, double minBranchPercent = 0)
     {
@@ -659,6 +697,10 @@ public sealed class CoverageReport
         if (!HasLineData)
             return new GateResult(GateOutcome.NoData, null, null, minLinePercent, minBranchPercent,
                 "report carries no line data - nothing was measured");
+
+        if (AmbiguousFiles.Count > 0)
+            return new GateResult(GateOutcome.NoData, LineRate, BranchRate, minLinePercent, minBranchPercent,
+                AmbiguousFile.GateReason(AmbiguousFiles));
 
         if (minBranchPercent > 0 && !HasBranchData)
             return new GateResult(GateOutcome.NoData, LineRate, null, minLinePercent, minBranchPercent,
@@ -710,12 +752,15 @@ public sealed class CoverageReport
         if (rules.Count is 0) return this;
 
         var keepRules = keep.ToList();
+        var (kept, excluded) = ExclusionRules.Partition(Files, static f => f.Path, rules, keepRules);
 
-        var filtered = Files
-            .Where(f => !ExclusionRules.Excluded(f.Path, rules, keepRules))
-            .ToList();
-
-        return new CoverageReport(filtered) { Warnings = Warnings, SourceRoots = SourceRoots };
+        return new CoverageReport(kept)
+        {
+            Warnings = Warnings,
+            SourceRoots = SourceRoots,
+            AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
+            Exclusion = Exclusion.Then(rules, keepRules, excluded)
+        };
     }
 
     public static CoverageReport Merge(CoverageReport a, CoverageReport b)
@@ -753,7 +798,9 @@ public sealed class CoverageReport
             // sequences, so a raw union of c:\repo and C:/repo/ would keep two entries and
             // permanently re-flag every later merge as ambiguous.
             SourceRoots = a.SourceRoots.Concat(b.SourceRoots)
-                .DistinctBy(PathIdentity.NormalizeRoot, StringComparer.Ordinal).ToList()
+                .DistinctBy(PathIdentity.NormalizeRoot, StringComparer.Ordinal).ToList(),
+            AmbiguousFiles = AmbiguousFile.Union(a.AmbiguousFiles.Concat(b.AmbiguousFiles)),
+            Exclusion = a.Exclusion.Union(b.Exclusion)
         };
     }
 
@@ -851,10 +898,11 @@ public static class ExclusionRules
 
     /// <summary>
     /// The one exclusion predicate, shared by <see cref="CoverageReport.Exclude(IEnumerable{string}, IEnumerable{string})"/>
-    /// and <see cref="CrapAnalysis.ExcludeFiles"/> so a path can never be excluded by one
-    /// command and kept by another. Case-insensitive substring match against the path with a
-    /// virtual leading <c>/</c> (so leading-separator rules anchor at top level); a keep match
-    /// always wins.
+    /// and <see cref="MethodCoverageReport.Exclude"/> so a path can never be excluded by one
+    /// command and kept by another, whichever rule set (<see cref="WellKnown"/>,
+    /// <see cref="TestCode"/>, or both) selected it. Case-insensitive substring match against
+    /// the path with a virtual leading <c>/</c> (so leading-separator rules anchor at top
+    /// level); a keep match always wins.
     /// </summary>
     internal static bool Excluded(string path, List<string> rules, List<string> keepRules)
     {
@@ -862,4 +910,61 @@ public static class ExclusionRules
         return !keepRules.Any(k => probe.Contains(k, StringComparison.OrdinalIgnoreCase)) &&
                rules.Any(p => probe.Contains(p, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Split <paramref name="items"/> by <see cref="Excluded"/> on their file path: the kept items
+    /// in order, and the distinct excluded paths in first-seen order.
+    /// </summary>
+    internal static (List<T> Kept, List<string> Excluded) Partition<T>(
+        IEnumerable<T> items, Func<T, string> path, List<string> rules, List<string> keepRules)
+    {
+        var kept = new List<T>();
+        var excluded = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            var file = path(item);
+            if (!Excluded(file, rules, keepRules)) kept.Add(item);
+            else if (seen.Add(file)) excluded.Add(file);
+        }
+        return (kept, excluded);
+    }
+
+    /// <summary>The ambiguous files an exclusion left in the report.</summary>
+    internal static List<AmbiguousFile> Remaining(IReadOnlyList<AmbiguousFile> ambiguous, List<string> excluded)
+    {
+        var removed = new HashSet<string>(excluded, StringComparer.Ordinal);
+        return ambiguous.Where(a => !removed.Contains(a.Path)).ToList();
+    }
+}
+
+/// <summary>
+/// What an exclusion did: the patterns applied, the <c>--keep</c> exemptions, and the files
+/// removed. Carried on the report it produced, so every rendering — terminal, step summary,
+/// JSON, upload — can say what was left out instead of presenting a smaller number as the
+/// whole.
+/// </summary>
+/// <param name="Patterns">Exclusion patterns, distinct, in first-applied order.</param>
+/// <param name="Keep">Keep exemptions, distinct, in first-applied order.</param>
+/// <param name="ExcludedFiles">Paths removed, distinct, in first-seen order.</param>
+public sealed record FileExclusion(
+    IReadOnlyList<string> Patterns,
+    IReadOnlyList<string> Keep,
+    IReadOnlyList<string> ExcludedFiles)
+{
+    /// <summary>No exclusion applied.</summary>
+    public static FileExclusion None { get; } = new([], [], []);
+
+    /// <summary>True once any exclusion pattern was applied, even one that removed nothing.</summary>
+    public bool IsActive => Patterns.Count > 0;
+
+    /// <summary>This exclusion followed by another.</summary>
+    internal FileExclusion Then(List<string> patterns, List<string> keep, List<string> excluded) =>
+        Union(new FileExclusion(patterns, keep, excluded));
+
+    /// <summary>Both exclusions at once: every list unioned, Ordinal, first-seen order kept.</summary>
+    internal FileExclusion Union(FileExclusion other) => new(
+        Patterns.Concat(other.Patterns).Distinct(StringComparer.Ordinal).ToArray(),
+        Keep.Concat(other.Keep).Distinct(StringComparer.Ordinal).ToArray(),
+        ExcludedFiles.Concat(other.ExcludedFiles).Distinct(StringComparer.Ordinal).ToArray());
 }

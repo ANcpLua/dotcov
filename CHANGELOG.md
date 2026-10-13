@@ -782,3 +782,60 @@ Verified:
   `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`.
 - `dotcov report TestResults --pattern "**/dotcov.coverage.cobertura.*.xml" --format json` on the
   coverlet.MTP output: 27 files, line 99.08%, branch 94.41% → badge `99.1%` brightgreen.
+
+## Task 20 — 2026-10-13 — 3.0.0: explicit thresholds, complete CRAP scoring, deterministic file identity
+
+Three gate contracts change and seven counting bugs are fixed, so every number a gate decides
+on may move. Release notes: `docs/releases/3.0.0.md`.
+
+Changed (contracts):
+- Thresholds are explicit. The `"80"` defaults are gone from `check`, `test`
+  (`TryGetThresholds`), the Fallout component (`CoverageParameters.DefaultMinLine`/
+  `DefaultMinBranch` removed; `ICoverageReport.MinLine`/`MinBranch` are `string?`) and the badge
+  action (`min-line`/`min-branch` default empty; `badge.sh` passes only what was set). Neither
+  threshold → usage error before any report is read or `dotnet test` starts (Fallout: build
+  error naming both parameters); one → the other is disabled; both 0 → `Disabled`; outside
+  0–100, NaN or infinity → exit 2. `report --threshold` and the repo wrapper's badge threshold
+  parse follow the same range; `--max-crap` keeps its own grammar (infinity disables).
+- `CrapReport.Evaluate` needs complete scoring: any `Unscored` method → `NoData` naming the
+  count and `--metrics`; zero scored stays `NoData`; otherwise `Fail` above the limit, `Pass`.
+- File identity is lexical by default (`FileIdentity.Lexical`): several roots and a relative
+  filename → first-root key, one `FileIdentityAmbiguous` warning per file naming the candidate
+  roots, `AmbiguousFiles` on `CoverageReport`/`MethodCoverageReport`/`CrapReport`, and `NoData`
+  from `CoverageReport.Evaluate` and `CrapReport.Evaluate`. 2.0's disk probe is opt-in
+  (`FileIdentity.ProbeSources`, `--probe-sources`, `--coverage-probe-sources-param`); an
+  explicit root (`FileIdentity.FromSourceRoot`, `--source-root`, `--coverage-source-root`) must
+  be declared, else `UndeclaredSourceRootException` → exit 2. The mode is a parser parameter
+  (`IdentityScope` per call), never process state; `ReportResolver` resolves report files only
+  and needs no mode.
+- `--exclude-test-code` (`report`, `check`, `crap`, `snapshot`, `test`) and
+  `ExcludeTestCodeParam` select `ExclusionRules.TestCode` through `ExclusionRules.Excluded`;
+  `--keep` exempts from either exclusion. `CoverageReport.Exclude` and the new
+  `MethodCoverageReport.Exclude` (replacing `CrapAnalysis.ExcludeFiles`) record a
+  `FileExclusion`; stderr lists rules and files for table/md output, JSON carries `excluded`
+  and `exclusionRules`, the Fallout target logs them.
+
+Fixed (numbers):
+- `ParseAsync` finishes method-only classes through the same `ClassContext.Complete` as the
+  sync walk (A1).
+- CRAP rows key by file (A2) and synthesized material by its origin's method ordinal (A3,
+  `SyntheticOrigin`); a folded group attaches only to the one same-named method of its file and
+  type, and a method's own state machine never joins an entry with lines.
+- Condition sets that differ between class blocks of one document poison the line like a merge
+  does (A4); per-`<line>` detail must reproduce its own covered count, and `branch="true"`
+  without `condition-coverage` or an unparseable condition warns (A5). Detail that is not 2-way
+  shaped (switch tables, grcov's per-outcome counts) is left out silently, as before.
+- An empty class-level `<lines>` element still decides the file's lines (A6).
+- `PathIdentity.RemoveDotSegments` normalizes `./`, `/./` and `/.` in file names and roots alike;
+  `..` is kept (A7).
+
+Also: `dotcov --version` prints three components (`3.0.0`); `RejectUnusedArguments` split into
+`UnknownOption`/`RejectInvalidValues` so the repo's own CRAP gate stays at or below 30; CI's
+consumer and README-badge jobs pass `--probe-sources` (itsdangerous declares two roots);
+`tests/AGENTS.md` names TUnit 1.74.
+
+Verified:
+- `fallout Coverage`: 100% lines and branches; full suite green. Each A-fix's regression test
+  fails on `5a50ddf` and passes here; each policy has a contract test per command through the
+  CLI entry point and through the Fallout target (`FalloutBuildTests`, `RepositoryBuildTests`);
+  `dotcov test` contracts run against a stand-in dotnet (`FakeDotnet`).

@@ -431,8 +431,11 @@ public sealed class CrapAnalysisTests
         var u = await Assert.That(report.Unscored).HasSingleItem();
         await Assert.That(u.Method).IsEqualTo("MyApp.A.NoComp");
         await Assert.That(u.Reason).Contains("--metrics");
-        // The unscored method never fails the gate — but is never silently dropped either.
-        await Assert.That(report.Evaluate(6).Outcome).IsEqualTo(GateOutcome.Pass);
+        // Never silently dropped, and never passed over: the verdict needs complete scoring.
+        var gate = report.Evaluate(6);
+        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
+        await Assert.That(gate.Reason).StartsWith("1 of 2 methods could not be scored");
+        await Assert.That(gate.Reason).Contains("--metrics");
     }
 
     [Test]
@@ -464,20 +467,25 @@ public sealed class CrapAnalysisTests
     // ── Exclusions ────────────────────────────────────────────────────────────
 
     [Test]
-    public async Task ExcludeFiles_SameSemanticsAsReportExclude()
+    public async Task Exclude_SameSemanticsAsReportExclude_AndCarriedOntoTheCrapReport()
     {
-        var methods = new[]
-        {
+        var methods = new MethodCoverageReport(
+        [
             Method("MyApp.A", "M", "()", complexity: 1, lines: [(1, 1)], file: "src/A.cs"),
             Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs"),
+            Method("MyApp.Migrations.X", "Down", "()", complexity: 1, lines: [(2, 1)], file: "src/Migrations/X.cs"),
             Method("MyApp.Program", "Main", "()", complexity: 1, lines: [(1, 1)], file: "Program.cs"),
-        };
+        ], [], []);
 
-        var filtered = CrapAnalysis.ExcludeFiles(methods, ExclusionRules.WellKnown, keep: ["Program.cs"]);
+        var filtered = methods.Exclude(ExclusionRules.WellKnown, keep: ["Program.cs"]);
+        var report = CrapAnalysis.Analyze(filtered);
 
-        await Assert.That(filtered.Count).IsEqualTo(2);
-        await Assert.That(filtered).DoesNotContain(m => m.File.Contains("Migrations"));
-        await Assert.That(filtered).Contains(m => m.File == "Program.cs");   // keep wins, incl. the virtual-root anchor
+        await Assert.That(filtered.Methods.Count).IsEqualTo(2);
+        await Assert.That(filtered.Methods).DoesNotContain(m => m.File.Contains("Migrations"));
+        await Assert.That(filtered.Methods).Contains(m => m.File == "Program.cs");   // keep wins, incl. the virtual-root anchor
+        await Assert.That(report.Exclusion.ExcludedFiles).IsEquivalentTo(["src/Migrations/X.cs"]);   // once per file
+        await Assert.That(report.Exclusion.Patterns).IsEquivalentTo(ExclusionRules.WellKnown);
+        await Assert.That(report.Exclusion.Keep).IsEquivalentTo(["Program.cs"]);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

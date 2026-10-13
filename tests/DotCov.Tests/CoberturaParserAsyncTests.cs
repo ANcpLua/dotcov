@@ -22,6 +22,33 @@ public sealed class CoberturaParserAsyncTests
     }
 
     [Test]
+    public async Task ParseAsync_MethodOnlyClass_YieldsTheSameReportAsSync()
+    {
+        // A class whose only lines sit under <methods> (no class-level <lines>): the sync walk
+        // let the method lines stand in for the file at the class end; the async walk never
+        // finished the class and reported the file with no lines at all.
+        var doc = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "Ns.A", c => c
+                .Method("M", "()", "2", m => m.Line(3, hits: 1).Line(4, hits: 0))
+                .Method("N", "()", "1", m => m.Line(8, hits: 2)))
+            .AddClass("src/B.cs", c => c.Line(1, hits: 1));
+
+        var sync = doc.Parse();
+        using var stream = doc.ToStream();
+        var async = await CoberturaParser.ParseAsync(stream);
+
+        await Assert.That(async.Files.Select(Shape)).IsEquivalentTo(sync.Files.Select(Shape));
+        await Assert.That(async.Warnings).IsEquivalentTo(sync.Warnings);
+        var a = async.Files.Single(f => f.Path == "src/A.cs");
+        await Assert.That((a.LinesHit, a.LinesTotal)).IsEqualTo((2, 3));
+        await Assert.That(a.LineHits.Keys).IsEquivalentTo([3, 4, 8]);
+    }
+
+    private static (string Path, int LinesHit, int LinesTotal, int BranchesHit, int BranchesTotal, string Lines) Shape(FileCoverage f) =>
+        (f.Path, f.LinesHit, f.LinesTotal, f.BranchesHit, f.BranchesTotal,
+            string.Join(",", f.LineHits.OrderBy(static kv => kv.Key).Select(static kv => $"{kv.Key}:{kv.Value}")));
+
+    [Test]
     public async Task ParseAsync_RespectsCancellation()
     {
         using var stream = Cobertura.NewDoc()

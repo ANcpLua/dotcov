@@ -1,6 +1,6 @@
 # Tests, Coverage und Fallout in diesem Repo
 
-Runner ist **Microsoft.Testing.Platform** (`global.json` → `"test.runner"`), Framework TUnit 1.67.
+Runner ist **Microsoft.Testing.Platform** (`global.json` → `"test.runner"`), Framework TUnit 1.74.
 SDK 10: MTP-Optionen gehen direkt an `dotnet test`; ein zusätzlicher `--`-Trenner ist
 hier nicht erforderlich. Die ältere VSTest-Integration hat andere Aufrufregeln.
 

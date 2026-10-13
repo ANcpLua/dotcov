@@ -37,6 +37,10 @@ dotcov snapshot TestResults/ --commit SHA --branch main --project MyApp
 dotcov test     tests/MyApp.Tests --min-line 80 -- -c Release    # dotnet test, then report and gate
 ```
 
+`check` and `test` have no default threshold: pass `--min-line`, `--min-branch`, or both, each a
+percentage from 0 to 100. A dimension left out is not checked; without either flag the command
+exits `2` before it reads a report or runs a test.
+
 `--github-summary` writes the markdown table to `$GITHUB_STEP_SUMMARY` on pass **and** fail, so a
 green build still shows its number. `--badge-dir <dir>` on `check` and `test` writes the verdict as
 `coverage-badge.svg` and `coverage-badge.json`, coloured by the outcome; the
@@ -62,7 +66,8 @@ starts with the verdict. A failed test run exits `5` with `error:` and no covera
 
 Since 1.7, usage errors exit `2` instead of `5`; update scripts accordingly. A missing
 path argument exits `2`; a supplied nonexistent path exits `5`. Invalid upload URLs
-are usage errors; HTTP/connection failures remain execution errors.
+are usage errors; HTTP/connection failures remain execution errors. Since 3.0, `check` and `test`
+without a threshold exit `2`, and so does a `--source-root` no report declares.
 
 `check`, `crap`, and `test` return `0` only for a measured pass:
 
@@ -70,10 +75,10 @@ are usage errors; HTTP/connection failures remain execution errors.
 |---|---|---|
 | `PASS:` | met the threshold | 0 |
 | `FAIL:` | below the threshold | 1 |
-| `NODATA:` | the gate lacks the data needed to evaluate | 3 |
+| `NODATA:` | the gate lacks the data needed to evaluate: nothing measured, a requested dimension missing, an unscored CRAP method, or a file whose `<source>` root is unresolved | 3 |
 | `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 4 |
 | `error:` | unreadable/nonexistent path, parse/size-cap error, upload or badge write failure, failed test run | 5 |
-| `error:` or unknown command | usage: unknown command/flag, invalid value, missing/extra argument | 2 |
+| `error:` or unknown command | usage: unknown command/flag, invalid value (a threshold outside 0 to 100 included), missing/extra argument, no threshold for `check` or `test`, a `--source-root` no report declares | 2 |
 
 `report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
 A passing gate whose badge cannot be written returns `5`; a non-passing gate keeps its code if an
@@ -113,12 +118,21 @@ from coverlet's per-method attribute automatically; for emitters that write none
 `--metrics` from `dotnet msbuild /t:Metrics`
 ([Microsoft.CodeAnalysis.Metrics](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics)).
 
+The gate needs every method scored. A method without complexity, or without lines, is listed as
+unscored in every format, and one such method makes the verdict `NODATA` (exit `3`): it may be
+the method above the limit. Emitters without a usable `complexity` attribute (gcovr
+placeholders, ReportGenerator merges, some converters) therefore need `--metrics` to pass at all.
+
 ## Flags
 
 | Flag | Effect |
 |---|---|
+| `--min-line <n>`, `--min-branch <n>` | `check`, `test`: thresholds from 0 to 100, no default; set one or both |
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
-| `--keep <subs>` | Comma-separated substrings exempt from `--exclude-generated`; requires it |
+| `--exclude-test-code` | Skip test projects and fixtures: `*.Tests/`, `TestSupport/`, `TestFixtures/`. Test code counts unless you set it |
+| `--keep <subs>` | Comma-separated substrings exempt from both exclusions; requires one of them |
+| `--probe-sources` | Several `<source>` roots: resolve each relative file name against the root that holds it on this machine's disk |
+| `--source-root <root>` | Several `<source>` roots: resolve relative file names against this declared root |
 | `--pattern <glob>` | Filename to scan for. Default `**/*cobertura*.xml`, including timestamped MTP reports |
 | `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
 | `--format` | `table`, `json`, `md` |
@@ -127,6 +141,16 @@ from coverlet's per-method attribute automatically; for emitters that write none
 | `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome; created if missing |
 
 Commands reject unused flags, `--name=value`, and extra paths; see `dotcov --help`.
+
+An active exclusion is named once: stderr lists its rules and every excluded file for table and
+markdown output, and JSON output (`report --format json`, `crap --format json`, `snapshot`)
+carries `excluded` and `exclusionRules` instead.
+
+A report with several `<source>` roots does not say which root a relative file name belongs to.
+By default DotCov never reads the disk to guess: the file is keyed under the first root with a
+`FileIdentityAmbiguous` warning, `report` prints as usual, and `check`, `crap` and `test` exit
+`3`. `--probe-sources` restores 2.0's disk probe — its answer depends on the machine running it,
+so run it where the sources are checked out — and `--source-root` names the root anywhere.
 
 `dotcov version` and `dotcov --version` print the version. Percentages use `62.0%` on every host.
 

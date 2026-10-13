@@ -30,7 +30,7 @@ public sealed class CliTestCommandTests : IDisposable
     public async Task WithoutGlobalJson_CollectsWithTheVSTestCollector_IntoAFreshResultsDirectory(
         CancellationToken cancellationToken)
     {
-        var run = await Dotcov(cancellationToken, "test", "missing.csproj");
+        var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains("test missing.csproj --results-directory \"");
         await Assert.That(run.StdOut).Contains($"{Created("TestResults")}\" {VSTestCoverage}");
@@ -53,7 +53,7 @@ public sealed class CliTestCommandTests : IDisposable
             }
             """);
 
-        var run = await Dotcov(cancellationToken, "test", target);
+        var run = await Dotcov(cancellationToken, "test", target, "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains($"test {option} {target} --results-directory ");
         await Assert.That(run.StdOut).Contains(TestingPlatformCoverage);
@@ -65,7 +65,7 @@ public sealed class CliTestCommandTests : IDisposable
     {
         _ws.Write("global.json", TestingPlatformGlobalJson);
 
-        var run = await Dotcov(cancellationToken, _ws.CreateDirectory("src/App.Tests"), new Dictionary<string, string?>(), "test");
+        var run = await Dotcov(cancellationToken, _ws.CreateDirectory("src/App.Tests"), new Dictionary<string, string?>(), "test", "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains("test --results-directory \"");
         await Assert.That(run.StdOut).Contains($"{Created("src/App.Tests/TestResults")}\" {TestingPlatformCoverage}");
@@ -80,7 +80,7 @@ public sealed class CliTestCommandTests : IDisposable
     {
         _ws.Write("global.json", globalJson);
 
-        var run = await Dotcov(cancellationToken, "test", "missing.csproj");
+        var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains(VSTestCoverage);
         await AssertNotEvaluated(run);
@@ -96,7 +96,7 @@ public sealed class CliTestCommandTests : IDisposable
         _ws.Write("global.json", globalJson);
 
         var run = await Dotcov(cancellationToken, _ws.Root,
-            new Dictionary<string, string?> { ["DOTNET_TEST_RUNNER"] = runner }, "test", "missing.csproj");
+            new Dictionary<string, string?> { ["DOTNET_TEST_RUNNER"] = runner }, "test", "missing.csproj", "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains(coverage);
         await AssertNotEvaluated(run);
@@ -121,7 +121,7 @@ public sealed class CliTestCommandTests : IDisposable
         var dotnet = _ws.PathOf("no-sdk/dotnet");
 
         var run = await Dotcov(cancellationToken, _ws.Root,
-            new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, "test");
+            new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, "test", "--min-line", "80");
 
         await Assert.That(run.ExitCode).IsEqualTo(5);
         await Assert.That(run.StdOut).StartsWith($"> \"{dotnet}\" test --results-directory ");
@@ -157,10 +157,12 @@ public sealed class CliTestCommandTests : IDisposable
         await Assert.That(run.StdOut).Contains($"test --project {project} --results-directory ");
         await Assert.That(run.StdOut).Contains("Sign.cs");
         await Assert.That(expectedCode == 0 ? run.StdOut : run.StdErr).Contains(verdict);
+        // A pass leaves stderr to the diagnostics: here the exclusion --exclude-generated applied.
         if (expectedCode == 0)
-            await Assert.That(run.StdErr).IsEmpty();
+            await Assert.That(run.StdErr).StartsWith("exclusion rules: .g.cs, .designer.cs, /obj/");
         else
             await Assert.That(run.StdErr).StartsWith(verdict);
+        await Assert.That(run.StdErr).Contains("excluded ");
         await Assert.That(await File.ReadAllTextAsync(summary, cancellationToken)).Contains($"`{verdict}");
         // --badge-dir is relative to the working directory, and the badge carries the same verdict.
         await Assert.That(await File.ReadAllTextAsync(_ws.PathOf("badge/coverage-badge.json"), cancellationToken))
@@ -179,7 +181,7 @@ public sealed class CliTestCommandTests : IDisposable
               <PropertyGroup><TargetFramework>net{Environment.Version.Major}.0</TargetFramework></PropertyGroup>
             </Project>
             """);
-        var run = await Dotcov(cancellationToken, "test", "Library.csproj");
+        var run = await Dotcov(cancellationToken, "test", "Library.csproj", "--min-line", "80");
 
         await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.StdErr).StartsWith("NODATA:");

@@ -76,8 +76,10 @@ def measure(args):
         files = {file_key(path, root): counts(value["summary"], args.language)
                  for path, value in native["files"].items()}
 
+    # --probe-sources: the job reads the report where the sources are checked out, so each
+    # relative filename resolves against the root that holds it (dotcov's default is lexical).
     dotcov = ["dotnet", tool]
-    actual = json.loads(run([*dotcov, "report", report, "--format", "json"]))
+    actual = json.loads(run([*dotcov, "report", report, "--format", "json", "--probe-sources"]))
     (output / "dotcov.json").write_text(json.dumps(actual, indent=2), encoding="utf-8")
     summary = actual["summary"]
     observed = tuple(summary[key] for key in ("coveredLines", "totalLines", "coveredBranches", "totalBranches"))
@@ -89,7 +91,7 @@ def measure(args):
     }
     assert actual_files == files, f"Per-file mismatch: native {files}; DotCov {actual_files}"
     # ItsDangerous's upstream reporting config also names tests as a source root. Every
-    # measured file exists under exactly one root, so DotCov attributes it without the
+    # measured file exists under exactly one root, so the disk probe attributes it without the
     # multi-root warning; the per-file comparison above proves that attribution.
     warnings = [warning["kind"] for warning in actual.get("warnings", [])]
     assert warnings == [], warnings
@@ -98,7 +100,7 @@ def measure(args):
     assert 0.9 <= line_hit / line_total < 1
     assert 0.9 <= branch_hit / branch_total < 1
     for name, line, branch, code in [("pass", 90, 90, 0), ("line-fail", 100, 90, 1), ("branch-fail", 90, 100, 1)]:
-        text = run([*dotcov, "check", report, "--min-line", line, "--min-branch", branch,
+        text = run([*dotcov, "check", report, "--min-line", line, "--min-branch", branch, "--probe-sources",
                     "--badge-dir", output / f"cli-{name}"], expected=code)
         assert ("PASS:" if code == 0 else "FAIL:") in text
     expected = {"counts": total, "files": len(files), "language": args.language}

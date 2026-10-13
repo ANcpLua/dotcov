@@ -14,13 +14,16 @@ public static partial class CoberturaParser
     /// method name, signature) — including compiler-synthesized classes (state machines,
     /// lambda display classes); interpretation belongs to <see cref="CrapAnalysis"/>. Reports
     /// without <c>&lt;methods&gt;</c> detail (the original Cobertura summary shape, MTP's
-    /// emitter) produce an empty method list, never a throw.
+    /// emitter) produce an empty method list, never a throw. File keys follow
+    /// <paramref name="identity"/> exactly as <see cref="Parse(Stream, long, FileIdentity)"/> does.
     /// </summary>
-    public static MethodCoverageReport ParseMethods(Stream stream, long maxChars = DefaultMaxChars)
+    public static MethodCoverageReport ParseMethods(Stream stream, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
     {
-        using var reader = CreateReader(stream, maxChars, async: false);
+        var scope = new IdentityScope(identity);
         var methods = new MethodCollector();
-        CollectMethods(reader, methods);
+        using (var reader = CreateReader(stream, maxChars, async: false))
+            CollectMethods(reader, methods, scope, sourceName: null);
+        scope.RequireDeclaredRoot();
         return methods.Materialize();
     }
 
@@ -28,20 +31,22 @@ public static partial class CoberturaParser
     /// Parse one input; the stream is opened and disposed here. Malformed XML surfaces as
     /// <see cref="ReportParseException"/> naming the input.
     /// </summary>
-    public static MethodCoverageReport ParseMethods(ReportInput input, long maxChars = DefaultMaxChars)
+    public static MethodCoverageReport ParseMethods(ReportInput input, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
     {
         ArgumentNullException.ThrowIfNull(input);
-        return ParseMethods([input], maxChars);
+        return ParseMethods([input], maxChars, identity);
     }
 
     /// <summary>
     /// Parse every input into one method set. The same method entry across inputs merges per
-    /// line with <c>Math.Max</c>, mirroring the file-level union-with-max semantics; warnings
-    /// and source roots of every document are carried into the result.
+    /// line with <c>Math.Max</c>, mirroring the file-level union-with-max semantics; warnings,
+    /// source roots and unresolved file identities of every document are carried into the result.
     /// </summary>
-    public static MethodCoverageReport ParseMethods(IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars)
+    public static MethodCoverageReport ParseMethods(
+        IEnumerable<ReportInput> inputs, long maxChars = DefaultMaxChars, FileIdentity? identity = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
+        var scope = new IdentityScope(identity);
         var methods = new MethodCollector();
         foreach (var input in inputs)
         {
@@ -50,7 +55,7 @@ public static partial class CoberturaParser
             try
             {
                 using var reader = CreateReader(stream, maxChars, async: false);
-                CollectMethods(reader, methods);
+                CollectMethods(reader, methods, scope, input.SourceName);
             }
             catch (XmlException ex)
             {
@@ -58,15 +63,17 @@ public static partial class CoberturaParser
             }
         }
 
+        scope.RequireDeclaredRoot();
         return methods.Materialize();
     }
 
     /// <summary>Walk one document into <paramref name="methods"/>; roots are per document, warnings accumulate.</summary>
-    private static void CollectMethods(XmlReader reader, MethodCollector methods)
+    private static void CollectMethods(XmlReader reader, MethodCollector methods, IdentityScope scope, string? sourceName)
     {
-        var document = new DocumentContext();
+        var document = new DocumentContext(scope, sourceName);
         while (reader.Read())
             Visit(reader, document, files: null, methods);
+        document.Finish();
         methods.Complete(document);
     }
 
@@ -83,6 +90,7 @@ public static partial class CoberturaParser
         private readonly List<Entry> _order = [];
         private readonly List<CoverageWarning> _warnings = [];
         private readonly List<string> _sourceRoots = [];
+        private readonly List<AmbiguousFile> _ambiguous = [];
 
         public Entry For(MethodKey key, int? complexity)
         {
@@ -100,6 +108,7 @@ public static partial class CoberturaParser
         public void Complete(DocumentContext document)
         {
             _warnings.AddRange(document.Warnings);
+            _ambiguous.AddRange(document.AmbiguousFiles);
             if (document.SourceRoots is [""]) return;
             foreach (var root in document.SourceRoots)
                 if (!_sourceRoots.Any(r => string.Equals(PathIdentity.NormalizeRoot(r), PathIdentity.NormalizeRoot(root), StringComparison.Ordinal)))
@@ -111,7 +120,10 @@ public static partial class CoberturaParser
             var result = new List<MethodCoverage>(_order.Count);
             foreach (var entry in _order)
                 result.Add(entry.Materialize());
-            return new MethodCoverageReport(result, _warnings, _sourceRoots);
+            return new MethodCoverageReport(result, _warnings, _sourceRoots)
+            {
+                AmbiguousFiles = AmbiguousFile.Union(_ambiguous)
+            };
         }
 
         public sealed class Entry(MethodKey key)
