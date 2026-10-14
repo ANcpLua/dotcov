@@ -1,4 +1,5 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/ANcpLua/dotcov/nuget-publish.yml?branch=main&style=flat-square&label=Build)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml)
+[![Coverage](https://ancplua.github.io/dotcov/coverage-badge.svg)](https://github.com/ANcpLua/dotcov/actions/workflows/nuget-publish.yml?query=branch%3Amain)
 [![NuGet](https://img.shields.io/nuget/v/DotCov.Tool?style=flat-square&label=DotCov.Tool)](https://www.nuget.org/packages/DotCov.Tool/)
 
 # DotCov
@@ -182,12 +183,6 @@ to GitHub's image proxy.
 | [DotCov](src/DotCov/README.md) | The parser and gates as a library, no dependencies |
 | [DotCov.Fallout](src/DotCov.Fallout/README.md) | One interface that adds coverage targets to a [Fallout](https://fallout.build) build |
 
-## Upgrading
-
-4.0 moved every verdict to stderr, gave a failed `dotcov test` run its own exit code `6`, and
-reshaped the JSON. The [Release notes](docs/releases/4.1.0.md) cover this release and link the
-4.0 changes; older ones are in [docs/releases](docs/releases/).
-
 ## Contributing
 
 ```bash
@@ -196,4 +191,4 @@ fallout Test                                # the tests
 fallout Coverage                            # the tests plus the 100% coverage gate
 ```
 
-[Issues](https://github.com/ANcpLua/dotcov/issues) · [MIT](LICENSE)
+[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.1.0.md) · [MIT](LICENSE)

@@ -44,9 +44,12 @@ description: >-
      run only; missing measurements cannot produce a passing badge or gate.
    - The coverage gate (`fallout Coverage --reports TestResults`) rejects
      missing src projects and coverage below the thresholds in `build/Build.cs`.
-     This repository does not publish a badge branch; do not add badge pushes
-     or write permissions to its test job. The reusable badge action remains
-     available for consumers who choose to publish in their own repositories.
+     The gate draws `badge/coverage-badge.svg`; on pushes to main the test job
+     uploads it as a Pages artifact and the `coverage-badge` job, the only one
+     with `pages: write`, deploys it to https://ancplua.github.io/dotcov/.
+     Keep it that way: no badge branch, no badge pushes, no write permissions
+     in the test job. The reusable badge action remains available for
+     consumers who choose to publish in their own repositories.
      Preserve same-repository checks before privileged auto-merge or branch
      deletion; a branch prefix alone does not establish trust.
 4. Run `actionlint` and `shellcheck .github/actions/badge/badge.sh`; the
