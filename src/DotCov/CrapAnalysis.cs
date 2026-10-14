@@ -491,9 +491,9 @@ public static class CrapAnalysis
     }
 
     /// <summary>
-    /// Two separate decisions. First the metrics table is consulted and every consulted member
-    /// is marked matched — a member with a coverage counterpart is matched whether or not its
-    /// value ends up being used. Then the value is chosen: embedded complexity wins because it
+    /// Two separate decisions. First the metrics table is consulted and a unique executable
+    /// counterpart is marked matched, whether or not its value ends up being used.
+    /// Then the value is chosen: embedded complexity wins because it
     /// measured the exact assembly that was covered; the metrics value fills in only when the
     /// report carries none.
     /// </summary>
