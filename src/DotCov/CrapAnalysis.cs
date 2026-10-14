@@ -242,7 +242,7 @@ public static class CrapAnalysis
         var consumed = new HashSet<int>();
         // Exclusions remove methods from the measurement scope, not from the metrics file.
         // Match their identities without scoring them, even when they have no line data.
-        var (metricsIndex, _) = IndexMetrics(metricsMembers);
+        var (metricsIndex, _) = IndexMetrics(metricsMembers, executableOnly: true);
         var excluded = FoldRawEntries(excludedMethods);
         FoldSyntheticGroups(excluded);
         // Different raw signatures/files can have the same available metrics identity.
@@ -467,7 +467,7 @@ public static class CrapAnalysis
     }
 
     private static (Dictionary<string, List<int>> Index, Dictionary<string, int> AccessorFallback) IndexMetrics(
-        IReadOnlyList<CodeMetricsMember>? members)
+        IReadOnlyList<CodeMetricsMember>? members, bool executableOnly = false)
     {
         var index = new Dictionary<string, List<int>>(StringComparer.Ordinal);
         var accessorFallback = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -476,6 +476,9 @@ public static class CrapAnalysis
         for (var i = 0; i < members.Count; i++)
         {
             var m = members[i];
+            // Exclusion accounting never consumes declarations without executable lines.
+            // Drop them once here instead of reconsidering them for every excluded arity.
+            if (executableOnly && m.ExecutableLines is 0) continue;
             switch (m.Kind)
             {
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
