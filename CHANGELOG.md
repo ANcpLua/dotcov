@@ -771,5 +771,5 @@ Validation: `fallout Coverage` 1,977 tests, 100.0% line and branch; CI on the PR
   annotations (Fallout-build/Fallout#76), so the fix lives here; InspectCode reports no unused
   member in `Build.cs`.
 
-Validation: `fallout Coverage` 1,981 tests, 100.0% line and branch.
+Validation: `fallout Coverage` 1,985 tests, 100.0% line and branch.
 
