@@ -76,7 +76,7 @@ root, warns, and its gates answer `NODATA`. Where the sources are checked out, a
 `--probe-sources` to resolve each file against the root that holds it on disk; anywhere else,
 `--source-root <root>` names the root.
 
-CI runs the full suites of two pinned upstream projects on Linux, Windows, and macOS:
+CI runs the full suites of two pinned upstream projects on Linux and Windows:
 
 | Language | Real project | Coverage producer | Checks |
 |---|---|---|---|
@@ -92,11 +92,11 @@ out the commit recorded by Coveralls and compares fresh coverage with that publi
 | TypeScript async | [peek-readable 5.4.2](https://github.com/Borewit/peek-readable/blob/9cef754de7baad45e43195bbb35bd9bbf30abbc9/README.md) | [Coveralls build 71980502](https://coveralls.io/builds/71980502) | 205/209 lines, 54/57 branches; all 29 tests, real timers |
 | Python | [pydash 8.1.0](https://github.com/dgilland/pydash/blob/f46de3669742c075e5379c1e193c86c1c2c70dc2/README.rst) | [Coveralls build 81442862](https://coveralls.io/builds/81442862) | 100%; 2,607/2,607 lines in the published Python 3.12 run; 2,274 tests |
 
-These checks also run on Linux, Windows, and macOS and publish a matching DotCov badge to a
+These checks also run on Linux and Windows and publish a matching DotCov badge to a
 local test origin. The saved service records bind the reference percentages to the source
 commits, so later changes to a moving upstream badge cannot change the expected result.
 Pydash collects line coverage only; the existing consumer matrix separately verifies Python
-branch coverage and failing gates. Pydash also runs separate real-thread tests on all three
+branch coverage and failing gates. Pydash also runs separate real-thread tests on both
 hosts for timer cancellation, callback locking, concurrent callers, and maximum wait.
 
 
@@ -194,7 +194,8 @@ falls short of its threshold. A branch rate below its minimum turns the badge re
 This repository enforces 100% line and branch coverage in CI without publishing a badge branch.
 The badge action below is optional for consumers who want to publish coverage in their own repository.
 It runs on Linux, Windows (Git Bash), and macOS runners with .NET installed; CI exercises
-installation, publishing, and a failing gate on all three. It creates a `badges` branch on first use:
+installation, publishing, and a failing gate on Linux and Windows, and the test suite runs
+`badge.sh` under macOS's bash 3.2. It creates a `badges` branch on first use:
 
 ```yaml
 permissions:

@@ -2,7 +2,7 @@
 
 `consumer_coverage.py` is an integration test used by the `consumer-coverage` job in
 [CI](../workflows/nuget-publish.yml). It invokes the current DotCov CLI and the actual
-composite badge action. Every PR runs both languages on Linux, Windows, and macOS.
+composite badge action. Every PR runs both languages on Linux and Windows.
 
 The upstream projects already have coverage configuration. Their sources and tests are
 unchanged: the TypeScript project declares a 100% Jest threshold, and the Python project
@@ -129,7 +129,7 @@ DotCov's own 100% line/branch gate and the other targets' gates are unchanged.
 Pydash uses Python 3.12 and the coverage.py 7.16.0 / pytest 9.1.1 / pytest-cov 7.1.0
 versions recorded in its published [Python 3.12 CI job](https://github.com/dgilland/pydash/actions/runs/33272967265/job/99154667022).
 That upstream job ran Python 3.12.14. CI selects the available Python 3.12 patch release on
-each host (setup-python does not distribute 3.12.14 on Windows or macOS); exact count
+each host (setup-python does not distribute 3.12.14 on Windows); exact count
 comparisons remain mandatory. Its 2,274 unit tests and doctests run with upstream's targets, source configuration,
 exclusions, and 100% gate. CI installs the package editable so per-file paths refer to the
 checkout. A local pytest plugin supplies a virtual clock and timer queue only to
@@ -140,14 +140,14 @@ The plugin replaces module references for those two tests and restores them afte
 test; other tests and the Python standard library keep real time. Timers execute pydash's
 actual callbacks in deadline order, including cancellation and max-wait behavior.
 
-CI first runs `test_pydash_clock.py` on all three hosts. It repeats both unchanged upstream
+CI first runs `test_pydash_clock.py` on both hosts. It repeats both unchanged upstream
 tests with real 30 ms scheduling stalls, verifies clock isolation and JUnit evidence, and
 proves that deliberately early or late timers still fail upstream assertions. The
 full measurement then requires all 2,274 tests to pass with zero skips or errors, evidence
 that exactly the two intended tests used the clock, and the same exact coverage counts.
 There are no retries, merged partial measurements, extra exclusions, or relaxed thresholds.
 
-A separate `test_pydash_threads.py` suite runs on Linux, Windows, and macOS using pydash's
+A separate `test_pydash_threads.py` suite runs on Linux and Windows using pydash's
 real clock, `threading.Timer`, and locks, without loading the virtual-clock plugin. Five
 scenarios each run three times: background delivery and last-result reuse; cancellation
 after a timer has fired; a caller arriving during a blocked callback; eight concurrent

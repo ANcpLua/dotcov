@@ -16,6 +16,12 @@ permissions:
   contents: read
   id-token: write
 
+# A new push to a PR supersedes its running checks. Pushes to main and tags never cancel:
+# every merge is validated and a release run always finishes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
@@ -104,6 +110,9 @@ jobs:
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
 
+  # The integration matrices run on Linux and Windows. macOS adds no coverage path of its own
+  # (POSIX paths like Linux); BadgeActionTests run badge.sh under macOS's bash 3.2 locally.
+  # macOS runners stay for the release-only osx-arm64 Native AOT pack.
   # Exercise the composite action and its default installer against this checkout's portable
   # package. A release candidate is not on NuGet yet. Native packages are packed separately;
   # the local-only feed prevents an already-published version from masking this checkout.
@@ -112,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -195,7 +204,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         language: [typescript, python]
         include:
           - language: typescript
@@ -296,7 +305,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         target: [compare-versions, pydash, peek-readable]
         include:
           - target: compare-versions
