@@ -107,7 +107,7 @@ internal static partial class MethodSignatures
                 var type = signature[start..name];
                 if (identities.Values.Contains(type))
                 {
-                    if (!nullableStarts.Add(start)) return null;
+                    if (!nullableStarts.Add(start)) return signature;
                     replacements.Add(i, '>');
                 }
                 else if (identities.Observed.Contains(type)) replacements.Add(i, '\0');
@@ -118,7 +118,7 @@ internal static partial class MethodSignatures
                 parents.Push(start);
                 start = i + 1;
             }
-            else if (c == '>' && !parents.TryPop(out start)) return null;
+            else if (c == '>' && !parents.TryPop(out start)) return signature;
             else if (c == ',') start = i + 1;
         }
         var output = new StringBuilder(signature.Length);

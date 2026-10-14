@@ -26,7 +26,7 @@ public sealed class CrapFileLocalAndConversionTests
 
     [Test]
     [Arguments("Mystery? value")]
-    [Arguments("List<int>>? value")]
+    [Arguments("List>int<? value")]
     [Arguments("? value")]
     [Arguments("Point?? value")]
     public async Task UnresolvableNullableSignatures_DoNotProveCoverage(string parameter)
