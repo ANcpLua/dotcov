@@ -84,10 +84,10 @@ internal static partial class MethodSignatures
 
     internal sealed class NullableIdentities(IEnumerable<string?> coverage)
     {
-        public readonly HashSet<string> Observed = coverage.Where(s => s is not null)
-            .SelectMany(s => TypeNamePattern.Matches(s!).Select(m => m.Value)).ToHashSet(StringComparer.Ordinal);
-        public readonly HashSet<string> Values = coverage.Where(s => s is not null)
-            .SelectMany(s => NullableTypeNames().Matches(s!).Select(m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
+        public readonly HashSet<string> Observed = coverage.Where(static s => s is not null)
+            .SelectMany(static s => TypeNamePattern.Matches(s!).Select(static m => m.Value)).ToHashSet(StringComparer.Ordinal);
+        public readonly HashSet<string> Values = coverage.Where(static s => s is not null)
+            .SelectMany(static s => NullableTypeNames().Matches(s!).Select(static m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
     }
 
     internal static string? ResolveNullable(string? signature, NullableIdentities identities)
