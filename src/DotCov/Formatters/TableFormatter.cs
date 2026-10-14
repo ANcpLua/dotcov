@@ -71,14 +71,14 @@ public static class TableFormatter
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
-        var maxPath = Math.Max("File".Length, report.Files.Count > 0 ? report.Files.Max(static f => f.Path.Length) : 0);
+        // Sized from the rows shown: a path --top hides must not pad every visible row.
+        var rows = (top is { } shown ? report.Files.WorstFirst().Take(shown) : report.Files.WorstFirst()).ToList();
+        var maxPath = Math.Max("File".Length, rows.Count > 0 ? rows.Max(static f => f.Path.Length) : 0);
 
         var headerPlain = $"{"File".PadRight(maxPath)}  {"Lines",10}  {"Line %",8}  {"Branches",10}  {"Branch %",8}";
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
-        IEnumerable<FileCoverage> rows = report.Files.WorstFirst();
-        if (top is { } shown) rows = rows.Take(shown);
         foreach (var f in rows)
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);

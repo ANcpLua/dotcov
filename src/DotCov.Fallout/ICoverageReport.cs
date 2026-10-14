@@ -159,7 +159,8 @@ public interface ICoverageReport : IFalloutBuild
     }
 
     /// <summary>
-    /// Find and parse the reports at the target boundary. No match is NODATA (exit 3), as check
+    /// Find and parse the reports at the target boundary. No match is logged and parses to an
+    /// empty report, which the gate answers NODATA (exit 3) after its JSON is written, as check
     /// reads a directory without matches; a report that cannot be listed, opened, or read fails
     /// naming the cause (exit 5); a malformed one names the file and XML coordinates (exit 5); a
     /// SourceRoot no report declares names the parameter (exit 2, a parameter that cannot be honored).
@@ -170,7 +171,7 @@ public interface ICoverageReport : IFalloutBuild
         {
             var inputs = ReportResolver.ResolveDirectory(searchDirectory, parameters.Pattern);
             if (inputs.Count is 0)
-                throw Failure(ExitCodes.NoData, $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
+                Log.Warning("No files matching '{Pattern:l}' found in {Directory:l}", parameters.Pattern.ToString(), searchDirectory);
 
             // Every match is merged, so a report an earlier run left under TestResults lifts the
             // result silently unless the merged set is named.

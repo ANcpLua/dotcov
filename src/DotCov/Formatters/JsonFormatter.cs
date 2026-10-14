@@ -42,7 +42,7 @@ public static class JsonFormatter
     public static string Format(CoverageReport report, int? top = null) => Write(writer =>
     {
         WriteHeader(writer, "report", report.Inputs, report.Warnings);
-        WriteReport(writer, report, top);
+        WriteReport(writer, report, top, lineFloorBelow: null, branchFloorBelow: null);
     });
 
     /// <summary>
@@ -52,14 +52,16 @@ public static class JsonFormatter
     /// each dimension (a <c>null</c> minimum is a disabled dimension), and the first
     /// <paramref name="top"/> <see cref="CoverageReport.Offenders"/> with their uncovered line
     /// ranges and partially covered branches; <c>moreOffenders</c> counts the rest. A rate below
-    /// its minimum floors at two decimals, so it never reads as the minimum it missed.
+    /// the minimum of a failed dimension floors at two decimals, in the gate, the summary, and
+    /// every file alike, so it never reads as the minimum it missed.
     /// </summary>
     public static string Format(
         CoverageReport report, GateResult gate, string command, int top = CoverageReport.DefaultOffenderLimit) => Write(writer =>
     {
         WriteHeader(writer, command, report.Inputs, report.Warnings);
         WriteGate(writer, report, gate, top);
-        WriteReport(writer, report, top: null);
+        WriteReport(writer, report, top: null,
+            gate.LineBelowThreshold ? gate.MinLinePercent : null, gate.BranchBelowThreshold ? gate.MinBranchPercent : null);
     });
 
     public static string FormatDiff(CoverageDiffResult diff) => Write(writer =>
@@ -104,7 +106,7 @@ public static class JsonFormatter
         writer.WriteString("project", snapshot.Project);
         writer.WriteString("timestamp", snapshot.Timestamp);
         if (snapshot.FileHash is { } hash) writer.WriteString("fileHash", hash);
-        WriteReport(writer, snapshot.Report, top: null);
+        WriteReport(writer, snapshot.Report, top: null, lineFloorBelow: null, branchFloorBelow: null);
     });
 
     /// <summary>
@@ -134,29 +136,33 @@ public static class JsonFormatter
         writer.WriteEndArray();
     }
 
-    private static void WriteReport(Utf8JsonWriter writer, CoverageReport report, int? top)
+    /// <param name="lineFloorBelow">The missed line minimum when the gate failed lines, else null.</param>
+    /// <param name="branchFloorBelow">The missed branch minimum when the gate failed branches, else null.</param>
+    private static void WriteReport(
+        Utf8JsonWriter writer, CoverageReport report, int? top, double? lineFloorBelow, double? branchFloorBelow)
     {
         writer.WritePropertyName("summary");
-        WriteSummary(writer, report);
+        WriteSummary(writer, report, lineFloorBelow, branchFloorBelow);
 
         // Files keep the parser's document order — machines sort as they need — unless --top
         // asks for the worst ones, which come in the order the table shows them.
         IEnumerable<FileCoverage> files = top is { } t ? report.Files.WorstFirst().Take(t) : report.Files;
         writer.WriteStartArray("files");
-        foreach (var f in files) WriteFile(writer, f);
+        foreach (var f in files) WriteFile(writer, f, lineFloorBelow, branchFloorBelow);
         writer.WriteEndArray();
         if (top is { } shown) writer.WriteNumber("moreFiles", Math.Max(0, report.Files.Count - shown));
 
         WriteExclusion(writer, report.Exclusion);
     }
 
-    private static void WriteSummary(Utf8JsonWriter writer, CoverageReport report)
+    private static void WriteSummary(
+        Utf8JsonWriter writer, CoverageReport report, double? lineFloorBelow, double? branchFloorBelow)
     {
         writer.WriteStartObject();
         // Omitted rather than zeroed when unmeasured: a consumer that sees no key can tell
         // it has no data; one that sees 0 cannot distinguish that from total failure.
-        if (report.LineRate is { } lr) writer.WriteNumber("lineRate", Pct(lr));
-        if (report.BranchRate is { } br) writer.WriteNumber("branchRate", Pct(br));
+        if (report.LineRate is { } lr) WriteReportRate(writer, "lineRate", lr, lineFloorBelow);
+        if (report.BranchRate is { } br) WriteReportRate(writer, "branchRate", br, branchFloorBelow);
         writer.WriteBoolean("hasBranchData", report.HasBranchData);
         writer.WriteNumber("totalLines", report.TotalLines);
         writer.WriteNumber("coveredLines", report.TotalLinesHit);
@@ -228,12 +234,16 @@ public static class JsonFormatter
         writer.WriteEndArray();
     }
 
-    private static void WriteFile(Utf8JsonWriter writer, FileCoverage f)
+    /// <summary>A rate as a percentage: floored when below <paramref name="floorBelow"/>, rounded otherwise.</summary>
+    private static void WriteReportRate(Utf8JsonWriter writer, string name, double rate, double? floorBelow) =>
+        writer.WriteNumber(name, rate * 100 < floorBelow ? GateResult.FloorToHundredth(rate * 100) : Pct(rate));
+
+    private static void WriteFile(Utf8JsonWriter writer, FileCoverage f, double? lineFloorBelow, double? branchFloorBelow)
     {
         writer.WriteStartObject();
         writer.WriteString("path", f.Path);
-        if (f.LineRate is { } flr) writer.WriteNumber("lineRate", Pct(flr));
-        if (f.BranchRate is { } fbr) writer.WriteNumber("branchRate", Pct(fbr));
+        if (f.LineRate is { } flr) WriteReportRate(writer, "lineRate", flr, lineFloorBelow);
+        if (f.BranchRate is { } fbr) WriteReportRate(writer, "branchRate", fbr, branchFloorBelow);
         writer.WriteNumber("linesHit", f.LinesHit);
         writer.WriteNumber("linesTotal", f.LinesTotal);
         writer.WriteNumber("branchesHit", f.BranchesHit);

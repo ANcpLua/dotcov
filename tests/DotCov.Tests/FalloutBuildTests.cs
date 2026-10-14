@@ -134,6 +134,21 @@ public sealed class FalloutBuildTests : IDisposable
         // Nothing was measured: NODATA, as check reads a directory without matches.
         await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.Output).Contains($"No files matching '**/coverage.xml' found in {_ws.PathOf("TestResults")}");
+        await Assert.That(run.Output).Contains("Coverage could not be measured: NODATA:");
+    }
+
+    [Test]
+    public async Task DirectoryWithoutMatches_StillWritesTheNoDataJson(CancellationToken cancellationToken)
+    {
+        _ws.Write("TestResults/notes.txt", "nothing here");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-json-path", "out/coverage.json");
+
+        await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
+        var gate = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(_ws.PathOf("out/coverage.json"), cancellationToken))
+            .RootElement.GetProperty("gate");
+        await Assert.That(gate.GetProperty("outcome").GetString()).IsEqualTo("nodata");
+        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(3);
     }
 
     [Test]

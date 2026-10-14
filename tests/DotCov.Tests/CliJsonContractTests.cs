@@ -357,4 +357,55 @@ public sealed class CliJsonContractTests : IDisposable
         await Assert.That(stderr).Contains(expected);
         await Assert.That(stdout).IsEmpty();
     }
+
+    // 19,999 of 25,000 lines is 79.996%: rounded it reads 80, the minimum it missed.
+    [Test]
+    public async Task Check_Json_FailedRates_FloorEverywhere_PassingOnesRound()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dotcov-floor-{Guid.NewGuid():N}.xml");
+        await File.WriteAllBytesAsync(path, Cobertura.NewDoc().AddClass("src/A.cs", c =>
+        {
+            for (var i = 1; i <= 25_000; i++) c.Line(i, hits: i <= 19_999 ? 1 : 0);
+        }).ToBytes());
+        try
+        {
+            var (failCode, failing, _) = await Run("check", path, "--min-line", "80", "--format", "json");
+            var (passCode, passing, _) = await Run("check", path, "--min-line", "79", "--format", "json");
+
+            await Assert.That(failCode).IsEqualTo(1);
+            using var fail = System.Text.Json.JsonDocument.Parse(failing);
+            await Assert.That(fail.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(79.99);
+            await Assert.That(fail.RootElement.GetProperty("files")[0].GetProperty("lineRate").GetDouble()).IsEqualTo(79.99);
+            await Assert.That(passCode).IsEqualTo(0);
+            using var pass = System.Text.Json.JsonDocument.Parse(passing);
+            await Assert.That(pass.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(80);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task Report_Top_SizesTheTableFromTheRowsItShows()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dotcov-width-{Guid.NewGuid():N}.xml");
+        var hidden = "src/" + new string('x', 400) + ".cs";
+        await File.WriteAllBytesAsync(path, Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 0))
+            .AddClass(hidden, c => c.Line(1, hits: 1)).ToBytes());
+        try
+        {
+            var (code, stdout, _) = await Run("report", path, "--top", "1");
+
+            await Assert.That(code).IsEqualTo(0);
+            await Assert.That(stdout).DoesNotContain(hidden);
+            await Assert.That(stdout.Split('\n').Max(static l => l.TrimEnd('\r').Length)).IsLessThan(80);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }
+
