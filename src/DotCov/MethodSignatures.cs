@@ -13,6 +13,7 @@ internal static partial class MethodSignatures
         ["uint"] = "System.UInt32", ["long"] = "System.Int64", ["ulong"] = "System.UInt64",
         ["char"] = "System.Char", ["float"] = "System.Single", ["double"] = "System.Double",
         ["decimal"] = "System.Decimal", ["string"] = "System.String", ["object"] = "System.Object",
+        ["dynamic"] = "System.Object",
         ["nint"] = "System.IntPtr", ["nuint"] = "System.UIntPtr"
     };
     [GeneratedRegex(@"(?<![\w@.])\w+", RegexOptions.CultureInvariant)]
@@ -33,7 +34,7 @@ internal static partial class MethodSignatures
         string? valueType = null;
         if (display.EndsWith(')'))
         {
-            var open = BalancedText.LastIndexOfTopLevel(display, '(');
+            var open = CodeMetricsReader.ParameterListOpen(display);
             if (open < 0) return null;
             parameters = display[(open + 1)..^1];
         }

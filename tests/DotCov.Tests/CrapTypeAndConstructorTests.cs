@@ -77,4 +77,20 @@ public sealed class CrapTypeAndConstructorTests
         await Assert.That(report.UnmatchedMetricsMembers).IsNotEmpty();
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
+    [Test]
+    [Arguments("Ext.extension<T>(T)", "App.Ext")]
+    [Arguments("Outer<T>.Ext.extension<U>(U)", "App.Outer`1.Ext")]
+    public async Task GenericExtensionBlock_StaticMemberBelongsToItsEnclosingType(string owner, string identity)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/Ext.cs", identity, c => c
+            .Method("Make", "()", null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", owner, m => m
+            .Method("int extension<T>(T).Make()", 2, 1));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(metrics.Single().TypeIdentity).IsEqualTo(identity);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
 }

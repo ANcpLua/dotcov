@@ -501,6 +501,7 @@ public static class CrapAnalysis
         public readonly Dictionary<(string Key, int? Arity), MetricsCandidates> ByArity = new();
         public readonly Dictionary<(string Key, string Signature), MetricsCandidates> BySignature = new();
         public readonly Dictionary<string, (int Index, int Complexity)> AccessorFallback = new(StringComparer.Ordinal);
+        public readonly Dictionary<int, string> PropertyFiles = new();
     }
 
     private static MetricsCandidates MergeCandidates(MetricsCandidates left, MetricsCandidates right)
@@ -593,12 +594,15 @@ public static class CrapAnalysis
             // Keep the conservative complexity fallback when no arity matches, but never
             // treat a provably incompatible candidate as evidence of complete coverage.
             var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature);
-            if (compatible.UniqueMember is { } index) consumed.Add(index);
+            if (compatible.UniqueMember is { } index && !consumed.Add(index)) return null;
             return compatible.Complexity ?? candidates.Complexity;
         }
 
         if (metricsIndex.AccessorFallback.TryGetValue(key, out var property))
         {
+            // A property roll-up can serve both accessors, but not a different file's property.
+            if (metricsIndex.PropertyFiles.TryGetValue(property.Index, out var file) && file != logical.File) return null;
+            metricsIndex.PropertyFiles[property.Index] = logical.File;
             consumed.Add(property.Index);
             return property.Complexity;
         }

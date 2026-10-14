@@ -6,6 +6,7 @@ public sealed class CrapSignatureMatchingTests
 {
     [Test]
     [Arguments("int x", "System.Int32")]
+    [Arguments("dynamic x", "System.Object")]
     [Arguments("int? x", "System.Nullable`1<System.Int32>")]
     [Arguments("decimal?[] x", "System.Nullable`1<System.Decimal>[]")]
     [Arguments("ref long? x", "System.Nullable`1<System.Int64>&")]
@@ -123,6 +124,61 @@ public sealed class CrapSignatureMatchingTests
             .Method(display, 2, 1).Method("string A.this[bool x].get", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
         await Assert.That(report.UnmatchedMetricsMembers).IsNotEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    [Arguments("<", "op_LessThan")]
+    [Arguments(">", "op_GreaterThan")]
+    [Arguments("<<", "op_LeftShift")]
+    [Arguments(">>", "op_RightShift")]
+    [Arguments(">>>", "op_UnsignedRightShift")]
+    [Arguments("<=", "op_LessThanOrEqual")]
+    [Arguments(">=", "op_GreaterThanOrEqual")]
+    public async Task CompleteOperatorOverloads_IgnoreAngleTokensWhenLocatingParameters(string token, string name)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method(name, "(App.A,System.Int32)", null, m => m.Line(1, 1))
+            .Method(name, "(App.A,System.String)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method($"bool A.operator {token}(App.A left, int right)", 2, 1)
+            .Method($"bool A.operator {token}(App.A left, string right)", 7, 1));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task DistinctMethods_CannotReuseOneMetricsRow_UnlessBothHaveEmbeddedMeasurements(bool embedded)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("M", "()", embedded ? "2" : null, m => m.Line(1, 1)))
+            .AddClass("other/A.cs", "App.A", c => c.Method("M", "()", embedded ? "7" : null, m => m.Line(2, 1)))
+            .ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.Methods.Count).IsEqualTo(embedded ? 2 : 1);
+        await Assert.That(report.Unscored.Count).IsEqualTo(embedded ? 0 : 1);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(embedded ? GateOutcome.Pass : GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task PropertyFallback_CanServeBothAccessors_ButCannotCrossFileIdentity()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c
+                .Method("get_Value", "()", null, m => m.Line(1, 1))
+                .Method("set_Value", "(System.Int32)", null, m => m.Line(2, 1)))
+            .AddClass("other/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(3, 1)))
+            .ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Property("int A.Value", 2));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.Methods.Count).IsEqualTo(2);
+        await Assert.That(report.Unscored.Single().File).IsEqualTo("other/A.cs");
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
 

@@ -75,11 +75,13 @@ public readonly record struct CodeMetricsMember(
 /// <c>SymbolDisplayFormat.MinimallyQualifiedFormat</c> strings such as
 /// <c>Task&lt;string&gt; Type.LoadAsync(string fileName, int lineCount)</c>,
 /// <c>Type.Type(int seed)</c> for constructors, and <c>string Type.Prop.get</c> for accessors.
+/// Named-type nesting is limited to 256 levels to bound identity expansion.
 /// Same XmlReader streaming + hardening ethos as <see cref="CoberturaParser"/>.
 /// </summary>
 public static partial class CodeMetricsReader
 {
     private const long DefaultMaxChars = 50_000_000;
+    private const int MaxTypeDepth = 256;
     private const string GlobalNamespaceDisplay = "<global namespace>";
 
     public static IReadOnlyList<CodeMetricsMember> Parse(Stream stream, long maxChars = DefaultMaxChars)
@@ -131,6 +133,7 @@ public static partial class CodeMetricsReader
         public readonly List<CodeMetricsMember> Members = [];
         public string Namespace = "";
         public readonly List<string> TypeChain = [];        // raw named-type displays, including generic parameters
+        public TypeContext? CachedType;
         public readonly Stack<PendingMember> MemberStack = new();   // Property → its Accessor methods nest
     }
 
@@ -156,12 +159,18 @@ public static partial class CodeMetricsReader
                 // namespace "<global namespace>"; IL names its types with no prefix at all.
                 var ns = reader.GetAttribute("Name") ?? "";
                 state.Namespace = ns is GlobalNamespaceDisplay ? "" : ns;
+                state.CachedType = null;
                 break;
 
             case "NamedType":
                 // Empty elements raise no EndElement, so only a real subtree pushes.
                 if (!reader.IsEmptyElement)
+                {
+                    if (state.TypeChain.Count >= MaxTypeDepth)
+                        throw new XmlException($"Metrics named-type nesting exceeds {MaxTypeDepth} levels.");
                     state.TypeChain.Add(reader.GetAttribute("Name") ?? "");
+                    state.CachedType = null;
+                }
                 break;
 
             case "Metric":
@@ -180,11 +189,13 @@ public static partial class CodeMetricsReader
         {
             case "Namespace":
                 state.Namespace = "";
+                state.CachedType = null;
                 break;
 
             case "NamedType":
                 // Every EndElement pairs with a non-empty start element, which pushed.
                 state.TypeChain.RemoveAt(state.TypeChain.Count - 1);
+                state.CachedType = null;
                 break;
 
             default:
@@ -212,7 +223,8 @@ public static partial class CodeMetricsReader
         // A member without a CyclomaticComplexity metric has nothing to contribute to a
         // complexity table — skipped, not zeroed.
         if (pending.Complexity is { } complexity)
-            state.Members.Add(Materialize(pending, state.Namespace, state.TypeChain, complexity));
+            state.Members.Add(Materialize(pending,
+                state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), complexity));
     }
 
     private static void RecordMetric(XmlReader reader, ParserState state)
@@ -239,8 +251,11 @@ public static partial class CodeMetricsReader
         }
     }
 
-    private static CodeMetricsMember Materialize(
-        PendingMember pending, string ns, List<string> typeChain, int complexity)
+    private sealed record TypeContext(string Name, string Identity, string SimpleName);
+
+    // Share the enclosing identity strings across every member in a type scope. Computing
+    // the joins per member amplifies deeply nested input into repeated work and allocations.
+    private static TypeContext DescribeType(string ns, List<string> typeChain)
     {
         var typeName = string.Join(".", typeChain.Select(static name => TypeSegment(name)));
         var typeIdentity = string.Join(".", typeChain.Select(static name => TypeSegment(name, retainArity: true)));
@@ -250,14 +265,18 @@ public static partial class CodeMetricsReader
             typeIdentity = $"{ns}.{typeIdentity}";
         }
 
-        var enclosingSimpleName = SimpleName(TypeSegment(typeChain[^1]));
-        var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, enclosingSimpleName);
+        return new TypeContext(typeName, typeIdentity, SimpleName(TypeSegment(typeChain[^1])));
+    }
 
-        return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display)
+    private static CodeMetricsMember Materialize(PendingMember pending, TypeContext type, int complexity)
+    {
+        var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, type.SimpleName);
+
+        return new CodeMetricsMember(type.Name, memberName, kind, arity, complexity, pending.Display)
         {
             ExecutableLines = pending.HasExecutableLines ? pending.ExecutableLines : pending.LegacyExecutableLines,
             File = pending.File,
-            TypeIdentity = typeIdentity
+            TypeIdentity = type.Identity
         };
     }
 
@@ -277,14 +296,13 @@ public static partial class CodeMetricsReader
 
     private static string TypeSegment(string name, bool retainArity = false)
     {
-        var stripped = retainArity
+        var dot = BalancedText.LastIndexOfTopLevel(name, '.');
+        if (dot >= 0 && StripGenericsPerSegment(name[(dot + 1)..]).StartsWith("extension(", StringComparison.Ordinal))
+            name = name[..dot];
+        return retainArity
             ? TypeParameterLists().Replace(name, static match =>
                 $"`{BalancedText.CountTopLevelItems(match.Groups[1].Value)}")
             : StripGenericsPerSegment(name);
-        var dot = BalancedText.LastIndexOfTopLevel(stripped, '.');
-        return dot >= 0 && stripped.AsSpan(dot + 1).StartsWith("extension(", StringComparison.Ordinal)
-            ? stripped[..dot]
-            : stripped;
     }
 
     /// <summary>
@@ -439,13 +457,18 @@ public static partial class CodeMetricsReader
     /// </summary>
     private static (string Head, int? Arity) SplitParameterList(string display)
     {
-        var opIdx = FindTopLevel(display, ".operator ");
-        var open = opIdx >= 0 ? display.IndexOf('(', opIdx) : MemberParameterListOpen(display);
+        var open = ParameterListOpen(display);
         if (open < 0) return (display, null);
 
         var close = display.LastIndexOf(')');
         var parameters = close > open ? display[(open + 1)..close] : display[(open + 1)..];
         return (display[..open], BalancedText.CountTopLevelItems(parameters));
+    }
+
+    internal static int ParameterListOpen(string display)
+    {
+        var opIdx = FindTopLevel(display, ".operator ");
+        return opIdx >= 0 ? display.IndexOf('(', opIdx) : MemberParameterListOpen(display);
     }
 
     private static int MemberParameterListOpen(string display)
