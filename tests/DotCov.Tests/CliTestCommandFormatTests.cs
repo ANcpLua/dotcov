@@ -5,8 +5,9 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// `dotcov test --format` through the real tool process, with a stand-in dotnet that drops a
-/// prepared report into the run directory. JSON and markdown keep stdout to the document, so the
-/// dotnet test log moves to stderr; the gate, offenders, and exit code are check's.
+/// prepared report into the run directory. JSON and markdown keep stdout to the document and stderr
+/// to the verdict, so the dotnet test log is shown only when the run fails; the gate, offenders, and
+/// exit code are check's.
 /// </summary>
 [NotInParallel(ProcessState.Environment)]
 [Category("Integration")]
@@ -27,7 +28,7 @@ public sealed class CliTestCommandFormatTests : IDisposable
     }
 
     [Test]
-    public async Task Json_StdoutIsTheGateDocument_AndTheTestLogGoesToStderr(CancellationToken cancellationToken)
+    public async Task Json_StdoutIsTheGateDocument_TheVerdictLeadsStderr(CancellationToken cancellationToken)
     {
         var run = await DotcovTest(cancellationToken, "--min-line", "80", "--format", "json");
 
@@ -40,8 +41,8 @@ public sealed class CliTestCommandFormatTests : IDisposable
         await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(1);
         var offender = gate.GetProperty("offenders").EnumerateArray().Single();
         await Assert.That(offender.GetProperty("uncovered").GetString()).IsEqualTo("2-3");
-        await Assert.That(run.StdErr).StartsWith("> ");
-        await Assert.That(run.StdErr).Contains("FAIL: line 50.0% (min 80%)");
+        await Assert.That(run.StdErr).StartsWith("FAIL: line 50.0% (min 80%)");
+        await Assert.That(run.StdErr).DoesNotContain("> ");
         await Assert.That(run.StdErr).DoesNotContain("files below");
     }
 
@@ -53,7 +54,7 @@ public sealed class CliTestCommandFormatTests : IDisposable
         await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
         await Assert.That(run.StdOut).StartsWith("## Coverage Report ❌");
         await Assert.That(run.StdOut).Contains("- `src/A.cs` — 50.0% lines, 50.0% branches — uncovered 2-3 · branches 4 (1/2)");
-        await Assert.That(run.StdErr).StartsWith("> ");
+        await Assert.That(run.StdErr).StartsWith("FAIL: line 50.0% (min 80%)");
     }
 
     [Test]
@@ -71,13 +72,13 @@ public sealed class CliTestCommandFormatTests : IDisposable
     }
 
     [Test]
-    public async Task Json_Pass_IsTheWholeStdout(CancellationToken cancellationToken)
+    public async Task Json_Pass_IsTheWholeStdout_TheVerdictLeadsStderr(CancellationToken cancellationToken)
     {
         var run = await DotcovTest(cancellationToken, "--min-line", "40", "--format", "json");
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         await Assert.That(JsonDocument.Parse(run.StdOut).RootElement.GetProperty("gate").GetProperty("outcome").GetString())
             .IsEqualTo("pass");
-        await Assert.That(run.StdErr).DoesNotContain("PASS:");
+        await Assert.That(run.StdErr).StartsWith("PASS: line 50.0% (min 40%)");
     }
 }

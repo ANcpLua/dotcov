@@ -141,7 +141,7 @@ public sealed class CliHelpTests
         var options = Lines(full);
         var format = Array.FindIndex(options, static l => l.StartsWith("  --format ", StringComparison.Ordinal));
         var help = Array.FindIndex(options, static l => l.StartsWith("  --help, -h ", StringComparison.Ordinal));
-        await Assert.That(options[format + 1].Trim()).IsEqualTo("(report, crap, diff)");
+        await Assert.That(options[format + 1].Trim()).IsEqualTo("(report, check, crap, diff, test)");
         await Assert.That(options[help + 1].Trim()).IsEqualTo("(every command)");
     }
 

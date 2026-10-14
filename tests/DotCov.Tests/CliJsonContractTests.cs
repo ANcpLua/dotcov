@@ -326,15 +326,14 @@ public sealed class CliJsonContractTests : IDisposable
     }
 
     [Test]
-    public async Task Check_Markdown_Pass_EndsWithTheVerdictLine()
+    public async Task Check_Markdown_Pass_StdoutIsTheSummary_TheVerdictLeadsStderr()
     {
         var (code, stdout, stderr) = await Run("check", ThreeFiles(), "--min-line", "60", "--format", "md");
 
         await Assert.That(code).IsEqualTo(0);
         await Assert.That(stdout).StartsWith("## Coverage Report ✅");
-        await Assert.That(stdout).EndsWith("PASS: line 66.7% (min 60%), branch 25.0% (min 0%) - thresholds met" + Environment.NewLine);
         await Assert.That(stdout).DoesNotContain("Files below");
-        await Assert.That(stderr).IsEmpty();
+        await Assert.That(stderr).StartsWith("PASS: line 66.7% (min 60%), branch 25.0% (min 0%) - thresholds met" + Environment.NewLine);
     }
 
     [Test]

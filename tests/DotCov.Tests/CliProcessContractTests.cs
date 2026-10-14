@@ -104,6 +104,35 @@ public sealed partial class CliProcessContractTests : IDisposable
             $"error: dotnet test exited with code 3; coverage was not evaluated.{Environment.NewLine}");
     }
 
+    // JSON and markdown hold the dotnet test log back, so stdout stays a document; a failed run
+    // shows it after the error line that is its outcome.
+    [Test]
+    [Arguments("json")]
+    [Arguments("md")]
+    public async Task Test_FailedRun_InADocumentFormat_ErrorFirst_ThenTheHeldBackLog(
+        string format, CancellationToken cancellationToken)
+    {
+        var dotnet = Script("failing-dotnet",
+            """
+            #!/bin/sh
+            echo "Failed: 1, Passed: 0"
+            exit 3
+            """,
+            """
+            @echo off
+            echo Failed: 1, Passed: 0
+            exit /b 3
+            """);
+
+        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40", "--format", format);
+
+        await Assert.That(run.ExitCode).IsEqualTo(6);
+        await Assert.That(run.StdOut).IsEmpty();
+        await Assert.That(run.StdErr).StartsWith(
+            $"error: dotnet test exited with code 3; coverage was not evaluated.{Environment.NewLine}> ");
+        await Assert.That(run.StdErr).Contains("Failed: 1, Passed: 0");
+    }
+
     [Test]
     public async Task Test_RunWithoutAReport_IsNoData_WithoutPatternAdvice(CancellationToken cancellationToken)
     {

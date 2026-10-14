@@ -18,7 +18,7 @@ public sealed class CliMistakeTests
     }
 
     private const string ReportOptions =
-        "valid options for 'report': --format, --threshold, --no-color, --exclude-generated, --exclude-test-code, " +
+        "valid options for 'report': --format, --top, --threshold, --no-color, --exclude-generated, --exclude-test-code, " +
         "--keep, --probe-sources, --source-root, --pattern, --max-chars, --upload, --github-summary, --help";
 
     private static async Task AssertTwoLineError(int code, string stdout, string stderr, string first, string second)
@@ -96,7 +96,7 @@ public sealed class CliMistakeTests
 
         await AssertTwoLineError(code, stdout, stderr,
             "Unknown option '--min-lin' for 'test'. Did you mean '--min-line'? Pass dotnet test arguments after '--'.",
-            "valid options for 'test': --min-line, --min-branch, --no-color, --exclude-generated, --exclude-test-code, " +
+            "valid options for 'test': --min-line, --min-branch, --format, --top, --no-color, --exclude-generated, --exclude-test-code, " +
             "--keep, --probe-sources, --source-root, --github-summary, --badge-dir, --help");
     }
 
