@@ -1,4 +1,5 @@
 using DotCov.Tests.Infrastructure;
+using DotCov.Tool;
 
 namespace DotCov.Tests;
 
@@ -29,7 +30,7 @@ public sealed class CrapMetricsIdentityTests
         var stderr = new StringWriter();
         string[] args = metricsTooLong ? ["crap", coverage, "--metrics", metrics] : ["crap", coverage];
         var exitCode = await DotCovCli.RunAsync(args, stdout, stderr);
-        await Assert.That(exitCode).IsEqualTo(2);
+        await Assert.That(exitCode).IsEqualTo(DotCovCli.ErrorExitCode);
         await Assert.That(stderr.ToString()).Contains("exceeds 16384 characters");
     }
 
