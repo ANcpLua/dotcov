@@ -1,3 +1,5 @@
+using DotCov.Tests.Infrastructure;
+
 namespace DotCov.Tests;
 
 public sealed class CrapSignatureMatchingTests
