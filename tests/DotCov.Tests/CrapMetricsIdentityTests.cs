@@ -23,10 +23,26 @@ public sealed class CrapMetricsIdentityTests
     [Test]
     public async Task LegacyMetricsWithoutADeclaringType_StayUnmatched()
     {
-        CodeMetricsMember[] metrics = [new("App.Absent", "M", CodeMetricsMemberKind.Method, 0, 2, "void Absent.M()")];
+        CodeMetricsMember[] metrics =
+        [
+            new("App.Absent", "M", CodeMetricsMemberKind.Method, 0, 2, "void Absent.M()"),
+            new("App.Absent", "P", CodeMetricsMemberKind.Property, null, 2, "int Absent.P")
+        ];
         var report = CrapAnalysis.Analyze(Array.Empty<MethodCoverage>(), metrics);
         await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(1);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task ExplicitEmptySourceRoot_LeavesRelativeMetricsPathsUnchanged()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "()", null, m => m.Line(1, 1))).ToBytes());
+        var parsed = CoberturaParser.ParseMethods(input);
+        var coverage = new MethodCoverageReport(parsed.Methods, [], [""]);
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1))
+            .Select(m => m with { File = "src/A.cs" }).ToArray();
+        await Assert.That(CrapAnalysis.Analyze(coverage, metrics).Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
     }
 
     [Test]
