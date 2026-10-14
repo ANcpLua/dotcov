@@ -41,6 +41,7 @@ build without requiring you to implement `ICompile`.
 | `--coverage-json-path` | empty (off) | Also write that JSON document to this file, relative to the root, for every outcome |
 | `--coverage-exclude-generated-param` | `false` | `true`/`false`: apply `ExclusionRules.WellKnown` before gating |
 | `--coverage-exclude-test-code-param` | `false` | `true`/`false`: apply `ExclusionRules.TestCode` before gating; the excluded files are logged |
+| `--coverage-exclude-external-param` | `false` | `true`/`false`: apply `ExclusionRules.External`, dropping SourceLink paths (`/_/...`) of dependencies the coverage tool instrumented; otherwise an `ExternalSources` warning names them |
 | `--coverage-probe-sources-param` | `false` | `true`/`false`: resolve a relative file name under several `<source>` roots against the root that holds it on this machine's disk |
 | `--coverage-source-root` | empty (off) | Resolve such file names against this declared root instead |
 | `--coverage-pattern` | `**/*cobertura*.xml` | `filename` (top level) or `**/filename` (recursive) |

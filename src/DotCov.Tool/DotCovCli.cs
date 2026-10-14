@@ -258,7 +258,8 @@ public static partial class DotCovCli
         // no-false-green contract as check's summary.
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
-        WriteDiagnostics(path, pattern, inputs, parsed.Warnings, exclusion, stderr);
+        // The analyzed report's warnings: an exclusion recomputes ExternalSources for the methods it kept.
+        WriteDiagnostics(path, pattern, inputs, report.Warnings, exclusion, stderr);
         return ExitCodes.For(gate.Outcome);
     }
 
@@ -667,6 +668,7 @@ public static partial class DotCovCli
         List<string> patterns = [];
         if (opts.ContainsKey("exclude-generated")) patterns.AddRange(ExclusionRules.WellKnown);
         if (opts.ContainsKey("exclude-test-code")) patterns.AddRange(ExclusionRules.TestCode);
+        if (opts.ContainsKey("exclude-external")) patterns.AddRange(ExclusionRules.External);
         return patterns;
     }
 
@@ -790,8 +792,9 @@ public static partial class DotCovCli
             throw new UsageError($"Invalid --upload value: '{url}' (expected an absolute http(s) URL).");
 
         // --keep only exempts files from an exclusion; on its own it would change nothing.
-        if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated") && !options.ContainsKey("exclude-test-code"))
-            throw new UsageError("--keep only applies together with --exclude-generated or --exclude-test-code.");
+        if (options.ContainsKey("keep") && !options.ContainsKey("exclude-generated") && !options.ContainsKey("exclude-test-code") &&
+            !options.ContainsKey("exclude-external"))
+            throw new UsageError("--keep only applies together with --exclude-generated, --exclude-test-code or --exclude-external.");
 
         if (options.ContainsKey("probe-sources") && options.ContainsKey("source-root"))
             throw new UsageError("--probe-sources and --source-root are alternatives: pass one of them.");
@@ -804,7 +807,7 @@ public static partial class DotCovCli
     // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
     // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
     static readonly HashSet<string> ValuelessFlags =
-        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "probe-sources", "github-summary", "no-color" };
+        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "exclude-external", "probe-sources", "github-summary", "no-color" };
 
     /// <summary>
     /// A command's arguments as options, plus an error for each argument the dictionary

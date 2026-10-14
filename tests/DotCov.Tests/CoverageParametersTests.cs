@@ -16,8 +16,8 @@ public sealed class CoverageParametersTests
         string? minLine, string? minBranch, string probeSources = CoverageParameters.DefaultProbeSources, string? sourceRoot = null) =>
         CoverageParameters.Parse(
             minLine, minBranch, CoverageParameters.DefaultFormat, CoverageParameters.DefaultExcludeGenerated,
-            CoverageParameters.DefaultExcludeTestCode, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars,
-            probeSources, sourceRoot);
+            CoverageParameters.DefaultExcludeTestCode, CoverageParameters.DefaultExcludeExternal, CoverageParameters.DefaultPattern,
+            CoverageParameters.DefaultMaxChars, probeSources, sourceRoot);
 
     [Test]
     public async Task Parse_OneThreshold_ChecksItAndDisablesTheOther_WithTheDocumentedDefaults()
@@ -25,7 +25,7 @@ public sealed class CoverageParametersTests
         var p = ParseWithDefaults("80", minBranch: null);
 
         await Assert.That(p).IsEqualTo(new CoverageParameters(
-            80, 0, CoverageFormat.Table, false, false, ReportPattern.Default, 50_000_000, FileIdentity.Lexical));
+            80, 0, CoverageFormat.Table, false, false, false, ReportPattern.Default, 50_000_000, FileIdentity.Lexical));
         await Assert.That(ParseWithDefaults(minLine: null, "70").MinBranch).IsEqualTo(70);
         await Assert.That(ParseWithDefaults(minLine: null, "70").MinLine).IsEqualTo(0);
     }
@@ -42,14 +42,16 @@ public sealed class CoverageParametersTests
     [Test]
     public async Task ExclusionPatterns_SelectEachRuleSetByItsFlag()
     {
-        static IReadOnlyList<string> Patterns(string generated, string testCode) => CoverageParameters.Parse(
-            "80", null, "table", generated, testCode, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars,
+        static IReadOnlyList<string> Patterns(string generated, string testCode, string external = "false") => CoverageParameters.Parse(
+            "80", null, "table", generated, testCode, external, CoverageParameters.DefaultPattern, CoverageParameters.DefaultMaxChars,
             "false", null).ExclusionPatterns;
 
         await Assert.That(Patterns("false", "false")).IsEmpty();
         await Assert.That(Patterns("true", "false")).IsEquivalentTo(ExclusionRules.WellKnown);
         await Assert.That(Patterns("false", "true")).IsEquivalentTo(ExclusionRules.TestCode);
-        await Assert.That(Patterns("true", "true")).IsEquivalentTo([.. ExclusionRules.WellKnown, .. ExclusionRules.TestCode]);
+        await Assert.That(Patterns("false", "false", "true")).IsEquivalentTo(ExclusionRules.External);
+        await Assert.That(Patterns("true", "true", "true"))
+            .IsEquivalentTo([.. ExclusionRules.WellKnown, .. ExclusionRules.TestCode, .. ExclusionRules.External]);
     }
 
     [Test]
@@ -190,7 +192,7 @@ public sealed class CoverageParametersTests
     public async Task Parse_NegativeMaxChars_IsBlamedOnMaxChars_NotThePattern()
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() => CoverageParameters.Parse(
-            "80", "0", "table", "false", "false", "coverage.cobertura.xml", "-1", "false", null));
+            "80", "0", "table", "false", "false", "false", "coverage.cobertura.xml", "-1", "false", null));
 
         await Assert.That(ex.Message).Contains("Coverage MaxCharsParam");
         await Assert.That(ex.Message).DoesNotContain("Coverage Pattern");

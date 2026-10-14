@@ -21,7 +21,7 @@ public static partial class DotCovCli
     sealed record HelpEntry(string[] Commands, string[] Lines);
 
     // Option groups several commands share: the exclusion flags and the file-identity flags.
-    static readonly string[] Exclusion = ["exclude-generated", "exclude-test-code", "keep"];
+    static readonly string[] Exclusion = ["exclude-generated", "exclude-test-code", "exclude-external", "keep"];
     static readonly string[] Identities = ["probe-sources", "source-root"];
 
     static readonly CommandHelp[] Commands =
@@ -82,11 +82,14 @@ public static partial class DotCovCli
         new("project", "--project <name>", ["Project the snapshot is stamped with (default 'unknown', warned)"]),
         new("exclude-generated", "--exclude-generated", ["Skip generated files, migrations, GlobalUsings.cs, Program.cs"]),
         new("exclude-test-code", "--exclude-test-code", ["Skip test projects and fixtures: *.Tests/, TestSupport/, TestFixtures/"]),
+        new("exclude-external", "--exclude-external",
+            ["Skip code built elsewhere: SourceLink paths (/_/...) of dependencies the coverage",
+             "tool instrumented; a warning names them when this flag is off"]),
         new("keep", "--keep <substrings>",
-            ["Exempt comma-separated paths from both exclusions by case-insensitive",
-             "substring match, not globs; requires --exclude-generated or",
-             "--exclude-test-code (e.g. --keep Program.cs measures a CLI tool's",
-             "entry point)"]),
+            ["Exempt comma-separated paths from the exclusions by case-insensitive",
+             "substring match, not globs; requires --exclude-generated,",
+             "--exclude-test-code, or --exclude-external (e.g. --keep Program.cs",
+             "measures a CLI tool's entry point)"]),
         new("probe-sources", "--probe-sources",
             ["Resolve a relative filename under several <source> roots against the",
              "root that holds it on this machine's disk; the result depends on where",

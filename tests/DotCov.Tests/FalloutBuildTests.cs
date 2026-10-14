@@ -280,6 +280,23 @@ public sealed class FalloutBuildTests : IDisposable
         await Assert.That(excluded.Output).Contains("tests/A.Tests/ATests.cs");
     }
 
+    [Test]
+    public async Task ExcludeExternal_TrueDropsDependencyFiles_TheWarningNamesThemOtherwise(CancellationToken cancellationToken)
+    {
+        _ws.Write("TestResults/coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("/repo/src/A.cs", c => c.Line(1, hits: 1))
+            .AddClass("/_/src/Lib/Client.cs", c => c.Line(1, hits: 0)));
+
+        var kept = await RunBuild(cancellationToken, null, "--coverage-min-line", "80");
+        var excluded = await RunBuild(cancellationToken, null, "--coverage-min-line", "80", "--coverage-exclude-external-param", "true");
+
+        await Assert.That(kept.ExitCode).IsEqualTo(1).Because(kept.Output);
+        await Assert.That(kept.Output).Contains("ExternalSources");
+        await Assert.That(excluded.ExitCode).IsEqualTo(0).Because(excluded.Output);
+        await Assert.That(excluded.Output).Contains("Excluded 1 files by");
+        await Assert.That(excluded.Output).DoesNotContain("ExternalSources");
+    }
+
     // ── Thresholds: explicit, 0 to 100, one disables the other ────────────────
 
     [Test]

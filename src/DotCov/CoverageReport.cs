@@ -78,7 +78,17 @@ public enum CoverageWarningKind
     /// keeps the entries separate — fusing them would silently erase a genuinely distinct
     /// file's misses — and surfaces the ambiguity here instead.
     /// </summary>
-    FileIdentityAmbiguous
+    FileIdentityAmbiguous,
+
+    /// <summary>
+    /// The report holds files under SourceLink's deterministic root (<c>/_/src/…</c>) while
+    /// declaring no such <c>&lt;source&gt;</c> root: code built somewhere else, typically a
+    /// dependency the coverage tool instrumented because it ships a PDB (Testcontainers, Moq,
+    /// bunit, the test platform). Their lines count toward every rate. One warning names the
+    /// count and the first such file; it disappears once an exclusion
+    /// (<see cref="ExclusionRules.External"/>) removes them.
+    /// </summary>
+    ExternalSources
 }
 
 /// <summary>
@@ -609,7 +619,15 @@ public sealed class CoverageReport
     /// stable for the report's lifetime. See <see cref="CoverageWarningKind"/> for the
     /// taxonomy and <see cref="CoverageWarning"/> for the payload shape.
     /// </summary>
-    public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
+    public IReadOnlyList<CoverageWarning> Warnings
+    {
+        // The external-sources warning describes the files this report holds, so it is derived
+        // from them, not carried: an exclusion or merge that changes the files changes it too.
+        get => _warnings ??= ExclusionRules.WithExternalWarning(field, Files.Select(static f => f.Path), SourceRoots);
+        init;
+    } = [];
+
+    private IReadOnlyList<CoverageWarning>? _warnings;
 
     /// <summary>
     /// The <see cref="ReportInput.SourceName"/> of every document this report was parsed and
@@ -779,7 +797,7 @@ public sealed class CoverageReport
     /// </remarks>
     public CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
     {
-        var rules = patterns.ToList();
+        var rules = ExclusionRules.ApplicableTo(patterns, SourceRoots);
         if (rules.Count is 0) return this;
 
         var keepRules = keep.ToList();
@@ -926,6 +944,16 @@ public static class ExclusionRules
     /// decides on. Note that a <c>.Tests</c> suffix rule does not match a <c>TestSupport</c>
     /// assembly; both spellings are listed here because that gap is easy to miss and silent.
     /// </remarks>
+    /// <summary>
+    /// Code built somewhere else: SourceLink's deterministic root, <c>/_/</c>, which a coverage
+    /// tool reports for a dependency it instrumented because the package ships a PDB. Such files
+    /// are not part of the repository, and their lines would count toward every rate. The rule
+    /// is anchored (the matcher prepends a <c>/</c>, so <c>//_/</c> matches only a path that
+    /// starts with <c>/_/</c>), and a report that declares <c>/_/</c> as a source root owns those
+    /// paths, so the rule does not apply to it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> External = ["//_/"];
+
     public static readonly IReadOnlyList<string> TestCode =
     [
         ".Tests/",        // xUnit/NUnit/MSTest projects, forward-slash paths
@@ -969,6 +997,41 @@ public static class ExclusionRules
         }
         return (kept, excluded);
     }
+
+    /// <summary>
+    /// <paramref name="warnings"/> with the <see cref="CoverageWarningKind.ExternalSources"/>
+    /// warning recomputed for <paramref name="paths"/>: one when any path lies under the
+    /// deterministic root and no declared root is that root (a report that declares it is built
+    /// deterministically itself, so those are its own files), none otherwise.
+    /// </summary>
+    internal static IReadOnlyList<CoverageWarning> WithExternalWarning(
+        IReadOnlyList<CoverageWarning> warnings, IEnumerable<string> paths, IReadOnlyList<string> sourceRoots)
+    {
+        // With /_/ declared, which /_/ files are someone else's is no longer visible from the paths:
+        // keep what each input already found (a merge of a deterministic report with one that
+        // measured dependencies) and add nothing.
+        if (DeclaresDeterministicRoot(sourceRoots)) return warnings;
+
+        List<CoverageWarning> result = [.. warnings.Where(static w => w.Kind is not CoverageWarningKind.ExternalSources)];
+
+        var external = paths.Where(static p => p.StartsWith("/_/", StringComparison.Ordinal)).Distinct(StringComparer.Ordinal).ToList();
+        if (external.Count > 0)
+            result.Add(new CoverageWarning(CoverageWarningKind.ExternalSources, external[0], 0, FormattableString.Invariant(
+                $"{external.Count} files have SourceLink paths (/_/...): code built elsewhere, usually dependencies the coverage tool instrumented, counted in every rate. Limit the producer to your assemblies (coverlet: --coverlet-include \"[YourAssembly]*\") or exclude them (--exclude-external).")));
+        return result;
+    }
+
+    private static readonly string DeterministicRoot = PathIdentity.NormalizeRoot("/_/");
+
+    private static bool DeclaresDeterministicRoot(IReadOnlyList<string> sourceRoots) =>
+        sourceRoots.Any(static r => PathIdentity.NormalizeRoot(r) == DeterministicRoot);
+
+    /// <summary>
+    /// <paramref name="patterns"/> without <see cref="External"/> for a report that declares the
+    /// deterministic root: its /_/ paths are its own files, as the warning already treats them.
+    /// </summary>
+    internal static List<string> ApplicableTo(IEnumerable<string> patterns, IReadOnlyList<string> sourceRoots) =>
+        DeclaresDeterministicRoot(sourceRoots) ? [.. patterns.Where(static p => !External.Contains(p))] : [.. patterns];
 
     /// <summary>The ambiguous files an exclusion left in the report.</summary>
     internal static List<AmbiguousFile> Remaining(IReadOnlyList<AmbiguousFile> ambiguous, List<string> excluded)

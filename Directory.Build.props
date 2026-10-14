@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.1.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.2.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,10 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.1.0 adds to the 4.0 agent contract without changing it.
-diff accepts --exclude-generated, --exclude-test-code and --keep, applied to both reports and listed as excluded/exclusionRules in JSON.
---no-color is accepted by every command that reads a report, so a script can pass it everywhere.
-4.0 changed three contracts (verdict on stderr, exit 6 for a failed test run, the JSON envelope); see the 4.0.0 notes.
+DotCov 4.2.0 names code built elsewhere. Coverage tools instrument dependencies that ship a PDB and report them under SourceLink paths (/_/src/...); their lines count toward every rate.
+New ExternalSources warning names them (CLI stderr, JSON warnings, Fallout log) unless the report declares /_/ as its own source root.
+New --exclude-external (Fallout: --coverage-exclude-external-param, library: ExclusionRules.External) removes them like the other exclusions.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

@@ -84,7 +84,9 @@ var verdict = crap.Evaluate(maxCrap: 30);   // NoData while any method is unscor
 `Exclude` records what it removed: `report.Exclusion` holds the patterns, the keep exemptions and
 the excluded paths, and `JsonFormatter` writes them as `excluded` and `exclusionRules`.
 `ExclusionRules.WellKnown` covers generated code and build output, `ExclusionRules.TestCode` test
-projects and fixtures.
+projects and fixtures, `ExclusionRules.External` code built elsewhere (SourceLink `/_/` paths).
+A report holding such files without declaring `/_/` as a source root carries an
+`ExternalSources` warning until an exclusion removes them.
 
 `report.Offenders(gate)` lists the files below a failed threshold, worst first, with their
 uncovered line ranges and partially covered branch lines: what to test next.

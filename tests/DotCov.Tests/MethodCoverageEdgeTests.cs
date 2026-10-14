@@ -151,7 +151,8 @@ public sealed class MethodCoverageEdgeTests
         var report = new MethodCoverageReport(methods, warnings, roots);
 
         await Assert.That(report.Methods).IsSameReferenceAs(methods);
-        await Assert.That(report.Warnings).IsSameReferenceAs(warnings);
+        // Warnings are recomputed for the methods held (ExternalSources), so they are equal, not the same list.
+        await Assert.That(report.Warnings).IsEquivalentTo(warnings);
         await Assert.That(report.SourceRoots).IsSameReferenceAs(roots);
     }
 

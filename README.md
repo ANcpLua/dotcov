@@ -144,9 +144,12 @@ checks DotCov's counts against the producers' own numbers on real upstream proje
 ## Exclusions
 
 `--exclude-generated` skips generated code, build output, migrations, `GlobalUsings.cs` and
-`Program.cs`. `--exclude-test-code` skips test projects and fixtures. `--keep <substrings>`
-exempts paths from both. Every command that reads a report takes them (`diff` applies them to
-both sides). Stderr and the JSON (`excluded`, `exclusionRules`) list what was left out.
+`Program.cs`. `--exclude-test-code` skips test projects and fixtures. `--exclude-external` skips
+code built elsewhere: dependencies your coverage tool instrumented, reported under SourceLink
+paths (`/_/src/...`); without it a warning names them, because they count toward every rate.
+`--keep <substrings>` exempts paths from all three. Every command that reads a report takes
+them (`diff` applies them to both sides). Stderr and the JSON (`excluded`, `exclusionRules`)
+list what was left out.
 
 ## GitHub badge
 
@@ -159,7 +162,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v4.1.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v4.2.0
     with:
       reports: TestResults
       min-line: 80
@@ -171,7 +174,10 @@ steps:
 ![Coverage](https://raw.githubusercontent.com/<owner>/<repo>/badges/coverage-badge.svg)
 ```
 
-Green is `PASS`, red `FAIL`, grey `NODATA`, yellow `DISABLED`. The other inputs are in
+Green is `PASS`, red `FAIL`, grey `NODATA`, yellow `DISABLED`. If the number is far below what
+you expect and dotcov warns about SourceLink paths (`/_/...`), your coverage tool measured your
+dependencies too: limit it to your assemblies (coverlet: `--coverlet-include "[YourAssembly]*"`)
+or pass `args: --exclude-external`. The other inputs are in
 [action.yml](.github/actions/badge/action.yml). A private repository cannot serve the image
 to GitHub's image proxy.
 
@@ -191,4 +197,4 @@ fallout Test                                # the tests
 fallout Coverage                            # the tests plus the 100% coverage gate
 ```
 
-[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.1.0.md) · [MIT](LICENSE)
+[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.2.0.md) · [MIT](LICENSE)
