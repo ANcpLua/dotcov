@@ -271,9 +271,12 @@ public static class CrapAnalysis
         ConsumeUniqueExecutableMetrics(compatible, members, consumed);
     }
 
-    private static bool HasCompatibleArity(LogicalMethod logical, CodeMetricsMember member) =>
-        logical.Arity is null || member.Arity is null || logical.Arity == member.Arity ||
-        (logical.Arity == member.Arity + 1 && CodeMetricsReader.IsExtensionBlockMember(member.DisplayName));
+    private static bool HasCompatibleArity(LogicalMethod logical, CodeMetricsMember member)
+    {
+        if (logical.Arity is not { } coverageArity || member.Arity is not { } metricsArity) return true;
+        return coverageArity == metricsArity ||
+            (coverageArity == metricsArity + 1 && CodeMetricsReader.IsExtensionBlockMember(member.DisplayName));
+    }
 
     private static void ConsumeUniqueExecutableMetrics(
         IEnumerable<int> candidates, IReadOnlyList<CodeMetricsMember> members, HashSet<int> consumed)
