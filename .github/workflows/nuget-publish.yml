@@ -103,6 +103,20 @@ jobs:
         run: |
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
+      - name: Locate uncovered branches after a failed coverage gate
+        if: failure() && matrix.os == 'ubuntu-latest'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          for report in Path('TestResults').glob('**/*cobertura*.xml'):
+              for source in ET.parse(report).findall('.//class'):
+                  for line in source.findall('./lines/line'):
+                      coverage = line.get('condition-coverage', '')
+                      if line.get('branch') == 'true' and not coverage.startswith('100%'):
+                          print(f"{source.get('filename')}:{line.get('number')}: {coverage}")
+          PY
 
   # Exercise the composite action and its default installer against this checkout's portable
   # package. A release candidate is not on NuGet yet. Native packages are packed separately;
