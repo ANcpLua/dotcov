@@ -22,6 +22,43 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"\bSystem\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Char|Single|Double|Decimal|IntPtr|UIntPtr)\?", RegexOptions.CultureInvariant)]
     private static partial Regex NullableValueTypes();
 
+    [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
+    private static partial Regex ConstructedArity();
+
+    [GeneratedRegex(@"[\p{L}_][\w.]*(?=<)", RegexOptions.CultureInvariant)]
+    private static partial Regex GenericNames();
+
+    internal static Dictionary<string, string?> GenericQualifications(IEnumerable<string?> coverage,
+        IEnumerable<string?> metrics)
+    {
+        var names = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var signature in coverage) AddNames(signature, includeUnqualified: true);
+        foreach (var signature in metrics) AddNames(signature, includeUnqualified: false);
+        return names;
+
+        void AddNames(string? signature, bool includeUnqualified)
+        {
+            if (signature is null) return;
+            foreach (Match match in GenericNames().Matches(signature))
+            {
+                var name = match.Value;
+                if (!includeUnqualified && !name.Contains('.')) continue;
+                var simple = name[(name.LastIndexOf('.') + 1)..];
+                if (!names.TryGetValue(simple, out var prior)) names.Add(simple, name);
+                else if (prior != name) names[simple] = null;
+            }
+        }
+    }
+
+    internal static string? QualifyGenerics(string? signature, Dictionary<string, string?> names,
+        bool fromMetrics = false)
+    {
+        if (signature is null) return null;
+        if (fromMetrics && GenericNames().Matches(signature).Any(match =>
+                names.TryGetValue(match.Value, out var name) && name is null)) return null;
+        return GenericNames().Replace(signature, match => names.GetValueOrDefault(match.Value) ?? match.Value);
+    }
+
     internal static string? Coverage(string signature)
     {
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')') return null;
@@ -77,6 +114,6 @@ internal static partial class MethodSignatures
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
         type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
-        return type.Replace(" ", "", StringComparison.Ordinal) + (byRef ? "&" : "");
+        return ConstructedArity().Replace(type.Replace(" ", "", StringComparison.Ordinal), "") + (byRef ? "&" : "");
     }
 }
