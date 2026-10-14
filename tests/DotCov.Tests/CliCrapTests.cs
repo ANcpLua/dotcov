@@ -47,10 +47,11 @@ public sealed class CliCrapTests : IDisposable
     [Test]
     public async Task Crap_AtThresholdExactly_Exits0()
     {
-        var (code, stdout, _) = await Run("crap", AtDefaultThreshold());
+        var (code, stdout, stderr) = await Run("crap", AtDefaultThreshold());
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("PASS: worst CRAP 30.0 (max 30)");
+        await Assert.That(stderr).StartsWith("PASS: worst CRAP 30.0 (max 30)");
+        await Assert.That(stdout).DoesNotContain("PASS:");
     }
 
     [Test]
@@ -129,10 +130,10 @@ public sealed class CliCrapTests : IDisposable
             .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("1", "lots").Line(2, hits: 1)))
             .ToBytes());
 
-        var (code, stdout, stderr) = await Run("crap", path);
+        var (code, _, stderr) = await Run("crap", path);
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("PASS:");
+        await Assert.That(stderr).StartsWith("PASS:");
         await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
         await Assert.That(stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Count(l => l.StartsWith("warning:"))).IsEqualTo(1);
     }
@@ -371,9 +372,9 @@ public sealed class CliCrapTests : IDisposable
             .Namespace("MyApp", t => t.Type("A", m => m.Method("void A.Unscored()", 1)))
             .ToBytes());
 
-        var (code, stdout, _) = await Run("crap", PartlyScored(), "--metrics", metrics);
+        var (code, _, stderr) = await Run("crap", PartlyScored(), "--metrics", metrics);
 
-        await Assert.That(code).IsEqualTo(0).Because(stdout);
-        await Assert.That(stdout).Contains("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold");
+        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        await Assert.That(stderr).StartsWith("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold");
     }
 }

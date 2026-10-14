@@ -37,12 +37,15 @@ public sealed class CliTests : IDisposable
     // ── Exit-code matrix ──
 
     [Test]
-    public async Task Check_Pass_Exits0()
+    public async Task Check_Pass_Exits0_WithTheVerdictOnStderr()
     {
-        var (code, stdout, _) = await Run("check", HalfCovered(), "--min-line", "40");
+        // check has no data to print: stdout stays empty, and the verdict leads stderr as on
+        // every other outcome.
+        var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "40");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("PASS");
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).IsEqualTo($"PASS: line 50.0% (min 40%), branch n/a (min 0%) - thresholds met{Environment.NewLine}");
     }
 
     [Test]
@@ -50,10 +53,10 @@ public sealed class CliTests : IDisposable
     {
         HalfCovered("run/dotcov.coverage.cobertura.170926234734218.xml");
 
-        var (code, stdout, stderr) = await Run("check", _ws.Root, "--min-line", "40");
+        var (code, _, stderr) = await Run("check", _ws.Root, "--min-line", "40");
 
         await Assert.That(code).IsEqualTo(0).Because(stderr);
-        await Assert.That(stdout).Contains("PASS: line 50.0%");
+        await Assert.That(stderr).StartsWith("PASS: line 50.0%");
     }
 
     [Test]
@@ -99,13 +102,38 @@ public sealed class CliTests : IDisposable
     // ── Unknown command / help ──
 
     [Test]
-    public async Task UnknownCommand_PrintsHelp_Exits2()
+    public async Task UnknownCommand_SuggestsTheClosestCommand_OnStderr_Exits2()
     {
+        // The mistake and its fix, on stderr only: help on stdout would read as the command's data.
         var (code, stdout, stderr) = await Run("chek", "whatever.xml", "--min-line", "80");
 
         await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).Contains("Unknown command 'chek'");
-        await Assert.That(stdout).Contains("Commands:");
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).IsEqualTo(
+            "error: Unknown command 'chek'. Did you mean 'check'?" + Environment.NewLine +
+            "commands: report, check, crap, diff, snapshot, test, version, help" + Environment.NewLine);
+    }
+
+    [Test]
+    [Arguments("CHECK", "check")]
+    [Arguments("reprot", "report")]
+    [Arguments("verison", "version")]
+    public async Task UnknownCommand_WithinTwoEdits_NamesTheCommand(string typed, string meant)
+    {
+        var (code, stdout, stderr) = await Run(typed);
+
+        await Assert.That(code).IsEqualTo(2);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith($"error: Unknown command '{typed}'. Did you mean '{meant}'?");
+    }
+
+    [Test]
+    public async Task UnknownCommand_FarFromEveryCommand_SuggestsNone()
+    {
+        var (code, _, stderr) = await Run("coverage");
+
+        await Assert.That(code).IsEqualTo(2);
+        await Assert.That(stderr).StartsWith($"error: Unknown command 'coverage'.{Environment.NewLine}commands: ");
     }
 
     [Test]
@@ -176,7 +204,7 @@ public sealed class CliTests : IDisposable
         var (code, stdout, stderr) = await Run(["check", NinetyPercent(), .. option.Split(' ')]);
 
         await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stdout + stderr).DoesNotContain("PASS");
         await Assert.That(stderr).StartsWith($"error: Unknown option '{option.Split(' ')[0]}' for 'check'.");
     }
 
@@ -194,7 +222,7 @@ public sealed class CliTests : IDisposable
         var (code, stdout, stderr) = await Run("check", covered, uncovered, "--min-line", "80");
 
         await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stdout + stderr).DoesNotContain("PASS");
         await Assert.That(stderr).StartsWith($"error: Unexpected argument '{uncovered}' for 'check'.");
     }
 
@@ -237,11 +265,23 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Test_SecondPositional_IsAnError_NamingTheSeparator()
     {
+        var (code, stdout, stderr) = await Run("test", "App.Tests.csproj", "Release");
+
+        await Assert.That(code).IsEqualTo(2);
+        await Assert.That(stdout).IsEmpty();
+        await Assert.That(stderr).StartsWith("error: Unexpected argument 'Release' for 'test'. Pass dotnet test arguments after '--'.");
+    }
+
+    [Test]
+    public async Task Test_DotnetTestShortOption_IsAnUnknownOption_NamingTheSeparator()
+    {
+        // A single-dash option after the project is an option, not a second project.
         var (code, stdout, stderr) = await Run("test", "App.Tests.csproj", "-c", "Release");
 
         await Assert.That(code).IsEqualTo(2);
         await Assert.That(stdout).IsEmpty();
-        await Assert.That(stderr).StartsWith("error: Unexpected argument '-c' for 'test'. Pass dotnet test arguments after '--'.");
+        await Assert.That(stderr).StartsWith(
+            $"error: Unknown option '-c' for 'test'. Pass dotnet test arguments after '--'.{Environment.NewLine}valid options for 'test': ");
     }
 
     [Test]
@@ -511,7 +551,8 @@ public sealed class CliTests : IDisposable
     [Test]
     public async Task Check_PassingGate_UploadFailure_Exits5()
     {
-        // Two reports merge, so stderr also lists them; the upload error still leads.
+        // Two reports merge, so stderr also lists them. The verdict leads; the upload error that
+        // turned the pass into exit 5 follows it, ahead of the diagnostics.
         HalfCovered("up/a/coverage.cobertura.xml");
         HalfCovered("up/b/coverage.cobertura.xml");
 
@@ -519,7 +560,10 @@ public sealed class CliTests : IDisposable
             "check", _ws.PathOf("up"), "--min-line", "40", "--upload", "http://127.0.0.1:1/x");
 
         await Assert.That(code).IsEqualTo(5);
-        await Assert.That(stderr).StartsWith("error: Upload failed");
+        var lines = stderr.Split(Environment.NewLine);
+        await Assert.That(lines[0]).StartsWith("PASS: line 50.0% (min 40%)");
+        await Assert.That(lines[1]).StartsWith("error: Upload failed: http://127.0.0.1:1/x");
+        await Assert.That(lines[2]).StartsWith("merged 2 reports from ");
     }
 
     [Test]
@@ -672,7 +716,7 @@ public sealed class CliTests : IDisposable
     public async Task Check_MaxChars_CapOverflow_IsErrorNotFail()
     {
         // A size-cap overflow during check is a could-not-measure error ("error:" first token),
-        // never presented as a coverage FAIL: it returns execution error 5, not threshold 1.
+        // never presented as a coverage FAIL: it returns input/IO error 5, not threshold 1.
         var (code, _, stderr) = await Run(
             "check", HalfCovered(), "--min-line", "40", "--max-chars", "10");
 
@@ -805,14 +849,24 @@ public sealed class CliTests : IDisposable
         var (code, stdout, _) = await Run("help");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("Exit codes:");
-        await Assert.That(stdout).Contains("1  FAIL:");
-        await Assert.That(stdout).Contains("2  usage error:");
-        await Assert.That(stdout).Contains("3  NODATA:");
-        await Assert.That(stdout).Contains("4  DISABLED:");
-        await Assert.That(stdout).Contains("5  error:");
+        // One table, every code once and in order.
+        await Assert.That(stdout.Split("Exit codes:").Length).IsEqualTo(2);
+        var table = stdout[stdout.IndexOf("Exit codes:", StringComparison.Ordinal)..];
+        var at = 0;
+        foreach (var row in new[]
+                 {
+                     "0  success;", "1  FAIL:", "2  usage error:", "3  NODATA:", "4  DISABLED:",
+                     "5  input/IO error:", "6  test run failed:"
+                 })
+        {
+            var next = table.IndexOf($"{Environment.NewLine}  {row}", at, StringComparison.Ordinal);
+            await Assert.That(next).IsGreaterThanOrEqualTo(at).Because(row);
+            at = next + 1;
+        }
         await Assert.That(stdout).Contains("--pattern");
         await Assert.That(stdout).Contains("--max-chars");
         await Assert.That(stdout).Contains("--badge-dir <dir>");
+        await Assert.That(stdout).Contains("--no-color");
+        await Assert.That(stdout).Contains("NO_COLOR=1");
     }
 }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using DotCov.Tests.Infrastructure;
+using DotCov.Tool;
 
 namespace DotCov.Tests;
 
@@ -156,12 +157,14 @@ public sealed class CliTestCommandTests : IDisposable
         await Assert.That(run.ExitCode).IsEqualTo(expectedCode).Because(run.Output);
         await Assert.That(run.StdOut).Contains($"test --project {project} --results-directory ");
         await Assert.That(run.StdOut).Contains("Sign.cs");
-        await Assert.That(expectedCode == 0 ? run.StdOut : run.StdErr).Contains(verdict);
-        // A pass leaves stderr to the diagnostics: here the exclusion --exclude-generated applied.
-        if (expectedCode == 0)
-            await Assert.That(run.StdErr).StartsWith("exclusion rules: .g.cs, .designer.cs, /obj/");
-        else
-            await Assert.That(run.StdErr).StartsWith(verdict);
+        await Assert.That(run.StdOut).DoesNotContain(verdict);
+        // Every outcome: the verdict, the run's reports relative to the working directory, then
+        // the diagnostics - here the exclusion --exclude-generated applied.
+        var stderr = run.StdErr.Split(Environment.NewLine);
+        await Assert.That(stderr[0]).StartsWith(verdict);
+        await Assert.That(stderr[1]).Matches(@"^reports: TestResults[/\\][0-9a-f]{32}$");
+        await Assert.That(Directory.Exists(_ws.PathOf(stderr[1]["reports: ".Length..]))).IsTrue();
+        await Assert.That(run.StdErr).Contains("exclusion rules: .g.cs, .designer.cs, /obj/");
         await Assert.That(run.StdErr).Contains("excluded ");
         await Assert.That(await File.ReadAllTextAsync(summary, cancellationToken)).Contains($"`{verdict}");
         // --badge-dir is relative to the working directory, and the badge carries the same verdict.
@@ -185,7 +188,7 @@ public sealed class CliTestCommandTests : IDisposable
 
         await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.StdErr).StartsWith("NODATA:");
-        await Assert.That(run.StdOut).DoesNotContain("PASS:");
+        await Assert.That(run.Output).DoesNotContain("PASS:");
     }
 
     private string WriteTestingPlatformProject()
@@ -253,11 +256,11 @@ public sealed class CliTestCommandTests : IDisposable
         return Path.DirectorySeparatorChar + Path.Combine("TestResults", Path.GetFileName(run));
     }
 
+    /// <summary>A failed dotnet test run: exit 6, kept apart from 5 for a report dotcov could not read.</summary>
     private static async Task AssertNotEvaluated(ChildRun run)
     {
-        await Assert.That(run.ExitCode).IsEqualTo(5);
-        await Assert.That(run.StdErr).StartsWith("error: dotnet test exited with code ");
-        await Assert.That(run.StdErr).Contains("coverage was not evaluated.");
+        await Assert.That(run.ExitCode).IsEqualTo(DotCovCli.TestRunFailedExitCode);
+        await Assert.That(run.StdErr).Matches(@"^error: dotnet test exited with code \d+; coverage was not evaluated\.\r?\n$");
         await Assert.That(run.Output).DoesNotContain("PASS:");
     }
 

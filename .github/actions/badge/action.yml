@@ -55,7 +55,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: Exit code of `dotcov check` (0 PASS, 1 FAIL, 2 usage error, 3 NODATA, 4 DISABLED, 5 execution error); empty with badge-directory.
+    description: Exit code of `dotcov check` (0 PASS, 1 FAIL, 2 usage error, 3 NODATA, 4 DISABLED, 5 input/IO error); empty with badge-directory.
     value: ${{ steps.badge.outputs.exit-code }}
   directory:
     description: Directory holding coverage-badge.svg and coverage-badge.json; empty when none was written.

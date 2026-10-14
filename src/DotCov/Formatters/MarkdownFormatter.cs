@@ -134,8 +134,13 @@ public static class MarkdownFormatter
         sb.AppendLine("| File | Before | After | Delta | Change |");
         sb.AppendLine("|------|-------:|------:|------:|--------|");
 
-        foreach (var d in diff.Files)
+        // Only what moved; the files that stood still are counted, the table's twin of the
+        // console diff.
+        foreach (var d in diff.Changed)
             sb.AppendLine($"| {TableCode(d.Path)} | {Pct(d.Before)} | {Pct(d.After)} | {SignedPct(d.Delta)} | {d.Change} |");
+
+        sb.AppendLine();
+        sb.AppendLine(Invariant($"**Unchanged:** {diff.UnchangedCount} {(diff.UnchangedCount == 1 ? "file" : "files")}"));
 
         AppendIndirectChanges(sb, diff);
 

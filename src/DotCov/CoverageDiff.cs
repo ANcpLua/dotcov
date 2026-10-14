@@ -204,6 +204,15 @@ public sealed class CoverageDiffResult(
     public IEnumerable<FileDelta> Removed => Files.Where(static f => f.Change is FileChangeKind.Removed);
 
     /// <summary>
+    /// The files whose coverage changed: added, removed, or with a line rate that moved by at
+    /// least <see cref="CoverageDiff.MovementEpsilon"/>. The text formatters list only these.
+    /// </summary>
+    public IEnumerable<FileDelta> Changed => Files.Where(static f => f.Change is not FileChangeKind.Unchanged);
+
+    /// <summary>The files on both sides whose line rate did not move; the text formatters only count them.</summary>
+    public int UnchangedCount => Files.Count(static f => f.Change is FileChangeKind.Unchanged);
+
+    /// <summary>
     /// Files that have at least one line whose hit/miss state flipped between the two
     /// reports. The set of indirectly-affected files — useful for surfacing "tests were
     /// removed / something broke upstream" in CI feedback.

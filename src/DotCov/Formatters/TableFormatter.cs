@@ -83,17 +83,24 @@ public static class TableFormatter
 
     public static string FormatDiff(CoverageDiffResult diff) => FormatDiff(diff, color: false);
 
+    /// <summary>
+    /// The files whose coverage changed, the TOTAL row, and one line counting the unchanged files:
+    /// a diff of two large reports reads as what moved, not as every file that stood still.
+    /// </summary>
     public static string FormatDiff(CoverageDiffResult diff, bool color)
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
-        var maxPath = Math.Max("File".Length, diff.Files.Count > 0 ? diff.Files.Max(static d => d.Path.Length) : 0);
+        var changed = diff.Changed.ToList();
+        // At least as wide as TOTAL, so the summary row aligns when every path is shorter or
+        // nothing changed.
+        var maxPath = changed.Select(static d => d.Path.Length).Append("TOTAL".Length).Max();
 
         var headerPlain = $"{"File".PadRight(maxPath)}  {"Before",8}  {"After",8}  {"Delta",8}  {"Change",10}";
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
-        foreach (var d in diff.Files)
+        foreach (var d in changed)
         {
             var before = Pct(d.Before);
             var after = Pct(d.After);
@@ -113,6 +120,7 @@ public static class TableFormatter
             $"{pen.Bold(Pct(diff.BeforeRate))}  " +
             $"{pen.Bold(Pct(diff.AfterRate))}  " +
             $"{pen.Bold(pen.Delta(DeltaCell(diff.Delta), diff.Delta))}");
+        sb.AppendLine(pen.Dim(Invariant($"Unchanged: {diff.UnchangedCount} {(diff.UnchangedCount == 1 ? "file" : "files")}")));
 
         // Codecov-style indirect-change summary: one line, only when there's anything to show.
         // Detailed per-file breakdown lives in the markdown formatter where it fits better.
@@ -146,12 +154,12 @@ public static class TableFormatter
     private static string DeltaCell(double? delta) =>
         (delta is { } d ? Invariant($"{(d >= 0 ? "+" : "")}{d * 100:F1}%") : "-").PadLeft(8);
 
+    // A listed file was added, removed, or modified; unchanged files are only counted.
     private static string ColorChange(AnsiPen pen, string text, FileChangeKind kind) => kind switch
     {
         FileChangeKind.Added => pen.Green(text),
         FileChangeKind.Removed => pen.Red(text),
-        FileChangeKind.Modified => pen.Yellow(text),
-        _ => pen.Dim(text)
+        _ => pen.Yellow(text)
     };
 }
 

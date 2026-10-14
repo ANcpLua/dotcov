@@ -73,7 +73,7 @@ public sealed class GateAwareTableWiringTests : IDisposable
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         await Assert.That(TotalRow(run.StdOut)).Contains("19999/20000    100.0%");
-        await Assert.That(run.StdOut).Contains("PASS: line 100.0% (min 99%)");
+        await Assert.That(run.StdErr).StartsWith("PASS: line 100.0% (min 99%)");
     }
 
     private static string TotalRow(string output) =>
