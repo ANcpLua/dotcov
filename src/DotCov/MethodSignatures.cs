@@ -23,6 +23,9 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"\bSystem\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Char|Single|Double|Decimal|IntPtr|UIntPtr)\?", RegexOptions.CultureInvariant)]
     private static partial Regex NullableValueTypes();
 
+    [GeneratedRegex(@"(System\.(?:String|Object)|\])\?", RegexOptions.CultureInvariant)]
+    private static partial Regex NullableReferences();
+
     [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
     private static partial Regex ConstructedArity();
 
@@ -49,7 +52,8 @@ internal static partial class MethodSignatures
                 if (!includeUnqualified && !name.Contains('.')) continue;
                 var simple = name[(name.LastIndexOf('.') + 1)..];
                 if (!names.TryGetValue(simple, out var prior)) names.Add(simple, name);
-                else if (prior != name) names[simple] = null;
+                else if (prior != name && (includeUnqualified || prior is null ||
+                         !prior.EndsWith("." + name, StringComparison.Ordinal))) names[simple] = null;
             }
         }
     }
@@ -60,21 +64,31 @@ internal static partial class MethodSignatures
         if (signature is null) return null;
         if (fromMetrics && TypeNamePattern.Matches(signature).Any(match =>
                 names.TryGetValue(match.Value, out var name) && name is null)) return null;
-        return TypeNamePattern.Replace(signature, match => (names.GetValueOrDefault(match.Value) ?? match.Value));
+        return TypeNamePattern.Replace(signature, match =>
+        {
+            var value = match.Value;
+            var full = names.GetValueOrDefault(value[(value.LastIndexOf('.') + 1)..]);
+            return full is not null && (full == value || full.EndsWith("." + value, StringComparison.Ordinal))
+                ? full : value;
+        });
+    }
+
+    internal static void ValidateLength(string text, string identity)
+    {
+        if (text.Length > MaxSignatureLength)
+            throw new InvalidDataException($"{identity} exceeds 16384 characters.");
     }
 
     internal static string? Coverage(string signature)
     {
-        if (signature.Length > MaxSignatureLength)
-            throw new InvalidDataException("Coverage signature exceeds 16384 characters.");
+        ValidateLength(signature, "Coverage signature");
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')') return null;
         return string.Join(",", BalancedText.SplitTopLevel(signature[1..^1]).Select(NormalizeType));
     }
 
     internal static string? Metrics(string display)
     {
-        if (display.Length > MaxSignatureLength)
-            throw new InvalidDataException("Metrics member display exceeds 16384 characters.");
+        ValidateLength(display, "Metrics member display");
         string parameters;
         string? valueType = null;
         if (display.EndsWith(')'))
@@ -208,6 +222,7 @@ internal static partial class MethodSignatures
     private static string NormalizeType(string type)
     {
         type = type.Trim().Replace("global::", "", StringComparison.Ordinal);
+        type = type.Replace('/', '.').Replace('+', '.');
         if (type.StartsWith("params ", StringComparison.Ordinal)) type = type[7..];
         var byRef = type.StartsWith("ref ", StringComparison.Ordinal) ||
                     type.StartsWith("out ", StringComparison.Ordinal) ||
@@ -216,6 +231,7 @@ internal static partial class MethodSignatures
         type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
         type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
+        type = NullableReferences().Replace(type, "$1");
         return ConstructedArity().Replace(type.Replace(" ", "", StringComparison.Ordinal), "") + (byRef ? "&" : "");
     }
 }

@@ -32,6 +32,8 @@ public sealed class CrapMetricsIdentityTests
         var exitCode = await DotCovCli.RunAsync(args, stdout, stderr);
         await Assert.That(exitCode).IsEqualTo(DotCovCli.ErrorExitCode);
         await Assert.That(stderr.ToString()).Contains("exceeds 16384 characters");
+        await Assert.That(stderr.ToString()).Contains(metricsTooLong ? metrics : coverage);
+        await Assert.That(stderr.ToString()).Contains(metricsTooLong ? "A.M(" : "App.A.M");
     }
 
     [Test]

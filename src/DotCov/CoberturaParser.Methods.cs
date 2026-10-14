@@ -61,6 +61,10 @@ public static partial class CoberturaParser
             {
                 throw new ReportParseException(input.SourceName, ex);
             }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"{input.SourceName}: {ex.Message}", ex);
+            }
         }
 
         scope.RequireDeclaredRoot();

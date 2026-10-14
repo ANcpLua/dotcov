@@ -114,6 +114,10 @@ public static partial class CodeMetricsReader
         {
             throw new XmlException($"{path}: {ex.Message}", ex, ex.LineNumber, ex.LinePosition);
         }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException($"{path}: {ex.Message}", ex);
+        }
     }
 
     private sealed class PendingMember(string display, string element, string? file)
@@ -212,8 +216,12 @@ public static partial class CodeMetricsReader
         // A member outside a NamedType is not ours; an empty member element carries no
         // Metrics — nothing to record.
         if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
-            state.MemberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName,
-                reader.GetAttribute("File")));
+        {
+            var display = reader.GetAttribute("Name") ?? "";
+            MethodSignatures.ValidateLength(display,
+                $"Metrics member display '{display[..Math.Min(display.Length, 200)]}'");
+            state.MemberStack.Push(new PendingMember(display, reader.LocalName, reader.GetAttribute("File")));
+        }
     }
 
     private static void CloseMember(ParserState state)
