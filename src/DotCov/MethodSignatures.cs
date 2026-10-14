@@ -215,7 +215,7 @@ internal static partial class MethodSignatures
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
         type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
-        type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value}>");
+        type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
         return ConstructedArity().Replace(type.Replace(" ", "", StringComparison.Ordinal), "") + (byRef ? "&" : "");
     }
 }
