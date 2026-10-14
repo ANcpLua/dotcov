@@ -64,19 +64,19 @@ public sealed class ThresholdContractTests : IDisposable
         var path = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/M.cs", c => c.Line(1, hits: 0).Branch(2, "100% (2/2)")));
 
-        var (code, stdout, _) = await Run("check", path, "--min-branch", "90");
+        var (code, _, stderr) = await Run("check", path, "--min-branch", "90");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).StartsWith("PASS: line 50.0% (min 0%), branch 100.0% (min 90%)");
+        await Assert.That(stderr).StartsWith("PASS: line 50.0% (min 0%), branch 100.0% (min 90%)");
     }
 
     [Test]
     public async Task Check_LineThresholdAlone_LeavesTheBranchDimensionUnchecked()
     {
-        var (code, stdout, _) = await Run("check", LinesFullBranchesHalf(), "--min-line", "100");
+        var (code, _, stderr) = await Run("check", LinesFullBranchesHalf(), "--min-line", "100");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).StartsWith("PASS: line 100.0% (min 100%), branch 50.0% (min 0%)");
+        await Assert.That(stderr).StartsWith("PASS: line 100.0% (min 100%), branch 50.0% (min 0%)");
     }
 
     [Test]
@@ -140,8 +140,8 @@ public sealed class ThresholdContractTests : IDisposable
     {
         var (_, stdout, _) = await Run("help");
 
-        await Assert.That(stdout).Contains("check    <path> --min-line N and/or --min-branch N");
-        await Assert.That(stdout).Contains("test     [<project>] --min-line N and/or --min-branch N");
+        await Assert.That(stdout).Contains("dotcov check <path> --min-line N and/or --min-branch N");
+        await Assert.That(stdout).Contains("dotcov test [<project>] --min-line N and/or --min-branch N");
         await Assert.That(stdout).Contains("there is no default");
         await Assert.That(stdout).DoesNotContain("default 80");
         foreach (var example in stdout.Split('\n').Where(static l => l.TrimStart().StartsWith("dotcov check", StringComparison.Ordinal) ||

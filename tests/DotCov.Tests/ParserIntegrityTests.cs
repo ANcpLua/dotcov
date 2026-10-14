@@ -196,7 +196,7 @@ public sealed class ParserIntegrityTests : IDisposable
         var path = _ws.Write("no-condition-coverage.cobertura.xml", xml);
         var (code, stdout, stderr) = await Run("check", path, "--min-branch", "100");
         await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
-        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stdout + stderr).DoesNotContain("PASS");
         await Assert.That(stderr).Contains("warning: src/X.cs:2: branch=\"true\" without a condition-coverage attribute");
     }
 
@@ -219,9 +219,9 @@ public sealed class ParserIntegrityTests : IDisposable
             "1 conditions with 2 covered outcomes disagree with condition-coverage (0/2) - using the line aggregate");
         await Assert.That(report.Evaluate(0, 100).Outcome).IsEqualTo(GateOutcome.Fail);
 
-        var (code, stdout, _) = await Run("check", _ws.Write("lifted.cobertura.xml", doc), "--min-branch", "100");
+        var (code, stdout, stderr) = await Run("check", _ws.Write("lifted.cobertura.xml", doc), "--min-branch", "100");
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stdout + stderr).DoesNotContain("PASS");
     }
 
     [Test]
@@ -300,7 +300,7 @@ public sealed class ParserIntegrityTests : IDisposable
 
         var (code, stdout, stderr) = await Run("check", _ws.Write("empty-summary.cobertura.xml", xml), "--min-line", "80");
         await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
-        await Assert.That(stdout).DoesNotContain("PASS");
+        await Assert.That(stdout + stderr).DoesNotContain("PASS");
         await Assert.That(stderr).StartsWith("NODATA:");
     }
 

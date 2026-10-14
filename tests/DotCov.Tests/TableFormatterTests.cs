@@ -242,14 +242,17 @@ public sealed class TableFormatterTests
     [Test]
     public async Task FormatDiff_ZeroDelta_RowAndTotalUseSamePlusZeroCell()
     {
-        // One sign policy everywhere: zero renders '+0.0%' in per-file rows and TOTAL alike.
-        var diff = CoverageDiff.Compare(
+        // One sign policy everywhere: zero renders '+0.0%' in per-file rows and TOTAL alike. A
+        // listed file moves by zero only when it was added at 0%.
+        var added = CoverageDiff.Compare(
+            Reports.Single("a.cs", hit: 5, total: 10),
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("zero.cs", 0, 10, 0, 0)]));
+        var still = CoverageDiff.Compare(
             Reports.Single("same.cs", hit: 5, total: 10),
             Reports.Single("same.cs", hit: 5, total: 10));
 
-        var output = TableFormatter.FormatDiff(diff);
-        var fileRow = output.Split('\n').Single(l => l.Contains("same.cs")).TrimEnd();
-        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+        var fileRow = TableFormatter.FormatDiff(added).Split('\n').Single(l => l.Contains("zero.cs")).TrimEnd();
+        var totalRow = TableFormatter.FormatDiff(still).Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
 
         await Assert.That(fileRow).Contains("   +0.0%");
         await Assert.That(totalRow).Contains("   +0.0%");
@@ -275,29 +278,54 @@ public sealed class TableFormatterTests
     [Test]
     public async Task FormatDiff_NullDelta_RendersDashCell()
     {
-        // A 0/0 file has null rates on both sides → null delta → the 8-char dash cell.
+        // An added 0/0 file has no rate on either side → null delta → the 8-char dash cell.
         var diff = CoverageDiff.Compare(
-            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]),
+            CoverageReport.Empty,
             new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
 
         var output = TableFormatter.FormatDiff(diff);
         var fileRow = output.Split('\n').Single(l => l.Contains("empty.cs")).TrimEnd();
 
-        await Assert.That(fileRow).Matches(@"^empty\.cs\s+-\s+-\s+-\s+Unchanged$");
+        await Assert.That(fileRow).Matches(@"^empty\.cs\s+-\s+-\s+-\s+Added$");
         await Assert.That(fileRow).Contains("       -"); // dash keeps the 8-char cell width
     }
 
     [Test]
-    public async Task FormatDiff_UnchangedFile_NeutralIndicator()
+    public async Task FormatDiff_UnchangedFiles_AreCountedOnADimLine_NotListed()
     {
+        // A diff reads as what moved: files that stood still are counted, never rowed, and a
+        // long unchanged path does not widen the table.
+        var unchangedPath = "src/very/long/path/that/did/not/move/Unchanged.cs";
         var diff = CoverageDiff.Compare(
-            Reports.Single("same.cs", hit: 5, total: 10),
-            Reports.Single("same.cs", hit: 5, total: 10));
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage(unchangedPath, 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0), new FileCoverage(unchangedPath, 5, 10, 0, 0)]));
 
         var output = TableFormatter.FormatDiff(diff, color: true);
+        var plain = AnsiStrip.From(output);
 
-        // The unchanged file's Change cell is dimmed, not painted with a verdict color.
-        await Assert.That(output).Contains(Pen.Dim($"{FileChangeKind.Unchanged,10}"));
+        await Assert.That(plain).DoesNotContain(unchangedPath);
+        await Assert.That(plain).DoesNotContain(nameof(FileChangeKind.Unchanged) + Environment.NewLine);
+        await Assert.That(plain.Split(Environment.NewLine)[0]).StartsWith("File     Before");
+        await Assert.That(output).Contains(Pen.Dim("Unchanged: 1 file") + Environment.NewLine);
+    }
+
+    [Test]
+    public async Task FormatDiff_CountsSeveralUnchangedFiles_InThePlural()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("b.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("b.cs", 5, 10, 0, 0)]));
+
+        var output = TableFormatter.FormatDiff(diff);
+
+        // Nothing moved: the header, the TOTAL row aligned under it, and the count.
+        const string header = "File     Before     After     Delta      Change";
+        var rule = new string('-', header.Length);
+        await Assert.That(output).IsEqualTo(
+            $"{header}{Environment.NewLine}{rule}{Environment.NewLine}{rule}{Environment.NewLine}" +
+            $"TOTAL     50.0%     50.0%     +0.0%{Environment.NewLine}" +
+            $"Unchanged: 2 files{Environment.NewLine}");
+        await Assert.That(output).DoesNotContain("a.cs");
     }
 
     [Test]
@@ -406,7 +434,7 @@ public sealed class TableFormatterTests
         ]);
         var after = new CoverageReport([
             new FileCoverage("short.cs", 2, 2, 0, 0),
-            new FileCoverage(longPath, 1, 2, 0, 0)
+            new FileCoverage(longPath, 2, 2, 0, 0)
         ]);
 
         var lines = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after))

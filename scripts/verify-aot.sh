@@ -71,9 +71,12 @@ is_json() {
 # _run <desc> <want-exit> <validate-json:0|1> -- <binary args...>
 _run() {
   local desc="$1" want="$2" vjson="$3"; shift 3; shift   # last shift drops the literal "--"
-  local out rc; set +e; out="$("$BIN" "$@" 2>&1)"; rc=$?; set -e
-  if printf '%s' "$out" | grep -q 'Unhandled exception\|Reflection-based serialization'; then
-    bad "$desc — threw at runtime"; printf '%s\n' "$out" | sed 's/^/      /' | head -3; return
+  # Stdout is the command's data and stderr its verdict and diagnostics: JSON is read from
+  # stdout alone, a runtime throw is looked for in both.
+  local out err rc; set +e; out="$("$BIN" "$@" 2>"$WORK/stderr")"; rc=$?; set -e
+  err="$(cat "$WORK/stderr")"
+  if printf '%s\n%s' "$out" "$err" | grep -q 'Unhandled exception\|Reflection-based serialization'; then
+    bad "$desc — threw at runtime"; printf '%s\n%s\n' "$out" "$err" | sed 's/^/      /' | head -3; return
   fi
   [ "$rc" = "$want" ] || { bad "$desc — exit $rc, wanted $want"; return; }
   if [ "$vjson" = 1 ] && ! printf '%s' "$out" | is_json; then bad "$desc — invalid JSON"; return; fi
@@ -88,6 +91,7 @@ checkj "report  json"  0 report   "$A" --format json
 check  "report  md"    0 report   "$A" --format md
 check  "check   pass"  0 check     "$A" --min-line 50
 check  "check   fail"  1 check     "$A" --min-line 99
+checkj "check   json"  0 check     "$A" --min-line 50 --format json
 checkj "diff    json"  0 diff      "$A" "$B" --format json
 check  "diff    table" 0 diff      "$A" "$B"
 checkj "snapshot json" 0 snapshot  "$A" --commit abc --branch main --project D

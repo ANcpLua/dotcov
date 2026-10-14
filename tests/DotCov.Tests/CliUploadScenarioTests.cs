@@ -29,8 +29,26 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
         using var json = JsonDocument.Parse(request.Body);
         await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
         await Assert.That(json.RootElement.GetProperty("files")[0].GetProperty("path").GetString()).IsEqualTo("src/Größe.cs");
-        await Assert.That(request.Body).IsEqualTo(output.TrimEnd());
+        await Assert.That(request.Body).IsEqualTo(output);
         await Assert.That(error).Contains("Uploaded to");
+    }
+
+    // The no-match hint lists the directory after the upload. A directory deleted meanwhile
+    // loses the hint, not the gate's exit code.
+    [Test]
+    public async Task Check_EmptyDirectoryDeletedDuringUpload_KeepsNoData(CancellationToken cancellationToken)
+    {
+        var empty = _workspace.CreateDirectory("vanishing");
+
+        var running = Run("check", empty, "--min-line", "40");
+        await endpoint.Received.WaitAsync(cancellationToken);
+        Directory.Delete(empty);
+        endpoint.RespondWith(HttpStatusCode.Created);
+        var (code, _, error) = await running;
+
+        await Assert.That(code).IsEqualTo(3).Because(error);
+        await Assert.That(error).StartsWith("NODATA:");
+        await Assert.That(error).Contains($"warning: no file in '{empty}' matches");
     }
 
     [Test]
@@ -54,9 +72,27 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
         await Assert.That(output + error).Contains(verdict);
         await Assert.That(error).Contains(status == HttpStatusCode.Created ? "Uploaded to" : "Upload failed");
         using var json = JsonDocument.Parse(request.Body);
+        await Assert.That(json.RootElement.GetProperty("command").GetString()).IsEqualTo("check");
+        // The uploaded document carries the same verdict and exit code as the gate that ran.
+        var gate = json.RootElement.GetProperty("gate");
+        await Assert.That(gate.GetProperty("reason").GetString()).StartsWith(verdict);
+        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(expectedCode is 5 ? 0 : expectedCode);
         await Assert.That(json.RootElement.GetProperty("files").GetArrayLength()).IsEqualTo(empty ? 0 : 1);
         if (!empty)
             await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
+    }
+
+    [Test]
+    public async Task Check_JsonFormat_UploadsExactlyTheDocumentItPrints(CancellationToken cancellationToken)
+    {
+        endpoint.RespondWith(HttpStatusCode.Created);
+
+        var (code, output, error) = await Run("check", Report(), "--min-line", "80", "--format", "json");
+        var request = await endpoint.Received.WaitAsync(cancellationToken);
+
+        await Assert.That(code).IsEqualTo(1).Because(error);
+        await Assert.That(request.Body).IsEqualTo(output);
+        await Assert.That(error).StartsWith("FAIL:");
     }
 
     [Test]

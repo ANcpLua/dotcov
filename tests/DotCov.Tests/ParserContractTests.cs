@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Xml;
 using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
@@ -48,8 +49,14 @@ public sealed class ParserContractTests : IDisposable
             .AddClass("src\\Win.cs", c => c.Line(1, hits: 1)));
     }
 
-    private static string Canonical(CoverageReport report) =>
-        JsonFormatter.Format(report) + "\n" + string.Join("|", report.SourceRoots);
+    // Inputs name where a document came from, so they differ by source by design; each source's
+    // are pinned on their own.
+    private static string Canonical(CoverageReport report)
+    {
+        var json = JsonNode.Parse(JsonFormatter.Format(report))!.AsObject();
+        json.Remove("inputs");
+        return json.ToJsonString() + "\n" + string.Join("|", report.SourceRoots);
+    }
 
     private static IEnumerable<string> Canonical(MethodCoverageReport report) =>
         report.Methods.Select(m =>
@@ -81,6 +88,12 @@ public sealed class ParserContractTests : IDisposable
         await Assert.That(Canonical(viaFile)).IsEqualTo(expected).Because($"{name}: file");
         await Assert.That(Canonical(viaResolver)).IsEqualTo(expected).Because($"{name}: resolver");
         await Assert.That(viaStream.Warnings.Count).IsEqualTo(viaFile.Warnings.Count);
+        // A bare stream has no name; every ReportInput is named by its source.
+        await Assert.That(viaStream.Inputs).IsEmpty();
+        await Assert.That(viaAsync.Inputs).IsEmpty();
+        await Assert.That(viaBytes.Inputs).IsEquivalentTo([name], CollectionOrdering.Matching);
+        await Assert.That(viaFile.Inputs).IsEquivalentTo([path], CollectionOrdering.Matching);
+        await Assert.That(viaResolver.Inputs).IsEquivalentTo([path], CollectionOrdering.Matching);
     }
 
     [Test]
@@ -100,6 +113,10 @@ public sealed class ParserContractTests : IDisposable
         await Assert.That(Canonical(viaBytes)).IsEquivalentTo(expected, CollectionOrdering.Matching).Because($"{name}: bytes");
         await Assert.That(Canonical(viaFile)).IsEquivalentTo(expected, CollectionOrdering.Matching).Because($"{name}: file");
         await Assert.That(Canonical(viaResolver)).IsEquivalentTo(expected, CollectionOrdering.Matching).Because($"{name}: resolver");
+        await Assert.That(viaStream.Inputs).IsEmpty();
+        await Assert.That(viaBytes.Inputs).IsEquivalentTo([name], CollectionOrdering.Matching);
+        await Assert.That(viaFile.Inputs).IsEquivalentTo([path], CollectionOrdering.Matching);
+        await Assert.That(viaResolver.Inputs).IsEquivalentTo([path], CollectionOrdering.Matching);
     }
 
     [Test]

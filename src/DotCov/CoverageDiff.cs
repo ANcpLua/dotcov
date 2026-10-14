@@ -204,6 +204,15 @@ public sealed class CoverageDiffResult(
     public IEnumerable<FileDelta> Removed => Files.Where(static f => f.Change is FileChangeKind.Removed);
 
     /// <summary>
+    /// The files whose coverage changed: added, removed, or with a line rate that moved by at
+    /// least <see cref="CoverageDiff.MovementEpsilon"/>. The text formatters list only these.
+    /// </summary>
+    public IEnumerable<FileDelta> Changed => Files.Where(static f => f.Change is not FileChangeKind.Unchanged);
+
+    /// <summary>The files on both sides whose line rate did not move; the text formatters only count them.</summary>
+    public int UnchangedCount => Files.Count(static f => f.Change is FileChangeKind.Unchanged);
+
+    /// <summary>
     /// Files that have at least one line whose hit/miss state flipped between the two
     /// reports. The set of indirectly-affected files — useful for surfacing "tests were
     /// removed / something broke upstream" in CI feedback.
@@ -212,6 +221,12 @@ public sealed class CoverageDiffResult(
 
     /// <summary>Total count of flipped lines across the whole report.</summary>
     public int TotalLineChanges => Files.Sum(static f => f.LineChanges.Count);
+
+    /// <summary>The "before" report's <see cref="CoverageReport.Inputs"/>, then the "after" report's.</summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
+    /// <summary>The "before" report's <see cref="CoverageReport.Warnings"/>, then the "after" report's.</summary>
+    public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 }
 
 public static class CoverageDiff
@@ -291,7 +306,11 @@ public static class CoverageDiff
         return new CoverageDiffResult(
             deltas.OrderBy(static d => d.Delta).ToList(),
             before.LineRate,
-            after.LineRate);
+            after.LineRate)
+        {
+            Inputs = [.. before.Inputs, .. after.Inputs],
+            Warnings = [.. before.Warnings, .. after.Warnings]
+        };
 
         static FileDelta Changed(string path, FileCoverage b, FileCoverage a) =>
             FileDelta.Compared(path, b.LineRate, a.LineRate) with { LineChanges = ComputeLineChanges(b, a) };

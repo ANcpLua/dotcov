@@ -9,35 +9,51 @@ namespace DotCov.Tool;
 /// The dotcov command-line surface, kept out of Program.cs so exit codes and error paths
 /// are testable in-process. Program.cs hands it the real console writers; tests hand it
 /// StringWriters (which also disables ANSI coloring, since only a real console gets color).
+/// Stdout carries only a command's data; verdicts, warnings, and errors go to stderr, where
+/// the verdict of check, crap, and test is the first line. The meaning of each exit code is
+/// documented once, in the help's exit-code table.
 /// </summary>
 public static partial class DotCovCli
 {
-    /// <summary>Exit code for invalid command-line usage.</summary>
-    public const int UsageExitCode = 2;
-    /// <summary>Exit code for an unrecognized command.</summary>
-    public const int UnknownCommandExitCode = UsageExitCode;
-    /// <summary>Exit code when a gate lacks the measurements it needs.</summary>
-    public const int NoDataExitCode = 3;
-    /// <summary>Exit code when all thresholds are disabled.</summary>
-    public const int DisabledExitCode = 4;
-    /// <summary>Exit code for report, IO, upload, badge, or test-run failures.</summary>
-    public const int ErrorExitCode = 5;
+    /// <summary>Exit code 1: a gate measured coverage below its threshold.</summary>
+    public const int FailExitCode = ExitCodes.Fail;
+    /// <summary>Exit code 2: invalid command-line usage.</summary>
+    public const int UsageExitCode = ExitCodes.Usage;
+    /// <summary>Exit code 3: a gate lacks the measurements it needs.</summary>
+    public const int NoDataExitCode = ExitCodes.NoData;
+    /// <summary>Exit code 4: all thresholds are disabled.</summary>
+    public const int DisabledExitCode = ExitCodes.Disabled;
+    /// <summary>Exit code 5: an input or IO error.</summary>
+    public const int ErrorExitCode = ExitCodes.Error;
+    /// <summary>Exit code 6: the dotnet test run of `dotcov test` failed.</summary>
+    public const int TestRunFailedExitCode = ExitCodes.TestRunFailed;
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
     {
         var console = ReferenceEquals(stdout, Console.Out);
         if (console) Ansi.EnableOnWindows();
-        var color = console && Ansi.IsSupported();
 
         // A bare `--` after the command ends dotcov's own arguments. Only test takes what follows
         // (it goes to dotnet test unchanged); every other command rejects the separator.
         var separator = Array.IndexOf(args, "--");
         var forwarded = separator > 0 ? args[(separator + 1)..] : null;
-        var (command, options, malformed) = Parse(separator > 0 ? args[..separator] : args);
+        var own = separator > 0 ? args[..separator] : args;
 
         try
         {
-            RejectUnusedArguments(command, options, malformed, forwarded);
+            var command = CommandName(own);
+
+            // --help anywhere among a command's own arguments answers before anything is checked.
+            if (own.Skip(1).Any(static a => a is "--help" or "-h"))
+            {
+                await stdout.WriteAsync(HelpFor(CommandsByName[command]));
+                return 0;
+            }
+
+            var parsed = Parse(command, own);
+            RejectUnusedArguments(command, parsed, forwarded);
+            var options = parsed.Options;
+            var color = console && !options.ContainsKey("no-color") && Ansi.IsSupported();
             return await Dispatch(command, options, forwarded, stdout, stderr, color);
         }
         catch (ReportParseException ex)
@@ -65,6 +81,15 @@ public static partial class DotCovCli
         ex is UsageError or CliError or UndeclaredSourceRootException or XmlException or IOException or
             InvalidDataException or UnauthorizedAccessException;
 
+    /// <summary>The command <paramref name="own"/> names, with its aliases resolved; an unknown one is a usage error.</summary>
+    static string CommandName(string[] own)
+    {
+        if (own.Length is 0) return "help";
+
+        var name = own[0] switch { "--version" => "version", "--help" or "-h" => "help", var other => other };
+        return CommandsByName.ContainsKey(name) ? name : throw UnknownCommand(name);
+    }
+
     // Not async: each arm hands back its command's Task, so a synchronous command's exception
     // still surfaces inside RunAsync's try, and the switch stays one branch per command.
     static Task<int> Dispatch(
@@ -77,27 +102,17 @@ public static partial class DotCovCli
             "diff" => Task.FromResult(Diff(options, stdout, stderr, color)),
             "snapshot" => Snapshot(options, stdout, stderr),
             "test" => Test(options, forwarded ?? [], stdout, stderr, color),
-            _ => Task.FromResult(NonReportCommand(command, stdout, stderr))
-        };
-
-    /// <summary>The commands that read no report: version, help, and the unknown-command exit.</summary>
-    static int NonReportCommand(string command, TextWriter stdout, TextWriter stderr) =>
-        command switch
-        {
-            "version" => Version(stdout),
-            "help" => Help(stdout),
-            _ => UnknownCommand(command, stdout, stderr)
+            "version" => Task.FromResult(Version(stdout)),
+            _ => Task.FromResult(Help(options, stdout))
         };
 
     static async Task<int> Report(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
         if (!opts.TryGetValue("file", out var path))
-        {
-            await stderr.WriteLineAsync("error: missing path. Usage: dotcov report <path> [--format table|json|md] [--threshold N] [--exclude-generated] [--exclude-test-code]");
-            return UsageExitCode;
-        }
+            return MissingPath("report", stderr);
 
         if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
+        if (!TryGetTop(opts, stderr, out var top)) return UsageExitCode;
 
         double? threshold = null;
         if (opts.TryGetValue("threshold", out var raw))
@@ -111,11 +126,12 @@ public static partial class DotCovCli
         var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
 
+        // --top truncates what is shown; the upload carries every file.
         var output = format switch
         {
-            "json" => JsonFormatter.Format(report),
-            "markdown" or "md" => MarkdownFormatter.Format(report, threshold),
-            _ => TableFormatter.Format(report, color)
+            "json" => JsonFormatter.Format(report, top),
+            "markdown" or "md" => MarkdownFormatter.Format(report, threshold, top),
+            _ => TableFormatter.Format(report, color, top)
         };
 
         await stdout.WriteAsync(output);
@@ -124,11 +140,11 @@ public static partial class DotCovCli
         var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
 
         if (opts.ContainsKey("github-summary"))
-            WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
+            WriteGitHubSummary(MarkdownFormatter.Format(report, threshold, top), stderr);
 
         // The table shows only a warning count; markdown and JSON already list each warning.
         // JSON carries the exclusion itself; the other formats name it on stderr.
-        WriteDiagnostics(path, inputs, format is "table" ? report.Warnings : [],
+        WriteDiagnostics(path, pattern, inputs, format is "table" ? report.Warnings : [],
             format is "json" ? FileExclusion.None : report.Exclusion, stderr);
         return exitCode;
     }
@@ -136,93 +152,85 @@ public static partial class DotCovCli
     static async Task<int> Check(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
     {
         if (!opts.TryGetValue("file", out var path))
-        {
-            await stderr.WriteLineAsync("error: missing path. Usage: dotcov check <path> [--min-line N] [--min-branch N] (at least one) [--exclude-generated] [--exclude-test-code]");
-            return UsageExitCode;
-        }
+            return MissingPath("check", stderr);
 
         if (!TryGetThresholds("check", opts, stderr, out var minLine, out var minBranch)) return UsageExitCode;
+        if (!TryGetGateOutput(opts, stderr, out var output)) return UsageExitCode;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
         if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
-        return await Gate(report, report.Evaluate(minLine, minBranch), path, inputs, opts, stdout, stderr);
+        return await Gate("check", report, report.Evaluate(minLine, minBranch), path, pattern, inputs, output, opts, stdout, stderr);
+    }
+
+    /// <summary>check's and test's --format and --top: the document format and how many offenders it lists.</summary>
+    readonly record struct GateOutput(string Format, int Top);
+
+    static bool TryGetGateOutput(Dictionary<string, string> opts, TextWriter stderr, out GateOutput output)
+    {
+        output = default;
+        if (!TryGetFormat(opts, stderr, out var format) || !TryGetTop(opts, stderr, out var top)) return false;
+
+        output = new GateOutput(format, top ?? CoverageReport.DefaultOffenderLimit);
+        return true;
     }
 
     /// <summary>
-    /// The line/branch gate over a parsed report, shared by check and test: step summary, verdict,
-    /// offending files, diagnostics, badge, and upload all come from one evaluation, the
-    /// <paramref name="gate"/> the caller evaluated (test also renders its table from it).
+    /// The line/branch gate over a parsed report, shared by check and test: document, verdict,
+    /// offending files, badge, upload, step summary, and diagnostics all come from one
+    /// evaluation, the <paramref name="gate"/> the caller evaluated (test also renders its table
+    /// from it). Stdout holds only the JSON or markdown document, offenders included. The verdict
+    /// is the first stderr line on every outcome, followed by <paramref name="reports"/> when the
+    /// caller names where the reports came from, then, for the table format, the offenders.
+    /// <paramref name="pattern"/> is null when the reports were not found in a directory the user
+    /// named, so no --pattern advice applies.
     /// </summary>
     static async Task<int> Gate(
-        CoverageReport report, GateResult gate, string path, IReadOnlyList<ReportInput> inputs,
-        Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
+        string command, CoverageReport report, GateResult gate, string path, ReportPattern? pattern,
+        IReadOnlyList<ReportInput> inputs, GateOutput output, Dictionary<string, string> opts,
+        TextWriter stdout, TextWriter stderr, string? reports = null)
     {
-        // Written on pass AND fail, and derived from the same GateResult as the exit code.
-        // MarkdownFormatter.Format(report, gate) renders badge, both thresholds, floored
-        // failing-dimension rates, AND the one-line verdict from the same precomputed
-        // GateResult — no re-evaluation, no CLI-side splicing. Written after the verdict, so a
-        // summary-file warning never becomes the first stderr token.
-        void WriteSummary()
+        var json = new Lazy<string>(() => JsonFormatter.Format(report, gate, command, output.Top));
+        switch (output.Format)
         {
-            if (opts.ContainsKey("github-summary"))
-                WriteGitHubSummary(MarkdownFormatter.Format(report, gate), stderr);
-        }
-
-        if (gate.IsPass)
-        {
-            await stdout.WriteLineAsync(gate.ToString());
-            // A badge that cannot be written, or a failed upload, turns this pass into exit 5;
-            // its "error:" line leads stderr.
-            var badgeWritten = WriteBadge(opts, gate, stderr);
-            var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
-            WriteSummary();
-            WriteDiagnostics(path, inputs, report.Warnings, report.Exclusion, stderr);
-            return badgeWritten ? exitCode : ErrorExitCode;
+            case "json":
+                await stdout.WriteAsync(json.Value);
+                break;
+            case "markdown" or "md":
+                await stdout.WriteAsync(MarkdownFormatter.Format(report, gate, output.Top));
+                break;
         }
 
         await stderr.WriteLineAsync(gate.ToString());
+        if (reports is not null) await stderr.WriteLineAsync(reports);
 
-        // The offender list answers "which files caused the line-gate failure", so it prints
-        // only when the LINE gate actually failed. A branch-only failure listing line-threshold
-        // files (possibly with 100% branch coverage) would blame the wrong files; NoData/Disabled
-        // have no offenders at all — a branch-NoData gate can still carry a line rate below
-        // min-line, so the outcome is checked, not just the line comparison.
-        if (gate is { Outcome: GateOutcome.Fail, LineBelowThreshold: true })
-        {
-            await stderr.WriteLineAsync("files below line threshold:");
-            foreach (var f in report.BelowPercent(gate.MinLinePercent))
-                await stderr.WriteLineAsync(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
-        }
+        // What to fix next: every file below a threshold the gate failed, worst first. JSON and
+        // markdown already carry the list; NoData and Disabled blame no file.
+        if (output.Format is "table")
+            await stderr.WriteAsync(TableFormatter.FormatOffenders(report, gate, output.Top));
 
-        WriteSummary();
-        WriteDiagnostics(path, inputs, report.Warnings, report.Exclusion, stderr);
+        // Every outcome writes its badge and uploads: red runs are the ones a badge and a coverage
+        // dashboard most need to show. Either failing turns a pass into exit 5; a non-passing
+        // gate keeps its own exit code.
+        var badgeWritten = WriteBadge(opts, gate, stderr);
+        var uploadExitCode = await MaybeUpload(opts, () => json.Value, stderr);
 
-        // Failing runs write their badge and upload too — red runs are the ones a badge and a
-        // coverage dashboard most need to show. The non-passing gate's exit code wins regardless
-        // of either outcome.
-        WriteBadge(opts, gate, stderr);
-        await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
+        // Derived from the same GateResult as the exit code: MarkdownFormatter.Format(report, gate)
+        // renders badge, both thresholds, floored failing-dimension rates, the offenders, AND the
+        // one-line verdict from it — no re-evaluation, no CLI-side splicing.
+        if (opts.ContainsKey("github-summary"))
+            WriteGitHubSummary(MarkdownFormatter.Format(report, gate, output.Top), stderr);
+        WriteDiagnostics(path, pattern, inputs, report.Warnings, report.Exclusion, stderr);
 
-        return NonPassingGateExitCode(gate.Outcome);
+        if (!gate.IsPass) return ExitCodes.For(gate.Outcome);
+        return badgeWritten ? uploadExitCode : ErrorExitCode;
     }
-
-    // Called only after the measured-pass path has returned.
-    static int NonPassingGateExitCode(GateOutcome outcome) => outcome switch
-    {
-        GateOutcome.NoData => NoDataExitCode,
-        GateOutcome.Disabled => DisabledExitCode,
-        _ => 1
-    };
 
     static int Crap(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
         if (!opts.TryGetValue("file", out var path))
-        {
-            stderr.WriteLine("error: missing path. Usage: dotcov crap <coverage-path> [--metrics <file>] [--max-crap N] [--top N] [--format table|json|md]");
-            return UsageExitCode;
-        }
+            return MissingPath("crap", stderr);
 
         if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
 
@@ -241,32 +249,17 @@ public static partial class DotCovCli
         var gate = report.Evaluate(maxCrap);
         var exclusion = format is "json" ? FileExclusion.None : report.Exclusion;
 
+        // Stdout holds only the rendering, so `--format json` stays one valid document; the
+        // verdict leads stderr in every format, as check's and test's do.
         stdout.Write(RenderCrap(format, report, gate, top, color));
+        stderr.WriteLine(gate.ToString());
 
         // Written on pass AND fail, from the same gate as the exit code — the same
-        // no-false-green contract as check's summary — and after the verdict, like check's.
-        void WriteSummary()
-        {
-            if (opts.ContainsKey("github-summary"))
-                WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
-        }
-
-        if (gate.IsPass)
-        {
-            // JSON carries the verdict in its "gate" object; a line after the document would
-            // make stdout invalid JSON exactly when the gate passed.
-            if (format is not "json")
-                stdout.WriteLine(gate.ToString());
-            WriteSummary();
-            WriteDiagnostics(path, inputs, parsed.Warnings, exclusion, stderr);
-            return 0;
-        }
-
-        // Use the same distinct non-passing outcomes as check and test.
-        stderr.WriteLine(gate.ToString());
-        WriteSummary();
-        WriteDiagnostics(path, inputs, parsed.Warnings, exclusion, stderr);
-        return NonPassingGateExitCode(gate.Outcome);
+        // no-false-green contract as check's summary.
+        if (opts.ContainsKey("github-summary"))
+            WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
+        WriteDiagnostics(path, pattern, inputs, parsed.Warnings, exclusion, stderr);
+        return ExitCodes.For(gate.Outcome);
     }
 
     static string RenderCrap(string format, CrapReport report, CrapGateResult gate, int? top, bool color) =>
@@ -307,10 +300,7 @@ public static partial class DotCovCli
     static int Diff(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
         if (!opts.TryGetValue("before", out var before) || !opts.TryGetValue("after", out var after))
-        {
-            stderr.WriteLine("error: missing path. Usage: dotcov diff <before> <after> [--format table|json|md]");
-            return UsageExitCode;
-        }
+            return MissingPath("diff", stderr);
 
         if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
 
@@ -328,18 +318,15 @@ public static partial class DotCovCli
             _ => TableFormatter.FormatDiff(result, color)
         });
 
-        WriteDiagnostics(before, beforeInputs, beforeReport.Warnings, FileExclusion.None, stderr);
-        WriteDiagnostics(after, afterInputs, afterReport.Warnings, FileExclusion.None, stderr);
+        WriteDiagnostics(before, pattern, beforeInputs, beforeReport.Warnings, FileExclusion.None, stderr);
+        WriteDiagnostics(after, pattern, afterInputs, afterReport.Warnings, FileExclusion.None, stderr);
         return 0;
     }
 
     static async Task<int> Snapshot(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
     {
         if (!opts.TryGetValue("file", out var path))
-        {
-            await stderr.WriteLineAsync("error: missing path. Usage: dotcov snapshot <path> [--commit <sha>] [--branch <branch>] [--project <name>]");
-            return UsageExitCode;
-        }
+            return MissingPath("snapshot", stderr);
 
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
@@ -373,6 +360,7 @@ public static partial class DotCovCli
         if (missing.Count > 0)
             await stderr.WriteLineAsync($"warning: {string.Join(", ", missing)} not provided; snapshot stamped 'unknown'");
 
+        WarnNoMatch(path, pattern, inputs, stderr);
         WriteInputs(path, inputs, stderr);
         return exitCode;
     }
@@ -384,114 +372,11 @@ public static partial class DotCovCli
         return 0;
     }
 
-    static int UnknownCommand(string command, TextWriter stdout, TextWriter stderr)
+    /// <summary>A command run without its path: its usage line from the help catalog, and where the rest is.</summary>
+    static int MissingPath(string command, TextWriter stderr)
     {
-        stderr.WriteLine($"Unknown command '{command}'.");
-        Help(stdout);
-        return UnknownCommandExitCode;
-    }
-
-    static int Help(TextWriter stdout)
-    {
-        stdout.WriteLine($$"""
-            dotcov - Cobertura coverage toolkit
-
-            Commands:
-              report   <path> [--format table|json|md] [--threshold N]    Parse and display coverage
-              check    <path> --min-line N and/or --min-branch N          CI gate (exit 1 if below)
-              crap     <path> [--metrics <file>] [--max-crap N] [--top N] CRAP gate: comp^2*(1-cov)^3+comp
-                       [--format table|json|md]                           per method (exit 1 if any method
-                                                                          is strictly above --max-crap;
-                                                                          at-threshold passes; default 30;
-                                                                          every method must be scored)
-              diff     <before> <after> [--format table|json|md]          Compare two reports
-              snapshot <path> [--commit SHA] [--branch B] [--project P]   Create pipeline-ready JSON
-                                                                          (identity defaults to 'unknown')
-              test     [<project>] --min-line N and/or --min-branch N     Run dotnet test with coverage into
-                       [-- <dotnet test arguments>]                       a fresh TestResults/<run>, then
-                                                                          report and gate it like check
-              version, --version                                          Show version
-
-            Thresholds (check, test) are percentages from 0 to 100, and there is no default: pass
-            --min-line, --min-branch, or both. A dimension left out is not checked; 0 disables one.
-            Without either, check and test exit 2 before reading a report or running a test.
-
-            Shared flags (a flag the command does not use is an error, never ignored):
-              --exclude-generated       Skip generated files, migrations, GlobalUsings.cs, Program.cs
-                                        (report, check, crap, snapshot, test)
-              --exclude-test-code       Skip test projects and fixtures: *.Tests/, TestSupport/,
-                                        TestFixtures/ (report, check, crap, snapshot, test)
-              --keep <substrings>       Exempt comma-separated paths from both exclusions by
-                                        case-insensitive substring match, not globs; requires
-                                        --exclude-generated or --exclude-test-code (e.g. --keep
-                                        Program.cs to measure a CLI tool's entry point)
-              --probe-sources           Resolve a relative filename under several <source> roots
-                                        against the root that holds it on this machine's disk;
-                                        the result depends on where dotcov runs
-              --source-root <path>      Resolve those filenames against this declared root instead
-                                        (--probe-sources and --source-root: every command that
-                                        reads a report)
-              --pattern <glob>          Report filename to scan directories for: 'filename'
-                                        (top level only) or '**/filename' (recursive)
-                                        (default {{ReportPattern.DefaultText}})
-              --max-chars <N>           Per-file XML character cap (default 50000000; 0 = no cap)
-              --upload <url>            POST JSON payload to any endpoint (report, check, snapshot)
-              --github-summary          Write markdown to $GITHUB_STEP_SUMMARY (report, check, crap, test)
-              --badge-dir <dir>         Write the verdict as coverage-badge.svg and coverage-badge.json
-                                        into <dir>, created if missing, for every outcome (check, test)
-
-            <path> can be a file or directory. Directories are scanned for {{ReportPattern.DefaultText}};
-            override the filename with --pattern (gcovr and coverage.py emit coverage.xml).
-            Every match is merged; when there is more than one, stderr lists them after the result.
-            Give each test run a fresh results directory so an earlier run's report is not merged.
-
-            With an exclusion active, stderr lists its rules and every excluded file once; JSON
-            output (report --format json, crap --format json, snapshot) carries them as "excluded"
-            and "exclusionRules" instead.
-
-            A report that declares several <source> roots does not say which root a relative
-            filename belongs to. By default dotcov never guesses from the disk: the file is keyed
-            under the first root with a warning, report prints as usual, and check, crap, and test
-            exit 3 (NODATA) until --probe-sources or --source-root resolves it.
-
-            test passes the coverage options of the runner dotnet test uses in this directory
-            (DOTNET_TEST_RUNNER, else global.json test.runner, else VSTest). MTP test projects need
-            Microsoft.Testing.Extensions.CodeCoverage; VSTest projects get the Code Coverage collector
-            from Microsoft.NET.Test.Sdk. dotnet test output goes to stdout; a failed run exits 5
-            without evaluating coverage.
-
-            Exit codes:
-              0  success; check, crap, and test require a measured pass
-              1  FAIL: below a threshold
-              2  usage error: unknown command/flag, invalid value, missing/extra argument, no
-                 threshold (check, test), a --source-root no report declares
-              3  NODATA: missing measurements, an unscored CRAP method, an ambiguous file identity
-              4  DISABLED: no active threshold
-              5  error: supplied path unavailable, parse/IO/size-cap error, upload or badge write failure,
-                 failed test run
-            A non-passing gate keeps its exit code even if an upload or badge write also fails.
-
-            crap needs cyclomatic complexity for every method: coverlet embeds it in the coverage XML
-            (used automatically); for other emitters pass --metrics <file> produced by
-            `dotnet msbuild /t:Metrics` (Microsoft.CodeAnalysis.Metrics package). A method without
-            it is listed as unscored, and the gate exits 3 rather than vouch for code it did not score.
-
-            Examples:
-              dotcov report TestResults/
-              dotcov report coverage.cobertura.xml --format json --exclude-generated > coverage.json
-              dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary
-              dotcov check TestResults/ --min-line 90 --min-branch 80 --badge-dir badge
-              dotcov check TestResults/ --min-branch 75 --exclude-test-code
-              dotcov crap TestResults/ --max-crap 6 --github-summary
-              dotcov crap coverage.cobertura.xml --metrics MyApp.Metrics.xml --top 10
-              dotcov report gcovr-output/ --pattern "**/coverage.xml"   # non-Coverlet report names
-              dotcov check coverage.xml --min-line 85 --source-root src   # several <source> roots
-              dotcov report TestResults/ --exclude-generated --keep Program.cs   # measure host bootstrap
-              dotcov snapshot TestResults/ --commit abc123 --branch main --project MyApp --upload https://qyl/api/v1/coverage
-              dotcov diff before.cobertura.xml after.cobertura.xml --format md
-              dotcov test tests/MyApp.Tests --min-line 80 --exclude-generated -- -c Release
-            """);
-        return 0;
+        stderr.WriteLine($"error: missing path. Usage: {CommandsByName[command].Usage} (dotcov {command} --help)");
+        return UsageExitCode;
     }
 
     // ── Shared helpers ──
@@ -554,14 +439,64 @@ public static partial class DotCovCli
             stderr.WriteLine($"  {input.SourceName}");
     }
 
-    /// <summary>A gate's diagnostics, after its verdict: every warning, the exclusion, then the merged reports.</summary>
+    /// <summary>
+    /// A command's diagnostics, after its verdict: a directory that matched nothing, every warning,
+    /// the exclusion, then the merged reports. A null <paramref name="pattern"/> skips the
+    /// no-match warning, for a directory the user did not name.
+    /// </summary>
     static void WriteDiagnostics(
-        string path, IReadOnlyList<ReportInput> inputs, IReadOnlyList<CoverageWarning> warnings,
+        string path, ReportPattern? pattern, IReadOnlyList<ReportInput> inputs, IReadOnlyList<CoverageWarning> warnings,
         FileExclusion exclusion, TextWriter stderr)
     {
+        if (pattern is not null) WarnNoMatch(path, pattern, inputs, stderr);
         WriteWarnings(warnings, stderr);
         WriteExclusion(exclusion, stderr);
         WriteInputs(path, inputs, stderr);
+    }
+
+    // Every .xml below the directory, hidden ones included, skipping what cannot be listed: the
+    // hint must never turn a NODATA into an IO error.
+    static readonly EnumerationOptions XmlSearch = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.None,
+        IgnoreInaccessible = true,
+        MatchCasing = MatchCasing.CaseInsensitive
+    };
+
+    /// <summary>
+    /// A directory argument that matched no report is the most invisible misconfiguration there
+    /// is: the gate reads it as "nothing was measured". One warning names the pattern and the
+    /// directory, and when the directory holds .xml files, up to three of them and the --pattern
+    /// that reads the first. A file argument always resolves to itself, so an empty
+    /// <paramref name="inputs"/> means a directory.
+    /// </summary>
+    static void WarnNoMatch(string path, ReportPattern pattern, IReadOnlyList<ReportInput> inputs, TextWriter stderr)
+    {
+        if (inputs.Count > 0) return;
+
+        // Best effort: the gate already ran, so a directory gone by now loses the hint, never the result.
+        List<string> xml;
+        try
+        {
+            xml = Directory.EnumerateFiles(path, "*.xml", XmlSearch)
+                .Select(file => Path.GetRelativePath(path, file))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            xml = [];
+        }
+        var warning = $"warning: no file in '{path}' matches '{pattern}'";
+        if (xml.Count > 0)
+        {
+            var more = xml.Count > 3 ? FormattableString.Invariant($" (+{xml.Count - 3} more)") : "";
+            warning += $"; .xml files there: {string.Join(", ", xml.Take(3))}{more}; " +
+                       $"try --pattern \"**/{Path.GetFileName(xml[0])}\"";
+        }
+
+        stderr.WriteLine(warning);
     }
 
     /// <summary>
@@ -735,13 +670,6 @@ public static partial class DotCovCli
             ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
 
-    // Display flooring for a rate in a FAILING dimension, one decimal: 79.96% renders 79.9%,
-    // never a rounded-up 80.0% that reads as equal to the minimum it missed. GateResult owns
-    // this policy (its ToString and the markdown gate overload apply the same floor through
-    // the internal GateResult.RateEpsilon = 1e-9, which this epsilon mirrors); this is the
-    // single copy on the DotCov.Tool side of the assembly boundary.
-    static double FloorFailingPercent(double rate) => Math.Floor(rate * 1000 + 1e-9) / 10;
-
     /// <summary>Every parser diagnostic, one line each, so a degraded input is never silent.</summary>
     static void WriteWarnings(IReadOnlyList<CoverageWarning> warnings, TextWriter stderr)
     {
@@ -798,72 +726,55 @@ public static partial class DotCovCli
         }
     }
 
-    // The options each command acts on. Anything else — a misspelled flag, '--name=value', a flag
-    // only another command reads, a second path from a shell glob — is rejected, not ignored, so
-    // a gate cannot pass on defaults nobody asked for. help and version take none.
-    static readonly Dictionary<string, HashSet<string>> AcceptedOptions = new(StringComparer.Ordinal)
-    {
-        ["help"] = [],
-        ["version"] = [],
-        ["report"] = Accept("file", "format", "threshold", Exclusion, Identities, "pattern", "max-chars", "github-summary", "upload"),
-        ["check"] = Accept("file", "min-line", "min-branch", Exclusion, Identities, "pattern", "max-chars", "github-summary", "upload", "badge-dir"),
-        ["crap"] = Accept("file", "format", "max-crap", "top", "metrics", Exclusion, Identities, "pattern", "max-chars", "github-summary"),
-        ["diff"] = Accept("before", "after", "format", Identities, "pattern", "max-chars"),
-        ["snapshot"] = Accept("file", "commit", "branch", "project", Exclusion, Identities, "pattern", "max-chars", "upload"),
-        ["test"] = Accept("file", "min-line", "min-branch", Exclusion, Identities, "github-summary", "badge-dir"),
-    };
-
-    // Option groups several commands share: the exclusion flags and the file-identity flags.
-    const string Exclusion = "exclude-generated exclude-test-code keep";
-    const string Identities = "probe-sources source-root";
-
-    static HashSet<string> Accept(params string[] names) =>
-        new(names.SelectMany(static n => n.Split(' ')), StringComparer.OrdinalIgnoreCase);
-
-
     /// <summary>Fail before any report is read or test is run when an argument would otherwise be ignored.</summary>
-    static void RejectUnusedArguments(
-        string command, Dictionary<string, string> options, List<string> malformed, string[]? forwarded)
+    static void RejectUnusedArguments(string command, ParsedArguments parsed, string[]? forwarded)
     {
-        if (!AcceptedOptions.TryGetValue(command, out var accepted)) return;
-
         if (forwarded is not null && command is not "test")
-            throw new UsageError($"Unknown option '--' for '{command}'.");
+            throw UnknownOptionError(command, "--", null);
 
-        foreach (var (key, value) in options)
+        // What the dictionary cannot show, in order: an option it filed as a path or under a
+        // path's slot, then the options it holds, then a flag that got no value — the unknown
+        // name is the more useful diagnosis than its missing value.
+        if (parsed.Unknown.Count > 0)
+            throw parsed.Unknown[0];
+
+        var accepted = AcceptedOptions[command];
+        foreach (var (key, value) in parsed.Options)
         {
             if (!accepted.Contains(key)) throw UnknownOption(command, key, value);
             if (value.Length is 0 && (IsPathSlot(command, key) || key.Equals("metrics", StringComparison.OrdinalIgnoreCase)))
                 throw new UsageError("missing path: the path argument is empty.");
         }
 
-        // What the dictionary cannot show: a flag that got no value, or one spelled like a path.
-        if (malformed.Count > 0)
-            throw new UsageError(malformed[0]);
+        if (parsed.WithoutValue.Count > 0)
+            throw parsed.WithoutValue[0];
 
-        RejectInvalidValues(options);
+        RejectInvalidValues(parsed.Options);
     }
 
     /// <summary>The error for an option the command does not take, worded for what it most likely is.</summary>
     static UsageError UnknownOption(string command, string key, string value)
     {
-        // Parse files every path beyond the ones a command takes as "arg<N>".
+        // Parse files every positional argument beyond the ones a command takes as "arg<N>".
         if (key.StartsWith("arg", StringComparison.Ordinal) &&
             int.TryParse(key.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
-            return new UsageError(command is "test"
-                ? $"Unexpected argument '{value}' for 'test'. Pass dotnet test arguments after '--'."
-                : $"Unexpected argument '{value}' for '{command}'. To merge several reports, pass their directory.");
+            return new UsageError($"Unexpected argument '{value}' for '{command}'." + command switch
+            {
+                "test" => " Pass dotnet test arguments after '--'.",
+                "version" or "help" => "",
+                _ => " To merge several reports, pass their directory."
+            });
 
+        // An option the command takes, written with '=': the space-separated form works, unless
+        // the flag takes no value, when the value would become a stray positional argument.
         var equalsSign = key.IndexOf('=');
-        return new UsageError(equalsSign > 0
-            // A valueless flag written with a value: the space-separated form would fail
-            // again, its value becoming a stray positional argument.
-            ? ValuelessFlags.Contains(key[..equalsSign])
-                ? $"Unknown option '--{key}' for '{command}'. '--{key[..equalsSign]}' takes no value."
-                : $"Unknown option '--{key}' for '{command}'. Write '--{key[..equalsSign]} {key[(equalsSign + 1)..]}'."
-            : command is "test"
-                ? $"Unknown option '--{key}' for 'test'. Pass dotnet test arguments after '--'."
-                : $"Unknown option '--{key}' for '{command}'.");
+        var name = equalsSign > 0 ? key[..equalsSign] : key;
+        if (equalsSign > 0 && CommandsByName[command].Options.Contains(name, StringComparer.OrdinalIgnoreCase))
+            return UnknownOptionError(command, $"--{key}", null, ValuelessFlags.Contains(name)
+                ? $"'--{name}' takes no value."
+                : $"Write '--{name} {key[(equalsSign + 1)..]}'.");
+
+        return UnknownOptionError(command, $"--{key}", name, command is "test" ? "Pass dotnet test arguments after '--'." : null);
     }
 
     /// <summary>Accepted options whose value, or whose combination with another, cannot be honored.</summary>
@@ -888,21 +799,23 @@ public static partial class DotCovCli
     // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
     // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
     static readonly HashSet<string> ValuelessFlags =
-        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "probe-sources", "github-summary" };
+        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "probe-sources", "github-summary", "no-color" };
 
     /// <summary>
-    /// Maps argv to the command and its options, plus an error for each flag the dictionary
-    /// misrepresents: one that got no value (recorded as "true", so an unknown name can still be
-    /// reported by name) and one named like the slot a path is filed under, which would replace
-    /// that path.
+    /// A command's arguments as options, plus an error for each argument the dictionary
+    /// misrepresents: an option filed as a path (a single-dash token) or under a path's slot
+    /// (which would replace that path), and a flag that got no value (recorded as "true", so an
+    /// unknown name can still be reported by name).
     /// </summary>
-    static (string Command, Dictionary<string, string> Options, List<string> Malformed) Parse(string[] raw)
-    {
-        if (raw.Length is 0) return ("help", [], []);
+    sealed record ParsedArguments(
+        Dictionary<string, string> Options, List<UsageError> Unknown, List<UsageError> WithoutValue);
 
-        var command = raw[0] switch { "--version" => "version", "--help" or "-h" => "help", _ => raw[0] };
+    static ParsedArguments Parse(string command, string[] raw)
+    {
         var parsed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var malformed = new List<string>();
+        var unknown = new List<UsageError>();
+        var withoutValue = new List<UsageError>();
+        var positionals = Positionals(command);
         string? pendingKey = null;
         var positional = 0;
 
@@ -913,7 +826,7 @@ public static partial class DotCovCli
                 if (pendingKey is not null) EndWithoutValue(pendingKey);
                 var key = raw[i][2..];
                 if (IsPathSlot(command, key))
-                    malformed.Add($"Unknown option '--{key}' for '{command}'. Pass the path as a positional argument.");
+                    unknown.Add(UnknownOptionError(command, raw[i], key, "Pass the path as a positional argument."));
 
                 if (ValuelessFlags.Contains(key))
                 {
@@ -933,34 +846,36 @@ public static partial class DotCovCli
             else
             {
                 if (raw[i].StartsWith('-'))
-                    malformed.Add($"Unknown option '{raw[i]}' for '{command}'.");
-                var key = positional switch
-                {
-                    0 => command is "diff" ? "before" : "file",
-                    1 when command is "diff" => "after",
-                    _ => $"arg{positional}"
-                };
-                parsed[key] = raw[i];
+                    unknown.Add(UnknownOptionError(command, raw[i], raw[i].TrimStart('-'),
+                        command is "test" ? "Pass dotnet test arguments after '--'." : null));
+                parsed[positional < positionals.Length ? positionals[positional] : $"arg{positional}"] = raw[i];
                 positional++;
             }
         }
 
         if (pendingKey is not null) EndWithoutValue(pendingKey);
 
-        return (command, parsed, malformed);
+        return new ParsedArguments(parsed, unknown, withoutValue);
 
         void EndWithoutValue(string key)
         {
             // Its "true" placeholder is no value either: it would stamp a snapshot "true" or scan
             // a directory for a file named "true".
             parsed[key] = "true";
-            malformed.Add($"Option '--{key}' requires a value.");
+            withoutValue.Add(new UsageError($"Option '--{key}' requires a value."));
         }
     }
 
-    /// <summary>The dictionary keys paths are filed under: none of them is a flag.</summary>
+    /// <summary>The dictionary keys a command's positional arguments are filed under, in order.</summary>
+    static string[] Positionals(string command) => command switch
+    {
+        "diff" => ["before", "after"],
+        "help" => ["command"],
+        "version" => [],
+        _ => ["file"]
+    };
+
+    /// <summary>The positional slots that hold a path: every one but the command help names. None of them is a flag.</summary>
     static bool IsPathSlot(string command, string key) =>
-        command is "diff"
-            ? key.Equals("before", StringComparison.OrdinalIgnoreCase) || key.Equals("after", StringComparison.OrdinalIgnoreCase)
-            : key.Equals("file", StringComparison.OrdinalIgnoreCase);
+        command is not "help" && Positionals(command).Contains(key, StringComparer.OrdinalIgnoreCase);
 }

@@ -96,8 +96,10 @@ public sealed class FileIdentityCliTests : IDisposable
         var run = await Dotcov(cancellationToken, SourceCheckout(), ["check", _report, "--min-line", "40", .. identity]);
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
-        await Assert.That(run.StdOut).StartsWith("PASS: line 50.0% (min 40%)");
-        await Assert.That(run.StdErr).IsEmpty();
+        await Assert.That(run.StdOut).IsEmpty();
+        // The verdict alone: a resolved identity leaves no warning behind it.
+        await Assert.That(run.StdErr).StartsWith("PASS: line 50.0% (min 40%)");
+        await Assert.That(run.StdErr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)).HasSingleItem();
     }
 
     [Test]
@@ -141,7 +143,7 @@ public sealed class FileIdentityCliTests : IDisposable
         await Assert.That(ambiguous.StdErr).StartsWith(
             "NODATA: worst CRAP 2.5 (max 30) - 1 file has ambiguous identity across 2 source roots;");
         await Assert.That(resolved.ExitCode).IsEqualTo(0).Because(resolved.Output);
-        await Assert.That(resolved.StdOut).Contains("PASS: worst CRAP 2.5 (max 30)");
+        await Assert.That(resolved.StdErr).StartsWith("PASS: worst CRAP 2.5 (max 30)");
     }
 
     [Test]
@@ -157,7 +159,7 @@ public sealed class FileIdentityCliTests : IDisposable
         await Assert.That(ambiguous.ExitCode).IsEqualTo(DotCovCli.NoDataExitCode).Because(ambiguous.Output);
         await Assert.That(ambiguous.StdErr).StartsWith(Ambiguous);
         await Assert.That(resolved.ExitCode).IsEqualTo(0).Because(resolved.Output);
-        await Assert.That(resolved.StdOut).Contains("PASS: line 50.0% (min 40%)");
+        await Assert.That(resolved.StdErr).StartsWith("PASS: line 50.0% (min 40%)");
     }
 
     [Test]
@@ -172,7 +174,7 @@ public sealed class FileIdentityCliTests : IDisposable
             "test", "--min-branch", "90");
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
-        await Assert.That(run.StdOut).Contains("PASS: line 50.0% (min 0%), branch 100.0% (min 90%)");
+        await Assert.That(run.StdErr).StartsWith("PASS: line 50.0% (min 0%), branch 100.0% (min 90%)");
     }
 
     [Test]

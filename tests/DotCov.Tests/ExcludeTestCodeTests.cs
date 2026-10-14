@@ -104,8 +104,11 @@ public sealed class ExcludeTestCodeTests : IDisposable
         var (code, stdout, stderr) = await Run("check", Mixed(), "--min-line", "50", "--exclude-test-code");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).StartsWith("PASS: line 50.0%");
-        await Assert.That(stderr).StartsWith(TestCodeRules);
+        await Assert.That(stdout).IsEmpty();
+        // The verdict leads stderr; the exclusion it was computed under follows it.
+        var lines = stderr.Split(Environment.NewLine);
+        await Assert.That(lines[0]).StartsWith("PASS: line 50.0% (min 50%)");
+        await Assert.That(lines[1]).IsEqualTo(TestCodeRules);
     }
 
     [Test]
@@ -128,7 +131,9 @@ public sealed class ExcludeTestCodeTests : IDisposable
         var (code, stdout, stderr) = await Run("crap", Mixed(), "--exclude-test-code", "--format", "json");
 
         await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stderr).IsEmpty();
+        // The verdict alone: JSON carries the exclusion, so stderr does not repeat it.
+        await Assert.That(stderr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)).HasSingleItem();
+        await Assert.That(stderr).StartsWith("PASS: worst CRAP ");
         using var json = JsonDocument.Parse(stdout);
         await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
             .IsEquivalentTo([TestFile]);

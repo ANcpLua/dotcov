@@ -27,6 +27,7 @@ internal sealed record CoverageParameters(
     public const string DefaultPattern = ReportPattern.DefaultText;
     public const string DefaultMaxChars = "50000000";
     public const string DefaultBadgeDirectory = "";
+    public const string DefaultJsonPath = "";
     public const string DefaultProbeSources = "false";
 
     public static CoverageParameters Parse(

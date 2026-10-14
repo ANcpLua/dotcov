@@ -42,7 +42,7 @@ public sealed class CliBadgeTests : IDisposable
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", minLine, "--badge-dir", directory);
 
         await Assert.That(code).IsEqualTo(expectedCode).Because(stderr);
-        await AssertBadge(directory, message, color, VerdictLine(code, stdout, stderr));
+        await AssertBadge(directory, message, color, VerdictLine(stdout, stderr));
     }
 
     [Test]
@@ -53,7 +53,7 @@ public sealed class CliBadgeTests : IDisposable
         var (code, stdout, stderr) = await Run("check", _ws.CreateDirectory("empty"), "--min-line", "80", "--badge-dir", directory);
 
         await Assert.That(code).IsEqualTo(3);
-        await AssertBadge(directory, "no data", "lightgrey", VerdictLine(code, stdout, stderr));
+        await AssertBadge(directory, "no data", "lightgrey", VerdictLine(stdout, stderr));
     }
 
     [Test]
@@ -65,7 +65,7 @@ public sealed class CliBadgeTests : IDisposable
         var (code, stdout, stderr) = await Run("check", BranchHalf(), "--min-line", "100", "--min-branch", "90", "--badge-dir", directory);
 
         await Assert.That(code).IsEqualTo(1);
-        await AssertBadge(directory, "100.0% / 50.0%", "red", VerdictLine(code, stdout, stderr));
+        await AssertBadge(directory, "100.0% / 50.0%", "red", VerdictLine(stdout, stderr));
     }
 
     [Test]
@@ -77,19 +77,21 @@ public sealed class CliBadgeTests : IDisposable
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "80", "--badge-dir", directory);
 
         await Assert.That(code).IsEqualTo(1);
-        await AssertBadge(directory, "50.0%", "red", VerdictLine(code, stdout, stderr));
+        await AssertBadge(directory, "50.0%", "red", VerdictLine(stdout, stderr));
     }
 
     [Test]
-    public async Task Check_PassingGate_BadgeUnwritable_Exits5_ErrorFirst()
+    public async Task Check_PassingGate_BadgeUnwritable_Exits5_ErrorAfterTheVerdict()
     {
         var blocked = _ws.Write("blocked", "a file where the directory should go");
 
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line", "40", "--badge-dir", blocked);
 
         await Assert.That(code).IsEqualTo(5);
-        await Assert.That(stdout).Contains("PASS: line 50.0%");
-        await Assert.That(stderr).StartsWith($"error: could not write the badge to '{blocked}': ");
+        await Assert.That(stdout).IsEmpty();
+        var lines = stderr.Split(Environment.NewLine);
+        await Assert.That(lines[0]).StartsWith("PASS: line 50.0% (min 40%)");
+        await Assert.That(lines[1]).StartsWith($"error: could not write the badge to '{blocked}': ");
     }
 
     [Test]
@@ -146,8 +148,9 @@ public sealed class CliBadgeTests : IDisposable
     }
 
     /// <summary>The verdict line: stdout carries a pass, stderr leads with any other outcome.</summary>
-    private static string VerdictLine(int code, string stdout, string stderr) =>
-        (code is 0 ? stdout : stderr).Split(Environment.NewLine)[0];
+    /// <summary>The verdict check printed: the first stderr line on every outcome, with nothing on stdout.</summary>
+    private static string VerdictLine(string stdout, string stderr) =>
+        stdout.Length is 0 ? stderr.Split(Environment.NewLine)[0] : $"unexpected stdout: {stdout}";
 
     /// <summary>Both files, from the gate whose verdict the command printed.</summary>
     private static async Task AssertBadge(string directory, string message, string color, string verdict)

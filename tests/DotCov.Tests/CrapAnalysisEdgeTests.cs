@@ -181,6 +181,22 @@ public sealed class CrapAnalysisEdgeTests
     }
 
     [Test]
+    public async Task HandBuiltPropertyAggregateBelowOne_IsNoComplexityMeasurement()
+    {
+        // The reader drops an executable member whose complexity is below 1; a caller handing
+        // Analyze its own table gets the same answer: the aggregate scores no accessor.
+        var metrics = CodeMetricsReportBuilder.ParseType("MyApp", "R", m => m.Property("int R.X", 2))
+            .Select(static m => m with { CyclomaticComplexity = 0, ExecutableLines = 1 }).ToArray();
+        var getX = Method("MyApp.R", "get_X", "()", complexity: null, lines: [(3, 0)]);
+
+        var report = CrapAnalysis.Analyze([getX], metrics);
+
+        await Assert.That(report.Methods).IsEmpty();
+        var u = await Assert.That(report.Unscored).HasSingleItem();
+        await Assert.That(u.Method).IsEqualTo("MyApp.R.get_X");
+    }
+
+    [Test]
     public async Task TopLevelProgram_RealMetricsShape_ScoresAndFailsTheGate()
     {
         // The real shape for top-level statements: <Namespace Name="<global namespace>">,

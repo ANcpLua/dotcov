@@ -45,6 +45,14 @@ public sealed class CoreApiHardeningTests
     }
 
     [Test]
+    public async Task DefaultCrapMethod_HasNoUncoveredLines()
+    {
+        var arr = new CrapMethod[1];
+
+        await Assert.That(arr[0].UncoveredLines).IsEmpty();
+    }
+
+    [Test]
     public async Task DefaultFileDelta_HasEmptyLineChanges()
     {
         var arr = new FileDelta[1];

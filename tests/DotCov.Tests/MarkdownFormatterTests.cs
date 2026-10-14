@@ -258,15 +258,35 @@ public sealed class MarkdownFormatterTests
     [Test]
     public async Task FormatDiff_UnmeasuredFile_DeltaCellIsDashNotBareSign()
     {
-        // A zero-line file has null rates on both sides, so its delta is null too — every
+        // An added zero-line file has no rate on either side, so its delta is null too — every
         // cell must follow the dash convention.
         var diff = CoverageDiff.Compare(
-            new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]),
+            CoverageReport.Empty,
             new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
 
         var md = MarkdownFormatter.FormatDiff(diff);
 
-        await Assert.That(md).Contains("| `empty.cs` | - | - | - | Unchanged |");
+        await Assert.That(md).Contains("| `empty.cs` | - | - | - | Added |");
+    }
+
+    [Test]
+    public async Task FormatDiff_ListsOnlyChangedFiles_AndCountsTheRest()
+    {
+        var diff = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("still.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0), new FileCoverage("still.cs", 5, 10, 0, 0)]));
+        var twoStill = CoverageDiff.Compare(
+            new CoverageReport([new FileCoverage("x.cs", 5, 10, 0, 0), new FileCoverage("y.cs", 5, 10, 0, 0)]),
+            new CoverageReport([new FileCoverage("x.cs", 5, 10, 0, 0), new FileCoverage("y.cs", 5, 10, 0, 0)]));
+
+        var md = MarkdownFormatter.FormatDiff(diff);
+
+        await Assert.That(md).Contains("| `a.cs` | 50.0% | 80.0% | +30.0% | Modified |" + Environment.NewLine +
+                                       Environment.NewLine + "**Unchanged:** 1 file" + Environment.NewLine);
+        await Assert.That(md).DoesNotContain("still.cs");
+        await Assert.That(MarkdownFormatter.FormatDiff(twoStill)).Contains(
+            "|------|-------:|------:|------:|--------|" + Environment.NewLine + Environment.NewLine +
+            "**Unchanged:** 2 files" + Environment.NewLine);
     }
 
     // ── Warnings section: silent when empty, structured when populated ──

@@ -115,7 +115,8 @@ public sealed class CrapFormatterEdgeTests
         var root = JsonDocument.Parse(json).RootElement.GetProperty("gate");
         await Assert.That(root.GetProperty("outcome").GetString()).IsEqualTo("disabled");
         await Assert.That(root.GetProperty("maxCrap").ValueKind).IsEqualTo(JsonValueKind.Null);
-        await Assert.That(root.GetProperty("reason").GetString()).IsEqualTo("no finite threshold - this gate cannot fail");
+        await Assert.That(root.GetProperty("exitCode").GetInt32()).IsEqualTo(4);
+        await Assert.That(root.GetProperty("reason").GetString()).IsEqualTo("DISABLED: worst CRAP 30.0 (max Infinity) - no finite threshold - this gate cannot fail");
         await Assert.That(root.GetProperty("worstScore").GetDouble()).IsEqualTo(30.01);
     }
 

@@ -1,6 +1,4 @@
-using System.Buffers;
 using System.Text;
-using System.Text.Json;
 using static System.FormattableString;
 
 namespace DotCov.Formatters;
@@ -24,7 +22,8 @@ public static class CrapFormatter
         var rows = WorstFirst(report, top);
         var maxName = Math.Max("Method".Length, rows.Count > 0 ? rows.Max(static m => m.Method.Length) : 0);
 
-        var headerPlain = $"{"Method".PadRight(maxName)}  {"Comp",5}  {"Cov %",8}  {"CRAP",8}";
+        // Location last and unpadded: file:line is what an editor or agent jumps to.
+        var headerPlain = $"{"Method".PadRight(maxName)}  {"Comp",5}  {"Cov %",8}  {"CRAP",8}  Location";
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
@@ -37,7 +36,8 @@ public static class CrapFormatter
                 $"{m.Method.PadRight(maxName)}  " +
                 Invariant($"{m.Complexity,5}  ") +
                 Invariant($"{m.Coverage * 100,7:F1}%  ") +
-                (over ? pen.Red(crapCell) : pen.Green(crapCell)));
+                (over ? pen.Red(crapCell) : pen.Green(crapCell)) +
+                $"  {Location(m)}");
         }
 
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
@@ -88,13 +88,13 @@ public static class CrapFormatter
         if (rows.Count is 0) return;
 
         sb.AppendLine();
-        sb.AppendLine("| Method | Comp | Cov % | CRAP |");
-        sb.AppendLine("|--------|-----:|------:|-----:|");
+        sb.AppendLine("| Method | Comp | Cov % | CRAP | Location |");
+        sb.AppendLine("|--------|-----:|------:|-----:|----------|");
         foreach (var m in rows)
         {
             var over = CrapAnalysis.Exceeds(m.Score, gate.MaxCrap);
             sb.AppendLine(Invariant(
-                $"| {MarkdownFormatter.TableCode(m.Method)} | {m.Complexity} | {m.Coverage * 100:F1}% | {CrapAnalysis.DisplayScore(m.Score, gate.MaxCrap):F1}{(over ? " ❌" : "")} |"));
+                $"| {MarkdownFormatter.TableCode(m.Method)} | {m.Complexity} | {m.Coverage * 100:F1}% | {CrapAnalysis.DisplayScore(m.Score, gate.MaxCrap):F1}{(over ? " ❌" : "")} | {MarkdownFormatter.TableCode(Location(m))} |"));
         }
         if (top is { } t && report.Methods.Count > t)
         {
@@ -125,23 +125,26 @@ public static class CrapFormatter
     }
 
     /// <summary>
-    /// Wire shape follows <see cref="JsonFormatter"/>'s conventions: camelCase, two-space
-    /// indentation, absent key == clean (empty lists omitted), hand-written tokens
-    /// (no reflection — AOT/trim safe). Percentages are rounded to two decimals like the
-    /// coverage JSON; the raw 0..1 ratio is recoverable from the hit counts upstream.
+    /// Wire shape follows <see cref="JsonFormatter"/>'s conventions: the same envelope
+    /// (<c>schemaVersion</c>, <c>command</c> <c>crap</c>, <c>inputs</c>, <c>warnings</c>),
+    /// camelCase, two-space indentation, relaxed escaping, a trailing newline, empty per-item
+    /// details omitted, hand-written tokens (no reflection — AOT/trim safe). The <c>gate</c>
+    /// object carries the outcome, its exit code (<see cref="ExitCodes.For"/>) and the verdict
+    /// line as <c>reason</c>, like check's. Each method names its <c>file</c>, start
+    /// <c>line</c>, and <c>uncovered</c> line ranges. Percentages are rounded to two decimals
+    /// like the coverage JSON; the raw 0..1 ratio is recoverable from the hit counts upstream.
     /// <c>gate.maxCrap</c> is <c>null</c> when the maximum is not a finite number (an infinite
     /// <c>--max-crap</c> disables the gate): JSON cannot spell infinity, and the outcome says
     /// <c>disabled</c>.
     /// </summary>
-    public static string FormatJson(CrapReport report, CrapGateResult gate, int? top = null)
-    {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
+    public static string FormatJson(CrapReport report, CrapGateResult gate, int? top = null) =>
+        JsonFormatter.Write(writer =>
         {
-            writer.WriteStartObject();
+            JsonFormatter.WriteHeader(writer, "crap", report.Inputs, report.Warnings);
 
             writer.WriteStartObject("gate");
             writer.WriteString("outcome", gate.Outcome.ToString().ToLowerInvariant());
+            writer.WriteNumber("exitCode", ExitCodes.For(gate.Outcome));
             // JSON has no Infinity or NaN, and Utf8JsonWriter throws on them. A non-finite max -
             // above all the documented infinite --max-crap that disables the gate - is written as
             // null: the mapping JSON.stringify applies, so the key keeps its number-or-null type
@@ -151,7 +154,7 @@ public static class CrapFormatter
             writer.WriteNumber("scoredMethods", gate.ScoredMethods);
             writer.WriteNumber("aboveThreshold", gate.AboveThreshold);
             if (gate.WorstScore is { } worst) writer.WriteNumber("worstScore", Round(worst));
-            writer.WriteString("reason", gate.Reason);
+            writer.WriteString("reason", gate.ToString());
             writer.WriteEndObject();
 
             writer.WriteStartArray("methods");
@@ -167,6 +170,7 @@ public static class CrapFormatter
                 writer.WriteBoolean("aboveThreshold", CrapAnalysis.Exceeds(m.Score, gate.MaxCrap));
                 writer.WriteString("complexitySource",
                     m.ComplexitySource is CrapComplexitySource.CoverageReport ? "coverageReport" : "metricsFile");
+                if (m.UncoveredLines.Count > 0) writer.WriteString("uncovered", LineRanges.Format(m.UncoveredLines));
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -194,12 +198,10 @@ public static class CrapFormatter
             }
 
             JsonFormatter.WriteExclusion(writer, report.Exclusion);
+        });
 
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(buffer.WrittenSpan);
-    }
+    /// <summary>Where a method starts, as <c>file:line</c>.</summary>
+    private static string Location(CrapMethod m) => Invariant($"{m.File}:{m.StartLine}");
 
     /// <summary>
     /// The single worst-first ordering: descending score, ties keep document order (stable

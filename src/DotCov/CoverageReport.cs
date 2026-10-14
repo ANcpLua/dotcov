@@ -612,6 +612,14 @@ public sealed class CoverageReport
     public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 
     /// <summary>
+    /// The <see cref="ReportInput.SourceName"/> of every document this report was parsed and
+    /// merged from, in merge order; empty for a report read from a bare stream or built by hand.
+    /// Every JSON document lists them as <c>inputs</c>, so a consumer can see which reports a
+    /// number came from.
+    /// </summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
+    /// <summary>
     /// The <c>&lt;source&gt;</c> roots the report declared, normalized (separators flipped,
     /// drive letter uppercased, trailing <c>/</c> trimmed above one character) and
     /// deduplicated, in document order. Relative class filenames were resolved against the
@@ -672,14 +680,37 @@ public sealed class CoverageReport
     /// </summary>
     public double? StrictLineRate => TotalLines is 0 ? null : (double)Files.Sum(static f => f.StrictlyHitLines) / TotalLines;
 
+    /// <summary>The number of offenders a gate lists unless told otherwise (<c>--top</c>).</summary>
+    public const int DefaultOffenderLimit = 20;
+
     /// <summary>
-    /// Files measured below <paramref name="linePercent"/>. Files with no line data are not
-    /// "below" anything and are omitted — they are unmeasured, not failing. Uses the same
-    /// epsilon-tolerant comparison as <see cref="Evaluate"/>, so a file at exactly the
-    /// threshold is never listed as an offender.
+    /// What to fix next after a <see cref="GateOutcome.Fail"/>: every file below the threshold
+    /// of a dimension <paramref name="gate"/> failed, worst first — the lowest of its failing
+    /// rates, ties by ordinal path. A file with no data in a dimension is not below it, and a
+    /// passing, unmeasurable, or disabled gate blames no file at all. Uses the same
+    /// epsilon-tolerant comparison as <see cref="Evaluate"/>, so a file exactly at a threshold
+    /// is never listed.
     /// </summary>
-    public IEnumerable<FileCoverage> BelowPercent(double linePercent) =>
-        Files.Where(f => f.LineRate is { } r && !GateResult.MeetsThreshold(r, linePercent));
+    public IReadOnlyList<FileCoverage> Offenders(GateResult gate)
+    {
+        if (gate.Outcome is not GateOutcome.Fail) return [];
+
+        return Files
+            .Select(f => (File: f, Worst: Min(
+                gate.LineBelowThreshold ? Below(f.LineRate, gate.MinLinePercent) : null,
+                gate.BranchBelowThreshold ? Below(f.BranchRate, gate.MinBranchPercent) : null)))
+            .Where(static o => o.Worst is not null)
+            .OrderBy(static o => o.Worst)
+            .ThenBy(static o => o.File.Path, StringComparer.Ordinal)
+            .Select(static o => o.File)
+            .ToList();
+
+        static double? Below(double? rate, double minPercent) =>
+            rate is { } r && !GateResult.MeetsThreshold(r, minPercent) ? r : null;
+
+        static double? Min(double? line, double? branch) =>
+            line is { } l && branch is { } b ? Math.Min(l, b) : line ?? branch;
+    }
 
     /// <summary>
     /// Decide whether this report clears the given thresholds. Returns the full verdict rather
@@ -757,6 +788,7 @@ public sealed class CoverageReport
         return new CoverageReport(kept)
         {
             Warnings = Warnings,
+            Inputs = Inputs,
             SourceRoots = SourceRoots,
             AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
             Exclusion = Exclusion.Then(rules, keepRules, excluded)
@@ -796,6 +828,7 @@ public sealed class CoverageReport
         return new CoverageReport(merged.Values.ToList())
         {
             Warnings = warnings,
+            Inputs = [.. a.Inputs, .. b.Inputs],
             // Dedup by normalized identity, not raw spelling: RootsDiffer compares normalized
             // sequences, so a raw union of c:\repo and C:/repo/ would keep two entries and
             // permanently re-flag every later merge as ambiguous.

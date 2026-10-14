@@ -208,12 +208,13 @@ public sealed class DotCovCliEdgeTests : IDisposable
     public async Task ValueFlagWithEqualsValue_AdvisesTheSpaceSeparatedForm_ThatWorks()
     {
         var (code, stdout, stderr) = await Run("check", HalfCovered(), "--min-line=40");
-        var (adviceCode, adviceOut, _) = await Run("check", HalfCovered(), "--min-line", "40");
+        var (adviceCode, _, adviceErr) = await Run("check", HalfCovered(), "--min-line", "40");
 
+        // The advice names the fix itself, so no "Did you mean" repeats the option.
         await AssertOneLineError(code, stdout, stderr,
-            "error: Unknown option '--min-line=40' for 'check'. Write '--min-line 40'.");
+            $"error: Unknown option '--min-line=40' for 'check'. Write '--min-line 40'.{Environment.NewLine}valid options for 'check': ");
         await Assert.That(adviceCode).IsEqualTo(0);
-        await Assert.That(adviceOut).Contains("PASS: line 50.0% (min 40%)");
+        await Assert.That(adviceErr).StartsWith("PASS: line 50.0% (min 40%)");
     }
 
     // ── Every failure type RunAsync admits becomes one "error:" line; anything else propagates ──
@@ -284,7 +285,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
         using var json = JsonDocument.Parse(stdout);
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("pass");
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("reason").GetString())
-            .IsEqualTo("all 1 methods at or below threshold");
+            .IsEqualTo("PASS: worst CRAP 1.0 (max 30) - all 1 methods at or below threshold");
     }
 
     // ── A gate without a verdict blames no files ──
