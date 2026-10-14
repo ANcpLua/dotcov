@@ -82,19 +82,7 @@ public interface ICoverageReport : IFalloutBuild
             if (!Directory.Exists(searchDirectory))
                 throw Failure(ExitCodes.Error, $"Coverage search directory '{searchDirectory}' does not exist");
 
-            // Nothing to measure is NODATA, as check reads a directory without matches.
-            var inputs = ReportResolver.ResolveDirectory(searchDirectory, parameters.Pattern);
-            if (inputs.Count is 0)
-                throw Failure(ExitCodes.NoData, $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
-
-            // Every match is merged, so a report an earlier run left under TestResults lifts the
-            // result silently unless the merged set is named.
-            if (inputs.Count > 1)
-                Log.Information("Merging {Count} coverage reports: {Reports}",
-                    inputs.Count, inputs.Select(static input => input.SourceName));
-
-            var report = ParseReports(inputs, parameters.MaxChars, parameters.Identity)
-                .Exclude(parameters.ExclusionPatterns);
+            var report = ReadReports(searchDirectory, parameters).Exclude(parameters.ExclusionPatterns);
 
             foreach (var warning in report.Warnings)
                 Log.Warning("Coverage warning ({Kind}) {File}:{Line}: {Detail}",
@@ -171,15 +159,30 @@ public interface ICoverageReport : IFalloutBuild
     }
 
     /// <summary>
-    /// Parse at the target boundary: a malformed report fails the target naming the file and XML
-    /// coordinates (exit 5), and a SourceRoot no report declares fails naming the parameter
-    /// (exit 2, a parameter that cannot be honored).
+    /// Find and parse the reports at the target boundary. No match is NODATA (exit 3), as check
+    /// reads a directory without matches; a report that cannot be listed, opened, or read fails
+    /// naming the cause (exit 5); a malformed one names the file and XML coordinates (exit 5); a
+    /// SourceRoot no report declares names the parameter (exit 2, a parameter that cannot be honored).
     /// </summary>
-    private CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars, FileIdentity identity)
+    private CoverageReport ReadReports(string searchDirectory, CoverageParameters parameters)
     {
         try
         {
-            return CoberturaParser.Parse(inputs, maxChars, identity);
+            var inputs = ReportResolver.ResolveDirectory(searchDirectory, parameters.Pattern);
+            if (inputs.Count is 0)
+                throw Failure(ExitCodes.NoData, $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
+
+            // Every match is merged, so a report an earlier run left under TestResults lifts the
+            // result silently unless the merged set is named.
+            if (inputs.Count > 1)
+                Log.Information("Merging {Count} coverage reports: {Reports}",
+                    inputs.Count, inputs.Select(static input => input.SourceName));
+
+            return CoberturaParser.Parse(inputs, parameters.MaxChars, parameters.Identity);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw Failure(ExitCodes.Error, $"Could not read coverage reports in {searchDirectory}: {ex.Message}", ex);
         }
         catch (ReportParseException ex)
         {

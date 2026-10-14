@@ -158,6 +158,32 @@ public sealed class FalloutBuildTests : IDisposable
         await Assert.That(run.Output).Contains($"Could not parse coverage report {bad} (line 1, position ");
     }
 
+    [Test]
+    public async Task SeveralReports_AreMerged_AndNamed(CancellationToken cancellationToken)
+    {
+        _ws.Write("TestResults/a/coverage.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, 1)));
+        _ws.Write("TestResults/b/coverage.cobertura.xml", Cobertura.NewDoc().AddClass("src/B.cs", c => c.Line(1, 0)));
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
+
+        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
+        await Assert.That(run.Output).Contains("Merging 2 coverage reports");
+        await Assert.That(run.Output).Contains("PASS: line 50.0%");
+    }
+
+    [Test]
+    public async Task UnreadableReport_Exits5_NamingTheCause(CancellationToken cancellationToken)
+    {
+        var path = _ws.Write("TestResults/coverage.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, 1)));
+        // An exclusive handle refuses the build's open on every OS (.NET locks files on Unix too).
+        await using var held = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
+
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
+        await Assert.That(run.Output).Contains($"Could not read coverage reports in {Path.GetDirectoryName(path)}: ");
+    }
+
     // ── Parameters ────────────────────────────────────────────────────────────
 
     [Test]

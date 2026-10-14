@@ -32,17 +32,24 @@ public static partial class DotCovCli
         var results = Directory.CreateDirectory(run).FullName;
 
         // JSON and markdown keep stdout to the document and stderr to the verdict, so the dotnet
-        // test log is held back and shown only when the run fails.
-        var log = output.Format is "table" ? stdout : new StringWriter();
-        var exitCode = await RunDotNet(
-            TestArguments(opts.GetValueOrDefault("file"), results, forwarded), log, opts.ContainsKey("no-color"));
+        // test log goes to a file in the run directory (never into memory: a verbose suite can
+        // log a lot) and reaches stderr only when the run fails.
+        var logFile = output.Format is "table" ? null : Path.Combine(results, "dotnet-test.log");
+        int exitCode;
+        await using (var file = logFile is null ? null : new StreamWriter(logFile))
+            exitCode = await RunDotNet(TestArguments(opts.GetValueOrDefault("file"), results, forwarded),
+                file ?? stdout, opts.ContainsKey("no-color"));
 
         // Coverage from a failed run measures tests that did not pass; it is not evaluated. Its
         // own exit code keeps a failing test apart from a report dotcov could not read.
         if (exitCode is not 0)
         {
             await stderr.WriteLineAsync($"error: dotnet test exited with code {exitCode}; coverage was not evaluated.");
-            if (log is StringWriter held) await stderr.WriteAsync(held.ToString());
+            if (logFile is not null)
+            {
+                using var held = new StreamReader(logFile);
+                while (await held.ReadLineAsync() is { } line) await stderr.WriteLineAsync(line);
+            }
             return TestRunFailedExitCode;
         }
 

@@ -814,6 +814,9 @@ full-suite and 100/100 coverage record.
 - Offenders worst first with uncovered ranges and partial branches (`--top`, default 20);
   `report --top`; crap `Location` column; empty-directory warnings; `--no-color`; diff lists
   changed files only; `dotcov test` holds the dotnet log back for json/md unless the run fails.
+- `dotcov test --format json|md` writes the dotnet log to `TestResults/<run>/dotnet-test.log`
+  and streams it to stderr only on failure, never into memory.
+- Fallout reads reports behind one boundary: a report that cannot be listed or opened exits 5.
 - Fallout `--coverage-json-path`. README rebuilt around usage, with an agent section; package
   READMEs and release notes rewritten; the oldest changelog entry dropped to keep 20.
 

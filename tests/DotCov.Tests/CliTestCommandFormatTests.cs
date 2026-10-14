@@ -6,8 +6,8 @@ namespace DotCov.Tests;
 /// <summary>
 /// `dotcov test --format` through the real tool process, with a stand-in dotnet that drops a
 /// prepared report into the run directory. JSON and markdown keep stdout to the document and stderr
-/// to the verdict, so the dotnet test log is shown only when the run fails; the gate, offenders, and
-/// exit code are check's.
+/// to the verdict, so the dotnet test log goes to the run directory and is shown only when the run
+/// fails; the gate, offenders, and exit code are check's.
 /// </summary>
 [NotInParallel(ProcessState.Environment)]
 [Category("Integration")]
@@ -43,6 +43,9 @@ public sealed class CliTestCommandFormatTests : IDisposable
         await Assert.That(offender.GetProperty("uncovered").GetString()).IsEqualTo("2-3");
         await Assert.That(run.StdErr).StartsWith("FAIL: line 50.0% (min 80%)");
         await Assert.That(run.StdErr).DoesNotContain("> ");
+        // The held-back log stays in the run directory for whoever wants it.
+        var log = Directory.GetFiles(Path.Combine(_ws.Root, "TestResults"), "dotnet-test.log", SearchOption.AllDirectories);
+        await Assert.That(await File.ReadAllTextAsync(log.Single())).StartsWith("> ");
         await Assert.That(run.StdErr).DoesNotContain("files below");
     }
 

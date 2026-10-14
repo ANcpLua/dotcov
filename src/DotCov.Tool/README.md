@@ -40,7 +40,8 @@ threshold, worst first, with the lines no test runs and the branches only partly
 - **Help.** `dotcov <command> --help` prints that command's usage, options and exit codes. A
   mistyped option answers with the closest valid one and the full option list, exit `2`.
 - **`dotcov test`** prints `reports: TestResults/<run>` on stderr after the verdict. With
-  `--format json` or `md` it holds the `dotnet test` log back and shows it only when the run fails.
+  `--format json` or `md` it writes the `dotnet test` log to `TestResults/<run>/dotnet-test.log` and
+  shows it on stderr only when the run fails.
 
 ## Commands
 
