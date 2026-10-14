@@ -454,7 +454,7 @@ public sealed class CodeMetricsReaderEdgeTests
         await Assert.That(members.Count).IsEqualTo(count + 1);
         await Assert.That(members.Take(count).Select(m => m.TypeName).Distinct())
             .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A", depth))]);
-        await Assert.That(members.Take(count).Select(m => m.TypeIdentity).Distinct())
+        await Assert.That(members.Take(count).Select(m => m.TypeIdentity!).Distinct())
             .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A`1", depth))]);
         await Assert.That(members[^1].TypeIdentity).IsEqualTo("App.A`1");
         await Assert.That(members[^1].MemberName).IsEqualTo("Parent");
