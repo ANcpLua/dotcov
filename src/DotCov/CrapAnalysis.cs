@@ -342,10 +342,7 @@ public static class CrapAnalysis
         // the coverage scope contains exactly one possible declaring-type identity.
         var types = methods.GroupBy(static m => m.TypeKey).ToDictionary(static g => g.Key,
             static g => g.Select(m => m.Name.TypeIdentity).Distinct().Take(2).ToArray());
-        // Cyclomatic complexity is at least 1 for anything executable: a lower value measured
-        // nothing and must not score 0. Only an explicit zero-body declaration keeps it, to stay
-        // out of the completeness accounting.
-        return members.Where(static m => m.CyclomaticComplexity >= 1 || m.ExecutableLines is 0).Select(m => m with
+        return members.Select(m => m with
         {
             TypeIdentity = m.TypeIdentity ?? (types.TryGetValue(m.TypeName, out var identities) &&
                 identities.Length == 1 ? identities[0] : null),
@@ -615,12 +612,13 @@ public static class CrapAnalysis
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
                     var key = $"{m.TypeIdentity ?? m.TypeName}|{m.MemberName}";
                     var signature = signatures[i];
-                    // Retain an empty bucket for explicit zero-body accessors so an aggregate
-                    // cannot restore the declaration's non-executable complexity as a fallback.
-                    var candidate = m.ExecutableLines is 0
-                        ? default : new MetricsCandidates(m.CyclomaticComplexity, i, 1, signature is null);
+                    // A zero-body declaration needs no coverage, and a complexity below 1 measured
+                    // nothing. Neither supplies complexity: both leave an empty bucket, so an
+                    // aggregate cannot fill in, and only the measured row remains unmatched.
+                    var measured = m.ExecutableLines is not 0 && m.CyclomaticComplexity >= 1;
+                    var candidate = measured ? new MetricsCandidates(m.CyclomaticComplexity, i, 1, signature is null) : default;
                     AddCandidates(target.All, key, candidate);
-                    (CollectionsMarshal.GetValueRefOrAddDefault(target.Rows, key, out _) ??= []).Add(i);
+                    if (measured) (CollectionsMarshal.GetValueRefOrAddDefault(target.Rows, key, out _) ??= []).Add(i);
                     AddCandidates(target.ByArity, (key, m.Arity), candidate);
                     if (signature is not null) AddCandidates(target.BySignature, (key, signature), candidate);
                     // The metrics display omits static/instance information for extension
@@ -631,8 +629,8 @@ public static class CrapAnalysis
                     // Older Metrics versions emit no <Accessors> children; the property
                     // aggregate (sum over its accessors) is the honest-but-coarser fallback,
                     // used only when no accessor entry matched. An aggregate below 1 summed no
-                    // declared accessor (a positional record property) and never gets here.
-                    if (m.ExecutableLines is 0) break;
+                    // declared accessor (a positional record property) — nothing was measured.
+                    if (m.CyclomaticComplexity < 1 || m.ExecutableLines is 0) break;
                     target.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|get_{m.MemberName}", (i, m.CyclomaticComplexity));
                     target.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|set_{m.MemberName}", (i, m.CyclomaticComplexity));
                     break;

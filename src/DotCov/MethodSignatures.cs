@@ -17,8 +17,22 @@ internal static partial class MethodSignatures
         ["dynamic"] = "System.Object", ["void"] = "System.Void",
         ["nint"] = "System.IntPtr", ["nuint"] = "System.UIntPtr"
     };
+    private static readonly Dictionary<string, string> VisualBasicAliases = new(StringComparer.Ordinal)
+    {
+        ["Boolean"] = "System.Boolean", ["Byte"] = "System.Byte", ["SByte"] = "System.SByte",
+        ["Short"] = "System.Int16", ["UShort"] = "System.UInt16", ["Integer"] = "System.Int32",
+        ["UInteger"] = "System.UInt32", ["Long"] = "System.Int64", ["ULong"] = "System.UInt64",
+        ["Char"] = "System.Char", ["Single"] = "System.Single", ["Double"] = "System.Double",
+        ["Decimal"] = "System.Decimal", ["String"] = "System.String", ["Object"] = "System.Object",
+        ["Date"] = "System.DateTime"
+    };
     [GeneratedRegex(@"(?<![\w@.])\w+", RegexOptions.CultureInvariant)]
     private static partial Regex TypeWords();
+
+    // Visual Basic: [modifiers] name As Type.
+    [GeneratedRegex(@"^((?:(?:ByRef|ByVal|Optional|ParamArray)\s+)*)[\p{L}_]\w*\s+As\s+(.+)$",
+        RegexOptions.CultureInvariant | RegexOptions.Singleline)]
+    private static partial Regex VisualBasicParameter();
 
     [GeneratedRegex(@"\bSystem\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Char|Single|Double|Decimal|IntPtr|UIntPtr)\?", RegexOptions.CultureInvariant)]
     private static partial Regex NullableValueTypes();
@@ -79,6 +93,18 @@ internal static partial class MethodSignatures
             return full is not null && (full == value || full.EndsWith("." + value, StringComparison.Ordinal))
                 ? full : value;
         });
+    }
+
+    /// <summary>
+    /// Visual Basic displays name the member kind and end a function with its return type
+    /// (<c>Function A.M(x As Integer) As Long</c>); reduce them to <c>A.M(x As Integer)</c>.
+    /// </summary>
+    internal static string VisualBasicDisplay(string display)
+    {
+        if (display.StartsWith("Sub ", StringComparison.Ordinal)) return display[4..];
+        if (!display.StartsWith("Function ", StringComparison.Ordinal)) return display;
+        var end = display.LastIndexOf(") As ", StringComparison.Ordinal);
+        return end < 0 ? display[9..] : display[9..(end + 1)];
     }
 
     internal static void ValidateLength(string text, string identity)
@@ -189,14 +215,54 @@ internal static partial class MethodSignatures
         var types = new List<string>();
         foreach (var parameter in BalancedText.SplitTopLevel(parameters))
         {
-            var equals = BalancedText.LastIndexOfTopLevel(parameter, '=');
-            var declaration = equals < 0 ? parameter : parameter[..equals].TrimEnd();
+            var unbracketed = parameter.StartsWith('[') ? parameter[1..^1] : parameter;
+            var equals = BalancedText.LastIndexOfTopLevel(unbracketed, '=');
+            var declaration = equals < 0 ? unbracketed : unbracketed[..equals].TrimEnd();
+            var visualBasic = VisualBasicParameter().Match(declaration);
+            if (visualBasic.Success)
+            {
+                if (VisualBasicType(visualBasic.Groups[2].Value) is not { } type) return null;
+                types.Add(NormalizeType((visualBasic.Groups[1].Value.Contains("ByRef") ? "ref " : "") + type));
+                continue;
+            }
             var space = BalancedText.LastIndexOfTopLevel(declaration, ' ');
             if (space < 0) return null;
             types.Add(NormalizeType(declaration[..space]));
         }
         if (valueType is not null) types.Add(NormalizeType(valueType));
         return string.Join(",", types);
+    }
+
+    // Visual Basic spells generics List(Of T) and arrays T() or T(,). Its tuples, a parenthesis
+    // at the start or after a space, stay unknown.
+    private static string? VisualBasicType(string type)
+    {
+        var output = new StringBuilder(type.Length);
+        var closers = new Stack<char>();
+        for (var i = 0; i < type.Length; i++)
+        {
+            switch (type[i])
+            {
+                case '(' when type.AsSpan(i + 1).StartsWith("Of "):
+                    output.Append('<');
+                    closers.Push('>');
+                    i += 3;
+                    break;
+                case '(' when i > 0 && type[i - 1] != ' ':
+                    output.Append('[');
+                    closers.Push(']');
+                    break;
+                case '(':
+                    return null;
+                case ')':
+                    output.Append(closers.TryPop(out var close) ? close : ')');
+                    break;
+                default:
+                    output.Append(type[i]);
+                    break;
+            }
+        }
+        return TypeWords().Replace(output.ToString(), static word => VisualBasicAliases.GetValueOrDefault(word.Value, word.Value));
     }
 
     private sealed class TupleFrame(int angle, int array, int start, bool nullable)

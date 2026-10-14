@@ -37,6 +37,25 @@ public sealed class CrapMetricsIdentityTests
     }
 
     [Test]
+    public async Task MalformedMetricsTuple_NamesTheFileAndMemberThroughCli()
+    {
+        using var ws = TempWorkspace.Create("dotcov-metrics-tuple-");
+        var coverage = ws.Write("coverage.xml", Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "()", "1", m => m.Line(1, 1))).ToBytes());
+        var deep = new string('(', 65) + "int" + string.Concat(Enumerable.Repeat(",int)", 65));
+        var metrics = ws.Write("metrics.xml", CodeMetricsReportBuilder.Create()
+            .Namespace("App", t => t.Type("A", m => m.Method($"void A.M({deep} value)", 2, 1))).ToBytes());
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var exitCode = await DotCovCli.RunAsync(["crap", coverage, "--metrics", metrics], stdout, stderr);
+
+        await Assert.That(exitCode).IsEqualTo(DotCovCli.ErrorExitCode);
+        await Assert.That(stderr.ToString()).Contains($"{metrics}: Metrics member display 'void A.M(((");
+        await Assert.That(stderr.ToString()).Contains("Tuple nesting exceeds 64 levels.");
+    }
+
+    [Test]
     [Arguments("App.A/<M>d__0", "MoveNext", "()", true)]
     [Arguments("App.A", "M", "()", false)]
     [Arguments("App.A", "M", "unknown", true)]

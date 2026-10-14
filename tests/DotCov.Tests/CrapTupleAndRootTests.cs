@@ -49,13 +49,12 @@ public sealed class CrapTupleAndRootTests
     [Arguments("empty")]
     public async Task InvalidTupleStructure_InMetrics_IsRejected(string shape)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
-            .Method("M", "(System.Int32)", null, m => m.Line(1, 1))).ToBytes());
-        var parsed = CoberturaParser.ParseMethods(input);
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"void A.M({TupleShape(shape)} x)", 2, 1));
+        var display = $"void A.M({TupleShape(shape)} x)";
 
-        var error = Assert.Throws<InvalidDataException>(() => CrapAnalysis.Analyze(parsed, metrics));
-        await Assert.That(error.Message).IsNotEmpty();
+        var error = Assert.Throws<InvalidDataException>(() =>
+            CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 2, 1)));
+
+        await Assert.That(error.Message).StartsWith($"Metrics member display '{display[..Math.Min(display.Length, 200)]}': ");
     }
 
     // A display parses when its brackets balance as a whole, so the stray tuple parenthesis

@@ -333,6 +333,18 @@ public sealed class CrapMetricsScopeTests
     }
 
     [Test]
+    public async Task NonPositiveComplexity_StillCountsAsAnUnmatchedRow()
+    {
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.Kept()", 1, 1).Method("void A.Missing()", 0));
+
+        var report = CrapAnalysis.Analyze(KeptCoverage(), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Missing()"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     public async Task ExecutableLines_StayOnTheirOwnMember_AndDoNotEraseMeasuredBodies()
     {
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m

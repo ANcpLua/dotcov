@@ -217,9 +217,19 @@ public static partial class CodeMetricsReader
         // Metrics — nothing to record.
         if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
         {
-            var display = reader.GetAttribute("Name") ?? "";
-            MethodSignatures.ValidateLength(display,
-                $"Metrics member display '{display[..Math.Min(display.Length, 200)]}'");
+            var raw = reader.GetAttribute("Name") ?? "";
+            var context = $"Metrics member display '{raw[..Math.Min(raw.Length, 200)]}'";
+            MethodSignatures.ValidateLength(raw, context);
+            var display = MethodSignatures.VisualBasicDisplay(raw);
+            // Check the parameter syntax here, where the member and file are still known.
+            try
+            {
+                MethodSignatures.Metrics(display);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"{context}: {ex.Message}", ex);
+            }
             state.MemberStack.Push(new PendingMember(display, reader.LocalName, reader.GetAttribute("File")));
         }
     }

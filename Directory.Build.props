@@ -30,7 +30,7 @@
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
 DotCov 3.0.1 fixes CRAP passes that 3.0.0 could not prove; line and branch gates are unchanged.
-CRAP: an unmeasured metrics method, an ambiguous overload match or a complexity below 1 now gives NODATA (exit 3); async overloads keep their own body, so diluted scores rise; state-machine-only async overloads match their metrics rows; function-pointer parameters no longer abort crap; declarations without a body need no coverage; --source-root also roots relative metrics paths.
+CRAP: an unmeasured metrics method, an ambiguous overload match or a complexity below 1 now gives NODATA (exit 3); async overloads keep their own body, so diluted scores rise; state-machine-only async overloads match their metrics rows; function-pointer parameters no longer abort crap; declarations without a body need no coverage; --source-root also roots relative metrics paths; Visual Basic metrics displays match.
 Exclusions: excluded methods count as measured without a score and never hide a kept sibling; merged reports no longer list a re-added file as excluded.
 DotCov.Fallout requires System.Security.Cryptography.Pkcs/Xml 10.0.13.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md

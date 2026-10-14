@@ -816,8 +816,11 @@ Verified:
 - Async bodies retain their own identity in either input order. Merged exclusion metadata
   lists only absent files. Indexed metrics matching avoids repeated candidate scans.
 - Patched Fallout cryptography dependencies to 10.0.13 without suppressing NuGet audit.
-- CRAP analysis ignores a metrics complexity below 1 on an executable member (reader input
-  and library callers alike), so its method is unscored (NODATA) instead of scored 0.
+- A metrics complexity below 1 on an executable member supplies no complexity (reader input
+  and library callers alike) and the row still counts as unmatched, so the gate is NODATA.
+- Visual Basic metrics displays (`Sub`/`Function … As T`, `ByRef`, `Optional`, `ParamArray`,
+  `(Of T)`, `T()`) are normalized in the reader; tuple syntax is validated there too, so a
+  malformed member names the metrics file and member.
 - Parentheses in a Cobertura signature (only a truncated function pointer produces them)
   make it unknown instead of an error; malformed tuple syntax stays an input error in
   metrics displays, where source tuple syntax really occurs.
