@@ -168,9 +168,9 @@ public sealed class CrapMetricsScopeTests
 
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
 
-        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(embeddedComplexity ? 1 : 9);
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(1);
         await Assert.That(report.UnmatchedMetricsMembers)
-            .IsEquivalentTo(["void A.M(int x)", "void A.M(string x)"]);
+            .IsEquivalentTo(["void A.M(string x)"]);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
 
@@ -213,11 +213,11 @@ public sealed class CrapMetricsScopeTests
         await Assert.That(exit).IsEqualTo(DotCovCli.NoDataExitCode);
         using var json = JsonDocument.Parse(stdout.ToString());
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
-        await Assert.That(stderr.ToString()).Contains("2 metrics members without coverage data");
+        await Assert.That(stderr.ToString()).Contains("1 metrics members without coverage data");
     }
 
     [Test]
-    [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(string x)", 2)]
+    [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(string x)", 1)]
     [Arguments("", "void A.M(int x)", "void A.M(string x)", 2)]
     [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(int x, int y)", 1)]
     [Arguments("(System.Int32)", "void A.M(int x, int y)", "void A.Other()", 2)]
@@ -274,7 +274,7 @@ public sealed class CrapMetricsScopeTests
         await Assert.That(exit).IsEqualTo(DotCovCli.NoDataExitCode);
         using var json = JsonDocument.Parse(stdout.ToString());
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
-        await Assert.That(stderr.ToString()).Contains("2 metrics members without coverage data");
+        await Assert.That(stderr.ToString()).Contains("1 metrics members without coverage data");
     }
 
     [Test]

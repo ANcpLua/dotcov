@@ -252,7 +252,7 @@ public static class CrapAnalysis
         // Different raw signatures/files can have the same available metrics identity.
         // Account for that identity once, even when every candidate is a zero-body declaration.
         foreach (var logical in excluded.Where(static l => !l.FoldedAway)
-                     .DistinctBy(static l => (l.TypeKey, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity)))
+                     .DistinctBy(static l => (l.TypeKey, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity, l.Signature)))
             MatchExcludedMetrics(logical, excludedMetricsIndex, consumed);
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, metricsIndex, consumed); // 3. resolve comp, score
@@ -270,15 +270,18 @@ public static class CrapAnalysis
         HashSet<int> consumed)
     {
         var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
-        var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity);
+        var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature);
         if (compatible.UniqueMember is { } index) consumed.Add(index);
     }
 
-    private static MetricsCandidates CompatibleMetrics(MetricsIndex index, string key, int? arity)
+    private static MetricsCandidates CompatibleMetrics(MetricsIndex index, string key, int? arity, string? signature)
     {
         if (arity is null) return index.All.GetValueOrDefault(key);
-        return MergeCandidates(index.ByArity.GetValueOrDefault((key, arity)),
+        var compatible = MergeCandidates(index.ByArity.GetValueOrDefault((key, arity)),
             index.ByArity.GetValueOrDefault((key, null)));
+        if (compatible.ExecutableCount > 1 && !compatible.HasUnknownSignature &&
+            index.BySignature.TryGetValue((key, signature!), out var exact)) return exact;
+        return compatible;
     }
 
     /// <summary>
@@ -313,7 +316,8 @@ public static class CrapAnalysis
             if (!byKey.TryGetValue(key, out var logical))
             {
                 int? arity = origin is null ? MethodIdentity.SignatureArity(mc.Signature) : null;
-                logical = new LogicalMethod(name, typeKey, arity, origin);
+                logical = new LogicalMethod(name, typeKey, arity, origin,
+                    origin is null ? MethodSignatures.Coverage(mc.Signature) : null);
                 byKey[key] = logical;
                 order.Add(logical);
             }
@@ -415,11 +419,12 @@ public static class CrapAnalysis
     /// <summary>A logical method's name: file identity key, arity-preserving type identity, method name.</summary>
     private readonly record struct MethodName(string File, string TypeIdentity, string Method);
 
-    private sealed class LogicalMethod(MethodName name, string typeKey, int? arity, SyntheticOrigin? origin)
+    private sealed class LogicalMethod(MethodName name, string typeKey, int? arity, SyntheticOrigin? origin, string? signature)
     {
         public readonly MethodName Name = name;
         public readonly string TypeKey = typeKey;
         public readonly int? Arity = arity;
+        public readonly string? Signature = signature;
         /// <summary>Set for compiler-synthesized material; null for a method the source names directly.</summary>
         public SyntheticOrigin? Origin = origin;
         public bool Folded => Origin is not null;
@@ -459,12 +464,14 @@ public static class CrapAnalysis
         }
     }
 
-    private readonly record struct MetricsCandidates(int? Complexity, int? UniqueMember, int ExecutableCount);
+    private readonly record struct MetricsCandidates(int? Complexity, int? UniqueMember, int ExecutableCount,
+        bool HasUnknownSignature);
 
     private sealed class MetricsIndex
     {
         public readonly Dictionary<string, MetricsCandidates> All = new(StringComparer.Ordinal);
         public readonly Dictionary<(string Key, int? Arity), MetricsCandidates> ByArity = new();
+        public readonly Dictionary<(string Key, string Signature), MetricsCandidates> BySignature = new();
         public readonly Dictionary<string, (int Index, int Complexity)> AccessorFallback = new(StringComparer.Ordinal);
     }
 
@@ -473,7 +480,8 @@ public static class CrapAnalysis
         var complexity = left.Complexity is { } l && right.Complexity is { } r
             ? Math.Max(l, r) : left.Complexity ?? right.Complexity;
         var count = Math.Min(2, left.ExecutableCount + right.ExecutableCount);
-        return new MetricsCandidates(complexity, count is 1 ? left.UniqueMember ?? right.UniqueMember : null, count);
+        return new MetricsCandidates(complexity, count is 1 ? left.UniqueMember ?? right.UniqueMember : null, count,
+            left.HasUnknownSignature || right.HasUnknownSignature);
     }
 
     private static void AddCandidates<TKey>(Dictionary<TKey, MetricsCandidates> index, TKey key,
@@ -495,12 +503,14 @@ public static class CrapAnalysis
                     var key = $"{m.TypeName}|{m.MemberName}";
                     // Summarize each executable bucket once.
                     var complexity = Math.Max(0, m.CyclomaticComplexity);
+                    var signature = MethodSignatures.Metrics(m.DisplayName);
                     // Retain an empty bucket for explicit zero-body accessors so an aggregate
                     // cannot restore the declaration's non-executable complexity as a fallback.
                     var candidate = m.ExecutableLines is 0
-                        ? default : new MetricsCandidates(complexity, i, 1);
+                        ? default : new MetricsCandidates(complexity, i, 1, signature is null);
                     AddCandidates(index.All, key, candidate);
                     AddCandidates(index.ByArity, (key, m.Arity), candidate);
+                    if (signature is not null) AddCandidates(index.BySignature, (key, signature), candidate);
                     // The metrics display omits static/instance information for extension
                     // blocks. An inferred receiver must not prove a match for a static member.
                     break;
@@ -554,7 +564,7 @@ public static class CrapAnalysis
         {
             // Keep the conservative complexity fallback when no arity matches, but never
             // treat a provably incompatible candidate as evidence of complete coverage.
-            var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity);
+            var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature);
             if (compatible.UniqueMember is { } index) consumed.Add(index);
             return compatible.Complexity ?? candidates.Complexity;
         }
