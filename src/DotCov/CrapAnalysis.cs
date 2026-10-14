@@ -150,6 +150,16 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 AmbiguousFile.GateReason(AmbiguousFiles));
 
+        // No method with complexity, or no method entries at all (coverage.py, Microsoft Code
+        // Coverage): the emitter writes none, and --metrics, a .NET tool, cannot help a TypeScript
+        // or Python project. Say so instead of pointing at dotnet msbuild.
+        if (Methods.Count is 0 && UnmatchedMetricsMembers.Count is 0 &&
+            Unscored.All(static u => u.Reason == CrapAnalysis.NoComplexityReason))
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
+                "the report carries no method complexity - Istanbul (Vitest, c8, Jest), coverage.py and " +
+                "Microsoft Code Coverage write none, so crap cannot score it; gate it with check, or give crap " +
+                "a Coverlet report or --metrics <file> for .NET");
+
         if (Unscored.Count > 0)
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{Unscored.Count} of {Methods.Count + Unscored.Count} methods could not be scored - ") +
@@ -159,10 +169,6 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{UnmatchedMetricsMembers.Count} metrics members without coverage data - ") +
                 "a verdict needs every method scored");
-
-        if (Methods.Count is 0)
-            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
-                "report carries no method-level data - nothing was measured per method");
 
         return above is 0
             ? new CrapGateResult(GateOutcome.Pass, maxCrap, Methods.Count, 0, worst,
@@ -180,6 +186,8 @@ public sealed class CrapReport
 /// </summary>
 public static class CrapAnalysis
 {
+    internal const string NoComplexityReason = "no complexity in the coverage report - supply --metrics <file>";
+
     /// <summary>The CRAP formula. <c>Score(5, 0) = 30</c>, <c>Score(5, 1) = 5</c>, <c>Score(1, 0) = 2</c>.</summary>
     public static double Score(int complexity, double coverage)
     {
@@ -501,7 +509,7 @@ public static class CrapAnalysis
             {
                 unscored.Add(new CrapUnscoredMethod(display, logical.File,
                     metricsMembers is null
-                        ? "no complexity in the coverage report - supply --metrics <file>"
+                        ? NoComplexityReason
                         : "no matching member in the metrics file"));
                 continue;
             }

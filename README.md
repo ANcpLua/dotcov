@@ -114,18 +114,33 @@ App.Orders.Cancel      3    100.0%       3.0  src/Orders.cs:30
 ```
 
 A fully covered method scores its complexity, so a high score on covered code means split it,
-not test it. Coverlet embeds complexity in its report; for other emitters pass
-`--metrics <file>` from `dotnet msbuild /t:Metrics`. Every method must be scored: one the gate
-cannot score makes it `NODATA` rather than a pass.
+not test it. `crap` is for .NET: Coverlet embeds complexity in its report, and for other .NET
+emitters `--metrics <file>` from `dotnet msbuild /t:Metrics` supplies it. Istanbul (Vitest, c8,
+Jest) and coverage.py write none, so `crap` answers `NODATA` for their reports; gate them with
+`check`. Every method must be scored: one the gate cannot score makes it `NODATA`, never a pass.
 
 ## Other languages
 
-DotCov reads any Cobertura report. TypeScript with Jest:
+DotCov reads any Cobertura report. TypeScript with Vitest (`@vitest/coverage-v8`):
 
 ```bash
-npm test -- --coverage --coverageProvider=v8 --coverageReporters=cobertura
+npx vitest run --coverage.enabled --coverage.reporter=cobertura --coverage.include='src/**'
 dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
 ```
+
+With c8, around `node --test` or any other runner, no config needed:
+
+```bash
+npx c8 --all --src src --reporter=cobertura node --test
+dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
+```
+
+Both report only the files a test loaded unless told where the sources are:
+`--coverage.include` and `--all --src` keep a module no test imports in the report, at 0%.
+Vitest maps V8 coverage back to the TypeScript source, so every branch counts; c8 counts the
+blocks V8 ran and leaves out the branches of functions no test called, so its branch rate can
+read higher. Jest works too:
+`npm test -- --coverage --coverageProvider=v8 --coverageReporters=cobertura`.
 
 Python with coverage.py:
 
@@ -162,7 +177,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v4.2.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v4.3.0
     with:
       reports: TestResults
       min-line: 80
@@ -197,4 +212,4 @@ fallout Test                                # the tests
 fallout Coverage                            # the tests plus the 100% coverage gate
 ```
 
-[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.2.0.md) · [MIT](LICENSE)
+[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.3.0.md) · [MIT](LICENSE)

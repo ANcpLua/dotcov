@@ -48,6 +48,7 @@ threshold, worst first, with the lines no test runs and the branches only partly
 ```bash
 dotcov test   [<project>] --min-line 80 [-- <dotnet test arguments>]
 dotcov check  TestResults/ --min-line 80 --min-branch 60 --format json
+dotcov check  coverage/cobertura-coverage.xml --min-line 90   # Vitest, c8, Jest, coverage.py
 dotcov report TestResults/ --top 10                       # the ten worst files
 dotcov crap   TestResults/ --max-crap 30                  # per-method risk gate
 dotcov diff   before.xml after.xml --format md
@@ -81,9 +82,10 @@ the collector from `Microsoft.NET.Test.Sdk`.
 
 `crap` scores every method `comp² · (1 − cov)³ + comp`, worst first, with each method's
 `file:line`. A fully covered method scores its complexity, so a high score on covered code means
-split it, not test it. Coverlet embeds complexity in its report; for other emitters pass
-`--metrics` from `dotnet msbuild /t:Metrics`
-([Microsoft.CodeAnalysis.Metrics](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics)).
+split it, not test it. `crap` is for .NET: Coverlet embeds complexity in its report, and for
+other .NET emitters `--metrics` from `dotnet msbuild /t:Metrics`
+([Microsoft.CodeAnalysis.Metrics](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics))
+supplies it. Istanbul (Vitest, c8, Jest) and coverage.py write none; gate their reports with `check`.
 Every method must be scored: one without complexity or lines makes the gate `NODATA`, and so
 does a metrics member no covered method matches.
 
