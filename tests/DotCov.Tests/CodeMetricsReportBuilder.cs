@@ -78,7 +78,6 @@ internal sealed class CodeMetricsReportBuilder
         {
             var member = new XElement(element,
                 new XAttribute("Name", display),
-                new XAttribute("File", "/src/Probe.cs"),
                 new XAttribute("Line", "1"),
                 Metrics(complexity));
             if (executableLines is { } lines)

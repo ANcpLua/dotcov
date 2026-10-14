@@ -497,6 +497,20 @@ public sealed class CrapMetricsScopeTests
             .IsEqualTo(keep ? "nodata" : "pass");
     }
 
+    [Test]
+    public async Task ExcludedCoverage_CannotConsumeMetricsFromAKnownKeptSource()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(2, 1)))
+            .ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(string x)", 1, 1))
+            .Select(m => m with { File = "src/A.cs" }).ToArray();
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.M(string x)"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
     private static MethodCoverageReport KeptCoverage()
     {
         using var input = new MemoryStream(Cobertura.NewDoc()

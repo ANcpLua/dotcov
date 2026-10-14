@@ -244,13 +244,16 @@ public static class CrapAnalysis
         // Exclusions remove methods from the measurement scope, not from the metrics file.
         // Match their identities without scoring them, even when they have no line data.
         var metricsIndex = IndexMetrics(metricsMembers);
+        // Source-bearing exclusions were removed by SelectMetrics. A retained member's
+        // known source must not be consumed by an excluded same-name sibling.
+        var excludedMetricsIndex = IndexMetrics(metricsMembers, onlyWithoutSource: true);
         var excluded = FoldRawEntries(excludedMethods);
         FoldSyntheticGroups(excluded);
         // Different raw signatures/files can have the same available metrics identity.
         // Account for that identity once, even when every candidate is a zero-body declaration.
         foreach (var logical in excluded.Where(static l => !l.FoldedAway)
                      .DistinctBy(static l => (l.TypeKey, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity)))
-            MatchExcludedMetrics(logical, metricsIndex, consumed);
+            MatchExcludedMetrics(logical, excludedMetricsIndex, consumed);
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, metricsIndex, consumed); // 3. resolve comp, score
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
@@ -477,7 +480,7 @@ public static class CrapAnalysis
         MetricsCandidates candidate) where TKey : notnull =>
         index[key] = MergeCandidates(index.GetValueOrDefault(key), candidate);
 
-    private static MetricsIndex IndexMetrics(IReadOnlyList<CodeMetricsMember>? members)
+    private static MetricsIndex IndexMetrics(IReadOnlyList<CodeMetricsMember>? members, bool onlyWithoutSource = false)
     {
         var index = new MetricsIndex();
         if (members is null) return index;
@@ -485,6 +488,7 @@ public static class CrapAnalysis
         for (var i = 0; i < members.Count; i++)
         {
             var m = members[i];
+            if (onlyWithoutSource && !string.IsNullOrWhiteSpace(m.File) && m.File is not "UNKNOWN") continue;
             switch (m.Kind)
             {
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
