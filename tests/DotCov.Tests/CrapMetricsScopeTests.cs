@@ -8,6 +8,32 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    public async Task RepeatedExcludedIdentities_KeepDistinctAritiesAndMissingExecutableMembers()
+    {
+        var coverage = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c =>
+            {
+                for (var i = 0; i < 1000; i++)
+                    c.Method("M", $"(App.Arg{i})", "1", m => m.Line(2, 1));
+                c.Method("M", "(System.Int32,System.Int32)", "1", m => m.Line(3, 1));
+            });
+        using var input = new MemoryStream(coverage.ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m =>
+        {
+            for (var i = 0; i < 1000; i++) m.Method($"void A.M(Arg{i} x)", 1, 0);
+            m.Method("void A.M(int x, int y)", 1, 1);
+            m.Method("void A.M(int x, int y, int z)", 1, 1);
+        });
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []), metrics);
+
+        await Assert.That(report.Methods.Count).IsEqualTo(1);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.M(int x, int y, int z)"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     [Arguments(false, "void A.M(int x)")]
     [Arguments(true, "void A.M(int x)")]
     [Arguments(false, "void A.M(string x = \" extension(string).M\")")]

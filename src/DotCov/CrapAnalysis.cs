@@ -245,7 +245,10 @@ public static class CrapAnalysis
         var (metricsIndex, _) = IndexMetrics(metricsMembers);
         var excluded = FoldRawEntries(excludedMethods);
         FoldSyntheticGroups(excluded);
-        foreach (var logical in excluded.Where(static l => !l.FoldedAway))
+        // Different raw signatures/files can have the same available metrics identity.
+        // Account for that identity once, even when every candidate is a zero-body declaration.
+        foreach (var logical in excluded.Where(static l => !l.FoldedAway)
+                     .DistinctBy(static l => (l.TypeKey, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity)))
             MatchExcludedMetrics(logical, metricsMembers, metricsIndex, consumed);
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, consumed);   // 3. resolve comp, score
