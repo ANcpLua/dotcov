@@ -26,6 +26,9 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"(System\.(?:String|Object)|\])\?", RegexOptions.CultureInvariant)]
     private static partial Regex NullableReferences();
 
+    [GeneratedRegex(@"System\.Nullable<([\p{L}_][\w.]*)", RegexOptions.CultureInvariant)]
+    private static partial Regex NullableTypeNames();
+
     [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
     private static partial Regex ConstructedArity();
 
@@ -77,6 +80,55 @@ internal static partial class MethodSignatures
     {
         if (text.Length > MaxSignatureLength)
             throw new InvalidDataException($"{identity} exceeds 16384 characters.");
+    }
+
+    internal sealed class NullableIdentities(IEnumerable<string?> coverage)
+    {
+        public readonly HashSet<string> Observed = coverage.Where(s => s is not null)
+            .SelectMany(s => TypeNamePattern.Matches(s!).Select(m => m.Value)).ToHashSet(StringComparer.Ordinal);
+        public readonly HashSet<string> Values = coverage.Where(s => s is not null)
+            .SelectMany(s => NullableTypeNames().Matches(s!).Select(m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
+    }
+
+    internal static string? ResolveNullable(string? signature, NullableIdentities identities)
+    {
+        if (signature is null || !signature.Contains('?')) return signature;
+        var parents = new Stack<int>();
+        var nullableStarts = new HashSet<int>();
+        var replacements = new Dictionary<int, char>();
+        var start = 0;
+        for (var i = 0; i < signature.Length; i++)
+        {
+            var c = signature[i];
+            if (c == '?')
+            {
+                var name = start;
+                while (name < i && (char.IsLetterOrDigit(signature[name]) || signature[name] is '_' or '.')) name++;
+                var type = signature[start..name];
+                if (identities.Values.Contains(type))
+                {
+                    if (!nullableStarts.Add(start)) return null;
+                    replacements.Add(i, '>');
+                }
+                else if (identities.Observed.Contains(type)) replacements.Add(i, '\0');
+                continue;
+            }
+            if (c == '<')
+            {
+                parents.Push(start);
+                start = i + 1;
+            }
+            else if (c == '>' && !parents.TryPop(out start)) return null;
+            else if (c == ',') start = i + 1;
+        }
+        var output = new StringBuilder(signature.Length);
+        for (var i = 0; i < signature.Length; i++)
+        {
+            if (nullableStarts.Contains(i)) output.Append("System.Nullable<");
+            var c = replacements.GetValueOrDefault(i, signature[i]);
+            if (c is not '\0') output.Append(c);
+        }
+        return output.ToString();
     }
 
     internal static string? Coverage(string signature)
@@ -221,13 +273,14 @@ internal static partial class MethodSignatures
 
     private static string NormalizeType(string type)
     {
-        type = type.Trim().Replace("global::", "", StringComparison.Ordinal);
+        type = MethodIdentity.SourceTypeName(type.Trim().Replace("global::", "", StringComparison.Ordinal));
         type = type.Replace('/', '.').Replace('+', '.');
         if (type.StartsWith("params ", StringComparison.Ordinal)) type = type[7..];
         var byRef = type.StartsWith("ref ", StringComparison.Ordinal) ||
                     type.StartsWith("out ", StringComparison.Ordinal) ||
                     type.StartsWith("in ", StringComparison.Ordinal);
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
+        if (byRef && type.StartsWith("readonly ", StringComparison.Ordinal)) type = type[9..];
         type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
         type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");

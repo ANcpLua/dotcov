@@ -249,7 +249,9 @@ public static class CrapAnalysis
             metricSignatures);
         foreach (var logical in order.Concat(excluded))
             logical.Signature = MethodSignatures.QualifyTypes(logical.Signature, qualifications);
-        var signatures = metricSignatures.Select(s => MethodSignatures.QualifyTypes(s, qualifications, fromMetrics: true)).ToArray();
+        var nullableIdentities = new MethodSignatures.NullableIdentities(order.Concat(excluded).Select(m => m.Signature));
+        var signatures = metricSignatures.Select(s => MethodSignatures.ResolveNullable(
+            MethodSignatures.QualifyTypes(s, qualifications, fromMetrics: true), nullableIdentities)).ToArray();
         var consumed = new HashSet<int>();
         // Exclusions remove methods from the measurement scope, not from the metrics file.
         // Match their identities without scoring them, even when they have no line data.

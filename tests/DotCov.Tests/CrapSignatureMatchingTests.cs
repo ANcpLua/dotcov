@@ -34,6 +34,15 @@ public sealed class CrapSignatureMatchingTests
     [Arguments("Outer.Inner x", "App.Outer/Inner")]
     [Arguments("App.Outer.Inner x", "App.Outer+Inner")]
     [Arguments("Outer.Inner[] x", "App.Outer/Inner[]")]
+    [Arguments("List<string>? x", "System.Collections.Generic.List`1<System.String>")]
+    [Arguments("List<string?>? x", "System.Collections.Generic.List`1<System.String>")]
+    [Arguments("Widget? x", "App.Widget")]
+    [Arguments("Point? x", "System.Nullable`1<App.Point>")]
+    [Arguments("Box<int>? x", "System.Nullable`1<App.Box`1<System.Int32>>")]
+    [Arguments("Dictionary<string,List<Widget?>?>? x", "System.Collections.Generic.Dictionary`2<System.String,System.Collections.Generic.List`1<App.Widget>>")]
+    [Arguments("_Widget2? x", "App._Widget2")]
+    [Arguments("ref readonly int x", "System.Int32&")]
+    [Arguments("ref readonly Point? x", "System.Nullable`1<App.Point>&")]
     public async Task CompleteSameArityOverloads_MatchTypesAndKeepTheirOwnComplexity(
         string parameter, string ilType)
     {
