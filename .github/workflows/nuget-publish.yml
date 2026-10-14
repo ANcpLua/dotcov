@@ -128,6 +128,8 @@ jobs:
   # The integration matrices run on Linux and Windows. macOS adds no coverage path of its own
   # (POSIX paths like Linux); BadgeActionTests run badge.sh under macOS's bash 3.2 locally.
   # macOS runners stay for the release-only osx-arm64 Native AOT pack.
+  # A pull request runs build, test and the Linux badge action; the upstream consumer and README
+  # badge matrices run on pushes to main and on release tags, and publish waits for them.
   # Exercise the composite action and its default installer against this checkout's portable
   # package. A release candidate is not on NuGet yet. Native packages are packed separately;
   # the local-only feed prevents an already-published version from masking this checkout.
@@ -136,7 +138,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -215,6 +217,7 @@ jobs:
   # Real, unmodified upstream suites. Native producer JSON is the independent oracle
   # for both aggregate and per-file counts; all badge pushes stay on the runner.
   consumer-coverage:
+    if: github.event_name != 'pull_request'
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -316,6 +319,7 @@ jobs:
   # Compare fresh measurements with the published coverage behind upstream README badges.
   # Historical service evidence is pinned alongside each source SHA; moving badges are not an oracle.
   readme-badge-coverage:
+    if: github.event_name != 'pull_request'
     timeout-minutes: 15
     strategy:
       fail-fast: false

@@ -2,7 +2,7 @@
 
 `consumer_coverage.py` is an integration test used by the `consumer-coverage` job in
 [CI](../workflows/nuget-publish.yml). It invokes the current DotCov CLI and the actual
-composite badge action. Every PR runs both languages on Linux and Windows.
+composite badge action. Every push to main and every release tag runs both languages on Linux and Windows.
 
 The upstream projects already have coverage configuration. Their sources and tests are
 unchanged: the TypeScript project declares a 100% Jest threshold, and the Python project
