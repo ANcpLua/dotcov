@@ -1,6 +1,9 @@
 <Project>
 
   <PropertyGroup>
+    <!-- Pin Fallout's transitive cryptography dependencies to the patched versions.
+         NuGet also promotes these constraints when packing DotCov.Fallout. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <TUnitVersion>1.74.0</TUnitVersion>
     <CoverletMtpVersion>10.1.0</CoverletMtpVersion>
     <FalloutVersion>10.4.0</FalloutVersion>
@@ -13,6 +16,8 @@
     <PackageVersion Include="Fallout.Common" Version="$(FalloutVersion)" />
     <PackageVersion Include="Fallout.Components" Version="$(FalloutVersion)" />
     <PackageVersion Include="ANcpLua.Analyzers" Version="$(ANcpLuaAnalyzersVersion)" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>
 
 </Project>
