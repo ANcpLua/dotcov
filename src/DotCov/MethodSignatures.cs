@@ -88,6 +88,16 @@ internal static partial class MethodSignatures
             .SelectMany(static s => TypeNamePattern.Matches(s!).Select(static m => m.Value)).ToHashSet(StringComparer.Ordinal);
         public readonly HashSet<string> Values = coverage.Where(static s => s is not null)
             .SelectMany(static s => NullableTypeNames().Matches(s!).Select(static m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
+        // Names some coverage signature carries without a Nullable wrapper.
+        public readonly HashSet<string> Bare = coverage.Where(static s => s is not null)
+            .SelectMany(static s => BareNames(s!)).ToHashSet(StringComparer.Ordinal);
+
+        private static IEnumerable<string> BareNames(string signature)
+        {
+            var wrapped = NullableTypeNames().Matches(signature).Select(static m => m.Groups[1].Value).ToList();
+            foreach (Match match in TypeNamePattern.Matches(signature))
+                if (!wrapped.Remove(match.Value)) yield return match.Value;
+        }
     }
 
     internal static string? ResolveNullable(string? signature, NullableIdentities identities)
@@ -107,6 +117,9 @@ internal static partial class MethodSignatures
                 var type = signature[start..name];
                 if (identities.Values.Contains(type))
                 {
+                    // A generic parameter is a value type in one method and a reference type in
+                    // another: the report-wide sets cannot tell which T this is.
+                    if (!type.Contains('.') && identities.Bare.Contains(type)) return null;
                     if (!nullableStarts.Add(start)) return signature;
                     replacements.Add(i, '>');
                 }
@@ -135,6 +148,9 @@ internal static partial class MethodSignatures
     {
         ValidateLength(signature, "Coverage signature");
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')') return null;
+        // IL spells tuples as ValueTuple`N, so an inner parenthesis is a function pointer, which
+        // Coverlet truncates at its last '(' ("(System.Int32))"): unknown, not a conflict.
+        if (signature.AsSpan(1, signature.Length - 2).IndexOfAny('(', ')') >= 0) return null;
         return string.Join(",", BalancedText.SplitTopLevel(signature[1..^1]).Select(NormalizeType));
     }
 
@@ -172,6 +188,8 @@ internal static partial class MethodSignatures
             var declaration = equals < 0 ? parameter : parameter[..equals].TrimEnd();
             var space = BalancedText.LastIndexOfTopLevel(declaration, ' ');
             if (space < 0) return null;
+            // Coverage never carries a comparable function-pointer spelling (see Coverage).
+            if (declaration.Contains("delegate*", StringComparison.Ordinal)) return null;
             types.Add(NormalizeType(declaration[..space]));
         }
         if (valueType is not null) types.Add(NormalizeType(valueType));
@@ -283,6 +301,8 @@ internal static partial class MethodSignatures
         if (byRef && type.StartsWith("readonly ", StringComparison.Ordinal)) type = type[9..];
         type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
+        // @int names a type called int, never the alias: drop the escape once aliases are applied.
+        type = type.Replace("@", "", StringComparison.Ordinal);
         type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
         type = NullableReferences().Replace(type, "$1");
         return ConstructedArity().Replace(type.Replace(" ", "", StringComparison.Ordinal), "") + (byRef ? "&" : "");

@@ -68,4 +68,55 @@ public sealed class CrapFileLocalAndConversionTests
         await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(2);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
+
+    [Test]
+    public async Task EscapedIdentifierTypes_MatchTheirMetadataIdentity()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "(App.int)", null, m => m.Line(1, 1))
+            .Method("M", "(System.Int32)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.M(@int value)", 2, 1).Method("void A.M(int value)", 7, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    // Coverlet cuts the signature at the last '(' of the IL name, so a function-pointer
+    // parameter arrives as "(System.Int32))"; Cecil's full spelling is the second shape.
+    [Test]
+    [Arguments("(System.Int32))", "delegate*<int, void> callback")]
+    [Arguments("(method System.Void *(System.Int32))", "delegate* unmanaged[Cdecl]<int, void> callback")]
+    public async Task FunctionPointerParameters_AreUnknownSignatures_NotConflicts(string signature, string parameter)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", signature, null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"void A.M({parameter})", 2, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(2);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
+    public async Task NullableGenericParameters_ResolvePerMethod_NotAcrossTheReport()
+    {
+        // A<T>(T? value) where T : class and B<T>(T? value) where T : struct share the name T.
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("A", "(T)", null, m => m.Line(1, 1))
+            .Method("B", "(System.Nullable`1<T>)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.A<T>(T? value)", 2, 1).Method("void A.B<T>(T? value)", 7, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
 }

@@ -816,7 +816,17 @@ Verified:
 - Async bodies retain their own identity in either input order. Merged exclusion metadata
   lists only absent files. Indexed metrics matching avoids repeated candidate scans.
 - Patched Fallout cryptography dependencies to 10.0.13 without suppressing NuGet audit.
-- Aligned package/action/README versions and added `docs/releases/3.0.1.md`.
+- Metrics complexity below 1 on an executable member is skipped like a non-integer value,
+  so its method is unscored (NODATA) instead of scored 0.
+- Coverage signatures with a function pointer (Coverlet truncates them to `(System.Int32))`)
+  and metrics `delegate*` parameters are unknown signatures; `crap` no longer throws
+  `Unbalanced tuple type`. Escaped identifiers (`@int`) drop the escape after aliasing;
+  a generic `T?` that is a value type in one method and a reference type in another stays
+  unresolved instead of being forced to `Nullable<T>` report-wide.
+- `GateAwareTableWiringTests` use the shared `FakeDotnet`, so their two `dotcov test` cases
+  run on Windows too; one Linux/macOS-only test remains (Unix file modes).
+- Aligned package/action/README versions and rewrote `docs/releases/3.0.1.md` around
+  user-visible behaviour.
 
-Validation: parser, analysis, CLI, and scale regressions are included. PR #79's final CI
-and review results are the authoritative commit-specific validation record.
+Validation: each fix has a regression test that fails before it; PR #79's CI is the
+full-suite and 100/100 coverage record.

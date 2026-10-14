@@ -29,10 +29,10 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 3.0.1 restores the 3.0 complete-scoring and exclusion contracts.
-CRAP returns NODATA when executable metrics members lack coverage. Explicitly non-executable declarations and uniquely matched excluded methods do not block a measured pass; ambiguous excluded overloads remain NODATA.
-Async methods preserve their own body regardless of lambda input order, preventing score dilution into synchronous overloads.
-Merged reports no longer list files as excluded when another input contributes their coverage. Exclusion identity retention uses a set lookup.
+DotCov 3.0.1 fixes CRAP passes that 3.0.0 could not prove; line and branch gates are unchanged.
+CRAP: an unmeasured metrics method, an ambiguous overload match or a complexity below 1 now gives NODATA (exit 3); async overloads keep their own body, so diluted scores rise; function-pointer parameters no longer abort crap; declarations without a body need no coverage.
+Exclusions: excluded methods count as measured without a score and never hide a kept sibling; merged reports no longer list a re-added file as excluded.
+DotCov.Fallout requires System.Security.Cryptography.Pkcs/Xml 10.0.13.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

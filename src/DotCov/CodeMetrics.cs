@@ -229,10 +229,12 @@ public static partial class CodeMetricsReader
         if (state.MemberStack.Count is 0) return;
         var pending = state.MemberStack.Pop();
         // A member without a CyclomaticComplexity metric has nothing to contribute to a
-        // complexity table — skipped, not zeroed.
-        if (pending.Complexity is { } complexity)
-            state.Members.Add(Materialize(pending,
-                state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), complexity));
+        // complexity table — skipped, not zeroed. Cyclomatic complexity is at least 1 for
+        // anything executable, so a lower value is no measurement either; only an explicit
+        // zero-body declaration keeps it, to stay out of the completeness accounting.
+        if (pending.Complexity is not { } complexity) return;
+        var member = Materialize(pending, state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), complexity);
+        if (complexity >= 1 || member.ExecutableLines is 0) state.Members.Add(member);
     }
 
     private static void RecordMetric(XmlReader reader, ParserState state)

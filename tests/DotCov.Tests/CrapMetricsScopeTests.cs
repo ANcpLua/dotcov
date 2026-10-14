@@ -305,6 +305,36 @@ public sealed class CrapMetricsScopeTests
     }
 
     [Test]
+    [Arguments("0", null)]
+    [Arguments("-3", null)]
+    [Arguments("0", 4)]
+    [Arguments("0", 0)]
+    public async Task NonPositiveComplexity_IsNotAMeasurement_AndCannotPass(string complexity, int? executableLines)
+    {
+        var lines = executableLines is { } n ? $"""<Metric Name="ExecutableLines" Value="{n}" />""" : "";
+        var xml = $"""
+            <CodeMetricsReport><Namespace Name="App"><NamedType Name="A"><Members>
+              <Method Name="void A.Kept()"><Metrics>
+                <Metric Name="CyclomaticComplexity" Value="{complexity}" />
+                {lines}
+              </Metrics></Method>
+            </Members></NamedType></Namespace></CodeMetricsReport>
+            """;
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var metrics = CodeMetricsReader.Parse(input);
+        using var coverage = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", null, m => m.Line(1, 1))).ToBytes());
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(coverage), metrics);
+
+        // Only an explicit zero-body declaration keeps a complexity below 1.
+        await Assert.That(metrics.Count).IsEqualTo(executableLines is 0 ? 1 : 0);
+        await Assert.That(report.Methods).IsEmpty();
+        await Assert.That(report.Unscored.Count).IsEqualTo(1);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     public async Task ExecutableLines_StayOnTheirOwnMember_AndDoNotEraseMeasuredBodies()
     {
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
