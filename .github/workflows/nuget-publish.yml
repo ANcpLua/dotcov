@@ -111,10 +111,11 @@ jobs:
           import xml.etree.ElementTree as ET
 
           for report in Path('TestResults').glob('**/*cobertura*.xml'):
+              print(f"Coverage diagnostics: {report}")
               for source in ET.parse(report).findall('.//class'):
                   for line in source.findall('./lines/line'):
                       coverage = line.get('condition-coverage', '')
-                      if line.get('branch') == 'true' and not coverage.startswith('100%'):
+                      if coverage and not coverage.startswith('100%'):
                           print(f"{source.get('filename')}:{line.get('number')}: {coverage}")
           PY
 
