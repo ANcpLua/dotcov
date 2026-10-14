@@ -5,6 +5,46 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsIdentityTests
 {
     [Test]
+    [Arguments("App.A/<M>d__0", "MoveNext", "()", true)]
+    [Arguments("App.A", "M", "()", false)]
+    [Arguments("App.A", "M", "unknown", true)]
+    public async Task SourceScopedCandidates_HandleMissingOriginArity(string type, string method,
+        string signature, bool matched)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", type, c => c
+            .Method(method, signature, null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 2, 1))
+            .Select(m => m with { File = "src/A.cs" }).ToArray();
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(matched ? 0 : 1);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(matched ? GateOutcome.Pass : GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task LegacyMetricsWithoutADeclaringType_StayUnmatched()
+    {
+        CodeMetricsMember[] metrics = [new("App.Absent", "M", CodeMetricsMemberKind.Method, 0, 2, "void Absent.M()")];
+        var report = CrapAnalysis.Analyze(Array.Empty<MethodCoverage>(), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(1);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task SourceScopedAndSourceLessOverloads_CombineWithoutLosingIdentity()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "(System.Int32)", null, m => m.Line(1, 1))
+            .Method("M", "(System.Boolean)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.M(int x)", 2, 1).Method("void A.M(bool x)", 3, 1))
+            .Select((m, i) => m with { File = i == 0 ? "src/A.cs" : null }).ToArray();
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 3]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
     [Arguments("One.List`1<System.Int32>", "Two.List`1<System.Int32>")]
     [Arguments("List`1<System.Int32>", "Two.List`1<System.Int32>")]
     public async Task GenericQualificationCollisions_CannotProveCompleteCoverage(string first, string second)
