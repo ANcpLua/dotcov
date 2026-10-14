@@ -62,4 +62,22 @@ public sealed class CrapVisualBasicMetricsTests
 
         await Assert.That(error.Message).StartsWith("Metrics member display 'Sub A.M(x As <Integer))': ");
     }
+
+    [Test]
+    [Arguments("Sub A.M(Of T)(value As T)", "M", "(T)")]
+    [Arguments("Function A.M(Of T)(value As T) As T", "M", "(T)")]
+    [Arguments("Sub A.New(value As Integer)", ".ctor", "(System.Int32)")]
+    public async Task VisualBasicGenericMethodsAndConstructors_MatchTheirMethod(string display, string method, string signature)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.vb", "App.A", c => c
+            .Method(method, signature, null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 2, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(2);
+        // The raw display stays what Roslyn wrote, for unmatched listings.
+        await Assert.That(metrics.Single().DisplayName).IsEqualTo(display);
+    }
 }

@@ -165,6 +165,29 @@ public sealed class CrapFileLocalAndConversionTests
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(shape is "complete" ? GateOutcome.Pass : GateOutcome.NoData);
     }
 
+    // Rows without a source file cannot say which of two files' bodies they measured.
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task AsyncOverloadBodiesInTwoFiles_NeedRowsNamingTheirFile(bool rowsNameTheirFile)
+    {
+        var doc = Cobertura.NewDoc();
+        foreach (var file in new[] { "src/A.cs", "src/A.Part.cs" })
+            doc.AddClass(file, "App.A/<M>d__0", c => c.Method("MoveNext", "()", null, m => m.Line(1, 1)))
+               .AddClass(file, "App.A/<M>d__1", c => c.Method("MoveNext", "()", null, m => m.Line(5, 1)));
+        using var input = new MemoryStream(doc.ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+                .Method("Task A.M(int value)", 2, 1).Method("Task A.M(string value)", 3, 1)
+                .Method("Task A.M(long value)", 2, 1).Method("Task A.M(bool value)", 3, 1))
+            .Select((m, i) => rowsNameTheirFile ? m with { File = i < 2 ? "src/A.cs" : "src/A.Part.cs" } : m)
+            .Take(rowsNameTheirFile ? 4 : 2).ToArray();
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(rowsNameTheirFile ? 0 : 2);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(rowsNameTheirFile ? GateOutcome.Pass : GateOutcome.NoData);
+    }
+
     [Test]
     public async Task ChosenSourceRoot_AlsoRootsRelativeMetricsPaths()
     {

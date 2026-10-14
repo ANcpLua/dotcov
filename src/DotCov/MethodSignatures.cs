@@ -96,16 +96,26 @@ internal static partial class MethodSignatures
     }
 
     /// <summary>
-    /// Visual Basic displays name the member kind and end a function with its return type
-    /// (<c>Function A.M(x As Integer) As Long</c>); reduce them to <c>A.M(x As Integer)</c>.
+    /// Visual Basic displays name the member kind, end a function with its return type, spell
+    /// type parameters <c>(Of T)</c> and name constructors <c>New</c>:
+    /// <c>Function A.M(Of T)(x As T) As Long</c> becomes <c>A.M&lt;T&gt;(x As T)</c> and
+    /// <c>Sub A.New()</c> becomes <c>A.A()</c>, the C# shape every later step reads.
     /// </summary>
     internal static string VisualBasicDisplay(string display)
     {
-        if (display.StartsWith("Sub ", StringComparison.Ordinal)) return display[4..];
-        if (!display.StartsWith("Function ", StringComparison.Ordinal)) return display;
+        var function = display.StartsWith("Function ", StringComparison.Ordinal);
+        if (!function && !display.StartsWith("Sub ", StringComparison.Ordinal)) return display;
         var end = display.LastIndexOf(") As ", StringComparison.Ordinal);
-        return end < 0 ? display[9..] : display[9..(end + 1)];
+        display = function && end >= 0 ? display[9..(end + 1)] : display[(display.IndexOf(' ') + 1)..];
+        display = VisualBasicTypeParameters().Replace(display, "<$1>");
+        return VisualBasicConstructor().Replace(display, "$1.$1(");
     }
+
+    [GeneratedRegex(@"\(Of ([^()]*)\)(?=[.(])", RegexOptions.CultureInvariant)]
+    private static partial Regex VisualBasicTypeParameters();
+
+    [GeneratedRegex(@"([^.\s(<>]+)\.New\(", RegexOptions.CultureInvariant)]
+    private static partial Regex VisualBasicConstructor();
 
     internal static void ValidateLength(string text, string identity)
     {
@@ -188,6 +198,7 @@ internal static partial class MethodSignatures
     internal static string? Metrics(string display)
     {
         ValidateLength(display, "Metrics member display");
+        display = VisualBasicDisplay(display);
         string parameters;
         string? valueType = null;
         if (display.EndsWith(')'))

@@ -41,8 +41,10 @@ public enum CodeMetricsMemberKind
 /// <param name="Kind">Member kind — accessors and methods are gate-matchable; aggregates are fallbacks.</param>
 /// <param name="Arity">Parameter count from a method or indexer display, including the value
 /// parameter for indexer setters; otherwise <c>null</c>.</param>
-/// <param name="CyclomaticComplexity">Roslyn's cyclomatic complexity for the member.</param>
-/// <param name="DisplayName">The raw <c>Name</c> attribute, kept verbatim for unmatched-member listings.</param>
+/// <param name="CyclomaticComplexity">Roslyn's cyclomatic complexity for the member; 0 when the metrics
+/// file gives none or an invalid value. Below 1 is no measurement and never scores.</param>
+/// <param name="DisplayName">The raw <c>Name</c> attribute, kept verbatim for unmatched-member listings
+/// (Visual Basic displays included).</param>
 public readonly record struct CodeMetricsMember(
     string TypeName,
     string MemberName,
@@ -217,10 +219,9 @@ public static partial class CodeMetricsReader
         // Metrics — nothing to record.
         if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
         {
-            var raw = reader.GetAttribute("Name") ?? "";
-            var context = $"Metrics member display '{raw[..Math.Min(raw.Length, 200)]}'";
-            MethodSignatures.ValidateLength(raw, context);
-            var display = MethodSignatures.VisualBasicDisplay(raw);
+            var display = reader.GetAttribute("Name") ?? "";
+            var context = $"Metrics member display '{display[..Math.Min(display.Length, 200)]}'";
+            MethodSignatures.ValidateLength(display, context);
             // Check the parameter syntax here, where the member and file are still known.
             try
             {
@@ -238,11 +239,10 @@ public static partial class CodeMetricsReader
     {
         if (state.MemberStack.Count is 0) return;
         var pending = state.MemberStack.Pop();
-        // A member without a CyclomaticComplexity metric has nothing to contribute to a
-        // complexity table — skipped, not zeroed.
-        if (pending.Complexity is { } complexity)
-            state.Members.Add(Materialize(pending,
-                state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), complexity));
+        // A member without a usable CyclomaticComplexity metric is still a member: it stays in
+        // the table as 0, which never scores, so an executable one counts as unmatched.
+        state.Members.Add(Materialize(pending,
+            state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), pending.Complexity ?? 0));
     }
 
     private static void RecordMetric(XmlReader reader, ParserState state)
@@ -288,7 +288,7 @@ public static partial class CodeMetricsReader
 
     private static CodeMetricsMember Materialize(PendingMember pending, TypeContext type, int complexity)
     {
-        var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, type.SimpleName);
+        var (memberName, arity, kind) = ParseDisplay(MethodSignatures.VisualBasicDisplay(pending.Display), pending.Element, type.SimpleName);
 
         return new CodeMetricsMember(type.Name, memberName, kind, arity, complexity, pending.Display)
         {

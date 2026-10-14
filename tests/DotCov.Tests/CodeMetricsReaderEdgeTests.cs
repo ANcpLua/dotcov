@@ -414,7 +414,7 @@ public sealed class CodeMetricsReaderEdgeTests
     [Arguments("2.5")]
     [Arguments("99999999999")]
     [Arguments("")]
-    public async Task NonIntegerComplexity_MemberSkippedNotZeroed(string value)
+    public async Task NonIntegerComplexity_IsKeptAsNoMeasurement(string value)
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp"><Types><NamedType Name="Calc"><Members>
@@ -422,7 +422,8 @@ public sealed class CodeMetricsReaderEdgeTests
             </Members></NamedType></Types></Namespace>
             """);
 
-        await Assert.That(members).IsEmpty();
+        var member = await Assert.That(members).HasSingleItem();
+        await Assert.That(member.CyclomaticComplexity).IsEqualTo(0);
     }
 
     [Test]

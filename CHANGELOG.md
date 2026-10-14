@@ -818,8 +818,10 @@ Verified:
 - Patched Fallout cryptography dependencies to 10.0.13 without suppressing NuGet audit.
 - A metrics complexity below 1 on an executable member supplies no complexity (reader input
   and library callers alike) and the row still counts as unmatched, so the gate is NODATA.
-- Visual Basic metrics displays (`Sub`/`Function … As T`, `ByRef`, `Optional`, `ParamArray`,
-  `(Of T)`, `T()`) are normalized in the reader; tuple syntax is validated there too, so a
+  The reader keeps rows with a missing or malformed complexity as 0 instead of dropping them.
+- Visual Basic metrics displays (`Sub`/`Function … As T`, generic `M(Of T)`, `Sub New`,
+  `ByRef`, `Optional`, `ParamArray`, `(Of T)`, `T()`) are normalized for matching while the
+  raw display is kept for listings; tuple syntax is validated there too, so a
   malformed member names the metrics file and member.
 - Parentheses in a Cobertura signature (only a truncated function pointer produces them)
   make it unknown instead of an error; malformed tuple syntax stays an input error in
@@ -833,7 +835,8 @@ Verified:
   `void` aliased to `System.Void`), so they conflict with other known signatures while
   Coverlet's truncated spelling stays unknown.
 - State-machine-only async overloads consume their metrics rows when the body and row counts
-  of a member in one file agree; `--source-root` now also roots relative metrics paths.
+  of a member in one file agree (rows without a source file only when one file holds such
+  bodies); `--source-root` now also roots relative metrics paths.
 - `GateAwareTableWiringTests` use the shared `FakeDotnet`, so their two `dotcov test` cases
   run on Windows too; one Linux/macOS-only test remains (Unix file modes).
 - Aligned package/action/README versions and rewrote `docs/releases/3.0.1.md` around

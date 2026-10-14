@@ -321,16 +321,22 @@ public static class CrapAnalysis
     // signature. When such bodies are all a file holds of one type's member, and exactly as many
     // metrics rows exist for it, those rows are these bodies. Each body was already scored with
     // the largest candidate complexity, so pairing them cannot lower a score.
+    // Rows without a source file belong to no file in particular, so they serve a member's
+    // bodies only when a single file holds such bodies.
     private static void ReconcileSyntheticOverloads(List<LogicalMethod> order, MetricsIndex index, HashSet<int> consumed)
     {
-        foreach (var group in order.Where(static m => !m.FoldedAway).GroupBy(static m =>
-                     (m.Name.TypeIdentity, Member: MethodIdentity.MetricsMemberName(m.Name.Method), m.File)))
+        var buckets = order.Where(static m => !m.FoldedAway)
+            .GroupBy(static m => (m.Name.TypeIdentity, Member: MethodIdentity.MetricsMemberName(m.Name.Method), m.File))
+            .Where(static g => g.Count() > 1 && g.All(static m => m.Folded))
+            .Select(static g => (Key: $"{g.Key.TypeIdentity}|{g.Key.Member}", g.Key.File, Count: g.Count()))
+            .ToArray();
+        var filesPerKey = buckets.CountBy(static b => b.Key).ToDictionary(StringComparer.Ordinal);
+        foreach (var (key, file, count) in buckets)
         {
-            var key = $"{group.Key.TypeIdentity}|{group.Key.Member}";
-            var scoped = index.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(group.Key.File));
-            var rows = index.Rows.GetValueOrDefault(key, []).Concat(scoped?.Rows.GetValueOrDefault(key, []) ?? []).ToArray();
-            if (group.Count() > 1 && group.All(static m => m.Folded) && rows.Length == group.Count())
-                consumed.UnionWith(rows);
+            var scoped = index.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(file));
+            var sourceless = filesPerKey[key] == 1 ? index.Rows.GetValueOrDefault(key, []) : [];
+            var rows = sourceless.Concat(scoped?.Rows.GetValueOrDefault(key, []) ?? []).ToArray();
+            if (rows.Length == count) consumed.UnionWith(rows);
         }
     }
 

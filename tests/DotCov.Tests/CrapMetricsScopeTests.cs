@@ -345,6 +345,25 @@ public sealed class CrapMetricsScopeTests
     }
 
     [Test]
+    [Arguments("")]
+    [Arguments("<Metric Name=\"CyclomaticComplexity\" Value=\"n/a\" />")]
+    public async Task RowWithoutUsableComplexity_StillCountsAsUnmatched(string complexityMetric)
+    {
+        var xml = $"""
+            <CodeMetricsReport><Namespace Name="App"><NamedType Name="A"><Members>
+              <Method Name="void A.Kept()"><Metrics><Metric Name="CyclomaticComplexity" Value="1" /></Metrics></Method>
+              <Method Name="void A.Missing()"><Metrics>{complexityMetric}<Metric Name="ExecutableLines" Value="3" /></Metrics></Method>
+            </Members></NamedType></Namespace></CodeMetricsReport>
+            """;
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        var report = CrapAnalysis.Analyze(KeptCoverage(), CodeMetricsReader.Parse(input));
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Missing()"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     public async Task ExecutableLines_StayOnTheirOwnMember_AndDoNotEraseMeasuredBodies()
     {
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m

@@ -376,7 +376,7 @@ public sealed class CodeMetricsReaderTests
     }
 
     [Test]
-    public async Task MemberWithoutComplexityMetric_IsSkippedNotZeroed()
+    public async Task MemberWithoutComplexityMetric_IsKeptAsNoMeasurement()
     {
         var members = Parse("""
             <Method Name="void Calculator.M()">
@@ -386,7 +386,8 @@ public sealed class CodeMetricsReaderTests
             </Method>
             """);
 
-        await Assert.That(members).IsEmpty();
+        var member = await Assert.That(members).HasSingleItem();
+        await Assert.That(member.CyclomaticComplexity).IsEqualTo(0);
     }
 
     [Test]
