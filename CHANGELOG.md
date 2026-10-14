@@ -816,8 +816,11 @@ Verified:
 - Async bodies retain their own identity in either input order. Merged exclusion metadata
   lists only absent files. Indexed metrics matching avoids repeated candidate scans.
 - Patched Fallout cryptography dependencies to 10.0.13 without suppressing NuGet audit.
-- Metrics complexity below 1 on an executable member is skipped like a non-integer value,
-  so its method is unscored (NODATA) instead of scored 0.
+- CRAP analysis ignores a metrics complexity below 1 on an executable member (reader input
+  and library callers alike), so its method is unscored (NODATA) instead of scored 0.
+- Parentheses in a Cobertura signature (only a truncated function pointer produces them)
+  make it unknown instead of an error; malformed tuple syntax stays an input error in
+  metrics displays, where source tuple syntax really occurs.
 - Coverage signatures with a function pointer (Coverlet truncates them to `(System.Int32))`)
   and metrics `delegate*` parameters are unknown signatures; `crap` no longer throws
   `Unbalanced tuple type`. Escaped identifiers (`@int`) drop the escape after aliasing;

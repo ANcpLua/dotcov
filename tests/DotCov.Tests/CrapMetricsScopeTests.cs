@@ -327,8 +327,6 @@ public sealed class CrapMetricsScopeTests
 
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(coverage), metrics);
 
-        // Only an explicit zero-body declaration keeps a complexity below 1.
-        await Assert.That(metrics.Count).IsEqualTo(executableLines is 0 ? 1 : 0);
         await Assert.That(report.Methods).IsEmpty();
         await Assert.That(report.Unscored.Count).IsEqualTo(1);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);

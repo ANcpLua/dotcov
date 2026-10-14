@@ -24,26 +24,49 @@ public sealed class CrapTupleAndRootTests
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
     }
 
+    // Cobertura carries IL names, where tuples are ValueTuple`N: parentheses there come from a
+    // truncated function pointer, so the signature is unknown and the method still analyzed.
     [Test]
     [Arguments("left")]
     [Arguments("right")]
     [Arguments("deep")]
     [Arguments("empty")]
-    public async Task InvalidTupleStructure_IsRejected(string shape)
+    public async Task ParenthesesInCoverageSignatures_AreUnknown_NotErrors(string shape)
     {
-        var type = shape switch
-        {
-            "left" => "(int",
-            "right" => "int)",
-            "empty" => "( , int)",
-            _ => new string('(', 65) + "int" + string.Concat(Enumerable.Repeat(",int)", 65))
-        };
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
-            .Method("M", $"({type})", "1", m => m.Line(1, 1))).ToBytes());
+            .Method("M", $"({TupleShape(shape)})", "1", m => m.Line(1, 1))).ToBytes());
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input));
+
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(1);
+    }
+
+    // Roslyn metrics displays do spell tuples in source syntax: malformed or too deep is an input error.
+    [Test]
+    [Arguments("left")]
+    [Arguments("right")]
+    [Arguments("deep")]
+    [Arguments("empty")]
+    public async Task InvalidTupleStructure_InMetrics_IsRejected(string shape)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "(System.Int32)", null, m => m.Line(1, 1))).ToBytes());
         var parsed = CoberturaParser.ParseMethods(input);
-        var error = Assert.Throws<InvalidDataException>(() => CrapAnalysis.Analyze(parsed));
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"void A.M({TupleShape(shape)} x)", 2, 1));
+
+        var error = Assert.Throws<InvalidDataException>(() => CrapAnalysis.Analyze(parsed, metrics));
         await Assert.That(error.Message).IsNotEmpty();
     }
+
+    // A display parses when its brackets balance as a whole, so the stray tuple parenthesis
+    // pairs with an angle bracket: "(int>" opens a tuple that never closes.
+    private static string TupleShape(string shape) => shape switch
+    {
+        "left" => "(int>",
+        "right" => "<int)",
+        "empty" => "( , int)",
+        _ => new string('(', 65) + "int" + string.Concat(Enumerable.Repeat(",int)", 65))
+    };
 
     [Test]
     public async Task TupleDepthBoundary_RemainsMeasurable()
