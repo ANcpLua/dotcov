@@ -8,6 +8,54 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    [Arguments(0, 0, GateOutcome.Pass)]
+    [Arguments(0, 1, GateOutcome.Pass)]
+    [Arguments(1, 0, GateOutcome.Pass)]
+    [Arguments(1, 1, GateOutcome.NoData)]
+    public async Task UnknownAndExactArityBuckets_CombineExecutableIdentityAndComplexity(
+        int unknownLines, int exactLines, GateOutcome expected)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, 1)))
+            .ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.M", 7, unknownLines).Method("void A.M(int x)", 9, exactLines));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(9);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(expected);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(expected is GateOutcome.NoData ? 2 : 0);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task RepeatedMeasuredArities_ReuseLongDisplaySummaries(bool extension)
+    {
+        const int count = 1000;
+        var padding = new string('x', 2048);
+        var owner = extension ? "extension(string)" : "Ext";
+        var metrics = CodeMetricsReportBuilder.ParseType("App", extension ? $"Ext.{owner}" : owner, m =>
+        {
+            for (var i = 0; i < count; i++)
+                m.Method($"int {owner}.M(string x = \"{padding}{i}\")", 9, 1);
+        });
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/Ext.cs", "App.Ext", c =>
+        {
+            for (var i = 0; i < count; i++)
+                c.Method("M", $"(App.Arg{i},System.String)", null, m => m.Line(i + 1, 1));
+        }).ToBytes());
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.Methods.Count).IsEqualTo(count);
+        await Assert.That(report.Methods.Select(m => m.Complexity).Distinct()).IsEquivalentTo([9]);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(count);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     public async Task RepeatedExcludedIdentities_KeepDistinctAritiesAndMissingExecutableMembers()
     {
         var coverage = Cobertura.NewDoc()
