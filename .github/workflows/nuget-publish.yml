@@ -111,6 +111,9 @@ jobs:
           dotnet fallout Coverage --reports TestResults --badge-directory badge
       # main's verdict, drawn by the gate for every outcome, goes to GitHub Pages as an artifact:
       # no badge branch, and this job needs no write permission (coverage-badge deploys it).
+      - name: Add the Pages index, so the site root shows the badge instead of a 404
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('badge/coverage-badge.svg') != '' }}
+        run: cp .github/pages/index.html badge/
       - name: Upload the coverage badge for Pages
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('badge/coverage-badge.svg') != '' }}
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
