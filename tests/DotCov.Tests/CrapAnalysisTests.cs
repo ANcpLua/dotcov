@@ -245,6 +245,27 @@ public sealed class CrapAnalysisTests
     }
 
     [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task TopLevelStatements_EntryAndStateMachine_ShareOneMeasuredRow(bool bodyFirst)
+    {
+        var entry = Method("Program", "<Main>$", "(System.String[])", complexity: null,
+            lines: [(1, 1)]);
+        var body = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: null,
+            lines: [(2, 0)]);
+        var metrics = CodeMetricsReportBuilder.ParseType("<global namespace>", "Program",
+            m => m.Method("<top-level-statements-entry-point>", 8));
+
+        var report = CrapAnalysis.Analyze(bodyFirst ? [body, entry] : [entry, body], metrics);
+
+        var measured = await Assert.That(report.Methods).HasSingleItem();
+        await Assert.That(measured.Score).IsEqualTo(16.0);
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
     public async Task TopLevelStatements_SyncEntryPoint_NormalizesToProgramMain()
     {
         var mc = Method("Program", "<Main>$", "(System.String[])", complexity: 1, lines: [(1, 1)]);

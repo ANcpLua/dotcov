@@ -81,6 +81,14 @@ internal static class MethodIdentity
             return true;
         }
 
+        // The top-level entry point is a source method, not a synthetic group with an
+        // unknown ordinal. Its state machine can then attach to this direct entry.
+        if (methodName is "<Main>$")
+        {
+            methodKey = "Main";
+            return true;
+        }
+
         // On the source type itself: this-capturing lambdas (<M>b__…) and local functions
         // (<M>g__Name|…) are emitted directly on the type with mangled names.
         if (TryMangledOrigin(methodName, out var mangled, out var mangledOrdinal))
