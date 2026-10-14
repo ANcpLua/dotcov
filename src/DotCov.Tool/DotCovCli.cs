@@ -258,7 +258,8 @@ public static partial class DotCovCli
         // no-false-green contract as check's summary.
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
-        WriteDiagnostics(path, pattern, inputs, parsed.Warnings, exclusion, stderr);
+        // The analyzed report's warnings: an exclusion recomputes ExternalSources for the methods it kept.
+        WriteDiagnostics(path, pattern, inputs, report.Warnings, exclusion, stderr);
         return ExitCodes.For(gate.Outcome);
     }
 

@@ -89,7 +89,7 @@ public sealed class MethodCoverageReport
     /// </summary>
     public MethodCoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
     {
-        var rules = patterns.ToList();
+        var rules = ExclusionRules.ApplicableTo(patterns, SourceRoots);
         if (rules.Count is 0) return this;
 
         var keepRules = keep.ToList();

@@ -711,9 +711,10 @@ Validation: `fallout Coverage` 1,985 tests, 100.0% line and branch.
   code is at 92.6% lines / 77.1% branches.
 - `CoverageWarningKind.ExternalSources`, derived from the files a report holds (recomputed
   by Exclude, Merge and the method report constructor), unless `/_/` is a declared root.
-- `ExclusionRules.External` (`/_/`), CLI `--exclude-external`, Fallout
+- `ExclusionRules.External` (`//_/`, anchored: only paths starting with `/_/`; not applied to a
+  report declaring `/_/` as its root, whose warnings a merge keeps), CLI `--exclude-external`, Fallout
   `--coverage-exclude-external-param`; `--keep` accepts it as its exclusion.
 - README: exclusion and badge sections name the cause and both fixes.
 
-Validation: `fallout Coverage` 1,993 tests, 100.0% line and branch.
+Validation: `fallout Coverage` 1,997 tests, 100.0% line and branch.
 

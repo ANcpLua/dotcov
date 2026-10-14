@@ -797,7 +797,7 @@ public sealed class CoverageReport
     /// </remarks>
     public CoverageReport Exclude(IEnumerable<string> patterns, IEnumerable<string> keep)
     {
-        var rules = patterns.ToList();
+        var rules = ExclusionRules.ApplicableTo(patterns, SourceRoots);
         if (rules.Count is 0) return this;
 
         var keepRules = keep.ToList();
@@ -947,9 +947,12 @@ public static class ExclusionRules
     /// <summary>
     /// Code built somewhere else: SourceLink's deterministic root, <c>/_/</c>, which a coverage
     /// tool reports for a dependency it instrumented because the package ships a PDB. Such files
-    /// are not part of the repository, and their lines would count toward every rate.
+    /// are not part of the repository, and their lines would count toward every rate. The rule
+    /// is anchored (the matcher prepends a <c>/</c>, so <c>//_/</c> matches only a path that
+    /// starts with <c>/_/</c>), and a report that declares <c>/_/</c> as a source root owns those
+    /// paths, so the rule does not apply to it.
     /// </summary>
-    public static readonly IReadOnlyList<string> External = ["/_/"];
+    public static readonly IReadOnlyList<string> External = ["//_/"];
 
     public static readonly IReadOnlyList<string> TestCode =
     [
@@ -1004,8 +1007,12 @@ public static class ExclusionRules
     internal static IReadOnlyList<CoverageWarning> WithExternalWarning(
         IReadOnlyList<CoverageWarning> warnings, IEnumerable<string> paths, IReadOnlyList<string> sourceRoots)
     {
+        // With /_/ declared, which /_/ files are someone else's is no longer visible from the paths:
+        // keep what each input already found (a merge of a deterministic report with one that
+        // measured dependencies) and add nothing.
+        if (DeclaresDeterministicRoot(sourceRoots)) return warnings;
+
         List<CoverageWarning> result = [.. warnings.Where(static w => w.Kind is not CoverageWarningKind.ExternalSources)];
-        if (sourceRoots.Any(static r => PathIdentity.NormalizeRoot(r) == DeterministicRoot)) return result;
 
         var external = paths.Where(static p => p.StartsWith("/_/", StringComparison.Ordinal)).Distinct(StringComparer.Ordinal).ToList();
         if (external.Count > 0)
@@ -1015,6 +1022,16 @@ public static class ExclusionRules
     }
 
     private static readonly string DeterministicRoot = PathIdentity.NormalizeRoot("/_/");
+
+    private static bool DeclaresDeterministicRoot(IReadOnlyList<string> sourceRoots) =>
+        sourceRoots.Any(static r => PathIdentity.NormalizeRoot(r) == DeterministicRoot);
+
+    /// <summary>
+    /// <paramref name="patterns"/> without <see cref="External"/> for a report that declares the
+    /// deterministic root: its /_/ paths are its own files, as the warning already treats them.
+    /// </summary>
+    internal static List<string> ApplicableTo(IEnumerable<string> patterns, IReadOnlyList<string> sourceRoots) =>
+        DeclaresDeterministicRoot(sourceRoots) ? [.. patterns.Where(static p => !External.Contains(p))] : [.. patterns];
 
     /// <summary>The ambiguous files an exclusion left in the report.</summary>
     internal static List<AmbiguousFile> Remaining(IReadOnlyList<AmbiguousFile> ambiguous, List<string> excluded)

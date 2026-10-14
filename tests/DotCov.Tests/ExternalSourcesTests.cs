@@ -57,6 +57,40 @@ public sealed class ExternalSourcesTests : IDisposable
     }
 
     [Test]
+    public async Task OnlyAPathStartingWithTheDeterministicRoot_IsExternal()
+    {
+        var report = Parse(Doc(null, ("/repo/_/Owned.cs", 0), (External, 0)));
+
+        var own = report.Exclude(ExclusionRules.External, []);
+
+        await Assert.That(report.Warnings.Single().Detail).StartsWith("1 files have SourceLink paths");
+        await Assert.That(own.Files.Select(static f => f.Path)).IsEquivalentTo(["/repo/_/Owned.cs"]);
+    }
+
+    [Test]
+    public async Task ADeterministicReport_KeepsItsOwnFiles_UnderExcludeExternal()
+    {
+        var report = Parse(Doc("/_/", ("src/App.cs", 0)));
+
+        var excluded = report.Exclude(ExclusionRules.External, []);
+
+        await Assert.That(excluded.Files.Count).IsEqualTo(1);
+        await Assert.That(excluded.Exclusion.IsActive).IsFalse();
+    }
+
+    [Test]
+    public async Task MergingWithADeterministicReport_KeepsTheOtherReportsWarning()
+    {
+        var merged = CoverageReport.Merge(
+            Parse(Doc("/_/", ("src/App.cs", 1))),
+            Parse(Doc(null, (External, 0))));
+
+        await Assert.That(merged.SourceRoots.Any(static r => r.TrimEnd('/') == "/_")).IsTrue();
+        var warning = await Assert.That(merged.Warnings).HasSingleItem();
+        await Assert.That(warning.Kind).IsEqualTo(CoverageWarningKind.ExternalSources);
+    }
+
+    [Test]
     public async Task Merging_CountsTheExternalFilesOfBothReportsOnce()
     {
         var merged = CoverageReport.Merge(
@@ -99,6 +133,22 @@ public sealed class ExternalSourcesTests : IDisposable
         await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
             .IsEquivalentTo([External]);
         await Assert.That(json.RootElement.GetProperty("warnings").GetArrayLength()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Crap_StderrDescribesTheAnalyzedMethods()
+    {
+        var report = _ws.Write("coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("/repo/src/App.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass(External, "Lib.Client", c => c.Method("Call", "()", "9", m => m.Line(1, 0))).ToBytes());
+
+        var (_, _, warned) = await Run("crap", report);
+        var (code, _, stderr) = await Run("crap", report, "--exclude-external");
+
+        await Assert.That(warned).Contains("1 files have SourceLink paths");
+        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        await Assert.That(stderr).DoesNotContain("SourceLink paths");
+        await Assert.That(stderr).Contains(External);   // listed as excluded
     }
 
     [Test]
