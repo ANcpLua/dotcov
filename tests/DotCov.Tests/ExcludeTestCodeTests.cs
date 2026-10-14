@@ -216,7 +216,7 @@ public sealed class ExcludeTestCodeTests : IDisposable
     // ── The library side: what an exclusion records ──
 
     [Test]
-    public async Task Exclude_Twice_AccumulatesRulesAndFiles_AndMergeUnionsThem()
+    public async Task Exclude_Twice_AccumulatesRulesAndFiles_AndMergeReconcilesThem()
     {
         var report = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, 1))
@@ -234,6 +234,35 @@ public sealed class ExcludeTestCodeTests : IDisposable
         await Assert.That(twice.Exclusion.ExcludedFiles).IsEquivalentTo(["src/obj/B.g.cs", "tests/A.Tests/ATests.cs"]);
         await Assert.That(twice.Exclusion.Patterns).IsEquivalentTo([.. ExclusionRules.WellKnown, .. ExclusionRules.TestCode]);
         await Assert.That(twice.Exclusion.Keep).IsEquivalentTo(["Program.cs"]);
-        await Assert.That(merged.Exclusion.ExcludedFiles).IsEquivalentTo(["src/obj/B.g.cs", "tests/A.Tests/ATests.cs"]);
+        await Assert.That(merged.Files.Select(static f => f.Path)).IsEquivalentTo(["src/A.cs", "tests/A.Tests/ATests.cs"]);
+        await Assert.That(merged.Exclusion.ExcludedFiles).IsEquivalentTo(["src/obj/B.g.cs"]);
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task Merge_ReintroducedFilesAreNotExcluded_AndAbsentPathsKeepTheirExactIdentity(bool excludedFirst)
+    {
+        var original = Cobertura.NewDoc()
+            .AddClass(TestFile, c => c.Line(1, 1))
+            .AddClass("src/Only.g.cs", c => c.Line(2, 0))
+            .Parse();
+        var excluded = original.Exclude([TestFile, "Only.g.cs"], ["Program.cs"]);
+        var included = Cobertura.NewDoc()
+            .AddClass(TestFile, c => c.Line(1, 1))
+            .AddClass("src/only.g.cs", c => c.Line(3, 0))
+            .Parse();
+
+        var merged = excludedFirst ? CoverageReport.Merge(excluded, included) : CoverageReport.Merge(included, excluded);
+
+        await Assert.That(merged.TotalLines).IsEqualTo(2);
+        await Assert.That(merged.TotalLinesHit).IsEqualTo(1);
+        await Assert.That(merged.Exclusion.ExcludedFiles).IsEquivalentTo(["src/Only.g.cs"]);
+        await Assert.That(merged.Exclusion.Patterns).IsEquivalentTo([TestFile, "Only.g.cs"]);
+        await Assert.That(merged.Exclusion.Keep).IsEquivalentTo(["Program.cs"]);
+        await Assert.That(excluded.Exclusion.ExcludedFiles).IsEquivalentTo([TestFile, "src/Only.g.cs"]);
+        using var json = JsonDocument.Parse(DotCov.Formatters.JsonFormatter.Format(merged));
+        await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
+            .IsEquivalentTo(["src/Only.g.cs"]);
     }
 }

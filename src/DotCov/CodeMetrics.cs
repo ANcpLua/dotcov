@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Xml;
+using System.Text.RegularExpressions;
 
 namespace DotCov;
 
@@ -38,16 +39,32 @@ public enum CodeMetricsMemberKind
 /// <c>Name</c> attribute so it can match Cobertura method names directly.
 /// </param>
 /// <param name="Kind">Member kind — accessors and methods are gate-matchable; aggregates are fallbacks.</param>
-/// <param name="Arity">Parameter count when the display string carries a parameter list, else <c>null</c>.</param>
-/// <param name="CyclomaticComplexity">Roslyn's cyclomatic complexity for the member.</param>
-/// <param name="DisplayName">The raw <c>Name</c> attribute, kept verbatim for unmatched-member listings.</param>
+/// <param name="Arity">Parameter count from a method or indexer display, including the value
+/// parameter for indexer setters; otherwise <c>null</c>.</param>
+/// <param name="CyclomaticComplexity">Roslyn's cyclomatic complexity for the member; 0 when the metrics
+/// file gives none or an invalid value. Below 1 is no measurement and never scores.</param>
+/// <param name="DisplayName">The raw <c>Name</c> attribute, kept verbatim for unmatched-member listings
+/// (Visual Basic displays included).</param>
 public readonly record struct CodeMetricsMember(
     string TypeName,
     string MemberName,
     CodeMetricsMemberKind Kind,
     int? Arity,
     int CyclomaticComplexity,
-    string DisplayName);
+    string DisplayName)
+{
+    /// <summary>
+    /// Executable lines reported by Roslyn. Zero identifies a declaration without a
+    /// measurable body; null means the metric is absent or invalid, not zero.
+    /// </summary>
+    public int? ExecutableLines { get; init; }
+
+    /// <summary>Source path reported by the metrics producer, when available.</summary>
+    public string? File { get; init; }
+
+    /// <summary>IL type identity with generic arity retained; null for callers using the legacy type name.</summary>
+    public string? TypeIdentity { get; init; }
+}
 
 /// <summary>
 /// Streaming reader for the Microsoft.CodeAnalysis.Metrics XML shape
@@ -60,11 +77,13 @@ public readonly record struct CodeMetricsMember(
 /// <c>SymbolDisplayFormat.MinimallyQualifiedFormat</c> strings such as
 /// <c>Task&lt;string&gt; Type.LoadAsync(string fileName, int lineCount)</c>,
 /// <c>Type.Type(int seed)</c> for constructors, and <c>string Type.Prop.get</c> for accessors.
+/// Named-type nesting is limited to 256 levels to bound identity expansion.
 /// Same XmlReader streaming + hardening ethos as <see cref="CoberturaParser"/>.
 /// </summary>
-public static class CodeMetricsReader
+public static partial class CodeMetricsReader
 {
     private const long DefaultMaxChars = 50_000_000;
+    private const int MaxTypeDepth = 256;
     private const string GlobalNamespaceDisplay = "<global namespace>";
 
     public static IReadOnlyList<CodeMetricsMember> Parse(Stream stream, long maxChars = DefaultMaxChars)
@@ -97,13 +116,21 @@ public static class CodeMetricsReader
         {
             throw new XmlException($"{path}: {ex.Message}", ex, ex.LineNumber, ex.LinePosition);
         }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException($"{path}: {ex.Message}", ex);
+        }
     }
 
-    private sealed class PendingMember(string display, string element)
+    private sealed class PendingMember(string display, string element, string? file)
     {
         public readonly string Display = display;
         public readonly string Element = element;
+        public readonly string? File = file;
         public int? Complexity;
+        public int? ExecutableLines;
+        public int? LegacyExecutableLines;
+        public bool HasExecutableLines;
     }
 
     /// <summary>The document position ParseCore threads through its element handlers.</summary>
@@ -111,7 +138,8 @@ public static class CodeMetricsReader
     {
         public readonly List<CodeMetricsMember> Members = [];
         public string Namespace = "";
-        public readonly List<string> TypeChain = [];        // generic-stripped dotted segments, e.g. "Outer.Inner"
+        public readonly List<string> TypeChain = [];        // raw named-type displays, including generic parameters
+        public TypeContext? CachedType;
         public readonly Stack<PendingMember> MemberStack = new();   // Property → its Accessor methods nest
     }
 
@@ -137,16 +165,22 @@ public static class CodeMetricsReader
                 // namespace "<global namespace>"; IL names its types with no prefix at all.
                 var ns = reader.GetAttribute("Name") ?? "";
                 state.Namespace = ns is GlobalNamespaceDisplay ? "" : ns;
+                state.CachedType = null;
                 break;
 
             case "NamedType":
                 // Empty elements raise no EndElement, so only a real subtree pushes.
                 if (!reader.IsEmptyElement)
-                    state.TypeChain.Add(TypeSegment(reader.GetAttribute("Name") ?? ""));
+                {
+                    if (state.TypeChain.Count >= MaxTypeDepth)
+                        throw new XmlException($"Metrics named-type nesting exceeds {MaxTypeDepth} levels.");
+                    state.TypeChain.Add(reader.GetAttribute("Name") ?? "");
+                    state.CachedType = null;
+                }
                 break;
 
             case "Metric":
-                RecordComplexity(reader, state);
+                RecordMetric(reader, state);
                 break;
 
             default:
@@ -161,11 +195,13 @@ public static class CodeMetricsReader
         {
             case "Namespace":
                 state.Namespace = "";
+                state.CachedType = null;
                 break;
 
             case "NamedType":
                 // Every EndElement pairs with a non-empty start element, which pushed.
                 state.TypeChain.RemoveAt(state.TypeChain.Count - 1);
+                state.CachedType = null;
                 break;
 
             default:
@@ -182,39 +218,84 @@ public static class CodeMetricsReader
         // A member outside a NamedType is not ours; an empty member element carries no
         // Metrics — nothing to record.
         if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
-            state.MemberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName));
+        {
+            var display = reader.GetAttribute("Name") ?? "";
+            var context = $"Metrics member display '{display[..Math.Min(display.Length, 200)]}'";
+            MethodSignatures.ValidateLength(display, context);
+            // Check the parameter syntax here, where the member and file are still known.
+            try
+            {
+                MethodSignatures.Metrics(display);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"{context}: {ex.Message}", ex);
+            }
+            state.MemberStack.Push(new PendingMember(display, reader.LocalName, reader.GetAttribute("File")));
+        }
     }
 
     private static void CloseMember(ParserState state)
     {
         if (state.MemberStack.Count is 0) return;
         var pending = state.MemberStack.Pop();
-        // A member without a CyclomaticComplexity metric has nothing to contribute to a
-        // complexity table — skipped, not zeroed.
-        if (pending.Complexity is { } complexity)
-            state.Members.Add(Materialize(pending, state.Namespace, state.TypeChain, complexity));
+        // A member without a usable CyclomaticComplexity metric is still a member: it stays in
+        // the table as 0, which never scores, so an executable one counts as unmatched.
+        state.Members.Add(Materialize(pending,
+            state.CachedType ??= DescribeType(state.Namespace, state.TypeChain), pending.Complexity ?? 0));
     }
 
-    private static void RecordComplexity(XmlReader reader, ParserState state)
+    private static void RecordMetric(XmlReader reader, ParserState state)
     {
         // Assign to the innermost OPEN member: a Property's own Metrics arrive before its
         // <Accessors>, so accessor metrics can never leak upward.
-        if (state.MemberStack.Count > 0 &&
-            reader.GetAttribute("Name") is "CyclomaticComplexity" &&
-            int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-            state.MemberStack.Peek().Complexity = value;
+        if (state.MemberStack.Count is 0) return;
+        var pending = state.MemberStack.Peek();
+        var name = reader.GetAttribute("Name");
+        if (name is "ExecutableLines") pending.HasExecutableLines = true;
+        if (!int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            return;
+        switch (name)
+        {
+            case "CyclomaticComplexity":
+                pending.Complexity = value;
+                break;
+            case "ExecutableLines":
+                pending.ExecutableLines = value >= 0 ? value : null;
+                break;
+            case "LinesOfCode":
+                pending.LegacyExecutableLines = value >= 0 ? value : null;
+                break;
+        }
     }
 
-    private static CodeMetricsMember Materialize(
-        PendingMember pending, string ns, List<string> typeChain, int complexity)
+    private sealed record TypeContext(string Name, string Identity, string SimpleName);
+
+    // Share the enclosing identity strings across every member in a type scope. Computing
+    // the joins per member amplifies deeply nested input into repeated work and allocations.
+    private static TypeContext DescribeType(string ns, List<string> typeChain)
     {
-        var typeName = string.Join(".", typeChain);
-        if (ns.Length > 0) typeName = $"{ns}.{typeName}";
+        var typeName = string.Join(".", typeChain.Select(static name => TypeSegment(name)));
+        var typeIdentity = string.Join(".", typeChain.Select(static name => TypeSegment(name, retainArity: true)));
+        if (ns.Length > 0)
+        {
+            typeName = $"{ns}.{typeName}";
+            typeIdentity = $"{ns}.{typeIdentity}";
+        }
 
-        var enclosingSimpleName = SimpleName(typeChain[^1]);
-        var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, enclosingSimpleName);
+        return new TypeContext(typeName, typeIdentity, SimpleName(TypeSegment(typeChain[^1])));
+    }
 
-        return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display);
+    private static CodeMetricsMember Materialize(PendingMember pending, TypeContext type, int complexity)
+    {
+        var (memberName, arity, kind) = ParseDisplay(MethodSignatures.VisualBasicDisplay(pending.Display), pending.Element, type.SimpleName);
+
+        return new CodeMetricsMember(type.Name, memberName, kind, arity, complexity, pending.Display)
+        {
+            ExecutableLines = pending.HasExecutableLines ? pending.ExecutableLines : pending.LegacyExecutableLines,
+            File = pending.File,
+            TypeIdentity = type.Identity
+        };
     }
 
     private static string SimpleName(string dottedType)
@@ -228,13 +309,18 @@ public static class CodeMetricsReader
     /// trailing C# 14 extension block (<c>Ext.extension(string)</c>) dropped — its members are
     /// emitted as static methods of the enclosing static class.
     /// </summary>
-    private static string TypeSegment(string name)
+    [GeneratedRegex(@"<([^<>]*)>", RegexOptions.CultureInvariant)]
+    private static partial Regex TypeParameterLists();
+
+    private static string TypeSegment(string name, bool retainArity = false)
     {
-        var stripped = StripGenericsPerSegment(name);
-        var dot = BalancedText.LastIndexOfTopLevel(stripped, '.');
-        return dot >= 0 && stripped.AsSpan(dot + 1).StartsWith("extension(", StringComparison.Ordinal)
-            ? stripped[..dot]
-            : stripped;
+        var dot = BalancedText.LastIndexOfTopLevel(name, '.');
+        if (dot >= 0 && StripGenericsPerSegment(name[(dot + 1)..]).StartsWith("extension(", StringComparison.Ordinal))
+            name = name[..dot];
+        return retainArity
+            ? TypeParameterLists().Replace(name, static match =>
+                $"`{BalancedText.CountTopLevelItems(match.Groups[1].Value)}")
+            : StripGenericsPerSegment(name);
     }
 
     /// <summary>
@@ -287,8 +373,8 @@ public static class CodeMetricsReader
         string head, int? arity, string enclosingSimpleName)
     {
         var segment = LastDotSegment(head);
-        if (TryAccessorName(head, segment, arity, out var accessor))
-            return (accessor, null, CodeMetricsMemberKind.Accessor);
+        if (TryAccessorName(head, segment, arity, out var accessor, out var accessorArity))
+            return (accessor, accessorArity, CodeMetricsMemberKind.Accessor);
 
         if (TryOperatorName(head, arity, out var op))
             return (op, arity, CodeMetricsMemberKind.Method);
@@ -320,14 +406,22 @@ public static class CodeMetricsReader
     /// Accessor displays are paren-less and end in <c>.get</c> / <c>.set</c> / <c>.init</c> /
     /// <c>.add</c> / <c>.remove</c> — normalized to the coverage spelling (<c>get_Value</c>).
     /// </summary>
-    private static bool TryAccessorName(string head, string segment, int? arity, out string name)
+    private static bool TryAccessorName(string head, string segment, int? arity,
+        out string name, out int? accessorArity)
     {
         name = "";
+        accessorArity = null;
         if (arity is not null || !AccessorPrefixes.TryGetValue(segment, out var prefix))
             return false;
 
         var owner = LastDotSegment(head[..(head.Length - segment.Length - 1)]);
-        if (owner.StartsWith("this[", StringComparison.Ordinal)) owner = "Item";
+        if (owner.StartsWith("this[", StringComparison.Ordinal))
+        {
+            if (owner.EndsWith(']'))
+                accessorArity = BalancedText.CountTopLevelItems(owner.AsSpan(5, owner.Length - 6)) +
+                    (prefix == "set_" ? 1 : 0);
+            owner = "Item";
+        }
         name = prefix + owner;
         return true;
     }
@@ -381,13 +475,18 @@ public static class CodeMetricsReader
     /// </summary>
     private static (string Head, int? Arity) SplitParameterList(string display)
     {
-        var opIdx = FindTopLevel(display, ".operator ");
-        var open = opIdx >= 0 ? display.IndexOf('(', opIdx) : MemberParameterListOpen(display);
+        var open = ParameterListOpen(display);
         if (open < 0) return (display, null);
 
         var close = display.LastIndexOf(')');
         var parameters = close > open ? display[(open + 1)..close] : display[(open + 1)..];
         return (display[..open], BalancedText.CountTopLevelItems(parameters));
+    }
+
+    internal static int ParameterListOpen(string display)
+    {
+        var opIdx = FindTopLevel(display, ".operator ");
+        return opIdx >= 0 ? display.IndexOf('(', opIdx) : MemberParameterListOpen(display);
     }
 
     private static int MemberParameterListOpen(string display)

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using static System.FormattableString;
 
 namespace DotCov;
@@ -118,7 +119,8 @@ public sealed class CrapReport
     /// Decide whether every method is at or below <paramref name="maxCrap"/>. A method exactly AT
     /// the threshold passes — the gate fires only strictly above, mirroring <c>check</c>'s
     /// at-threshold-passes semantics (see <see cref="CrapAnalysis.Exceeds"/>). The verdict needs
-    /// COMPLETE scoring: a single <see cref="Unscored"/> method makes it
+    /// COMPLETE scoring: a single <see cref="Unscored"/> method or
+    /// <see cref="UnmatchedMetricsMembers"/> entry makes it
     /// <see cref="GateOutcome.NoData"/>, because the method the gate cannot score may be the
     /// one above the limit; zero scored methods is NoData too, and so is a report with
     /// <see cref="AmbiguousFiles"/>. A gate that cannot see everything cannot vouch for anything.
@@ -142,6 +144,11 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{Unscored.Count} of {Methods.Count + Unscored.Count} methods could not be scored - ") +
                 "supply --metrics <file> (dotnet msbuild /t:Metrics); a verdict needs every method scored");
+
+        if (UnmatchedMetricsMembers.Count > 0)
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
+                Invariant($"{UnmatchedMetricsMembers.Count} metrics members without coverage data - ") +
+                "a verdict needs every method scored");
 
         if (Methods.Count is 0)
             return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
@@ -200,11 +207,14 @@ public static class CrapAnalysis
     public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var analysis = Analyze(report.Methods, metricsMembers);
+        IReadOnlyList<string> roots = report.SelectedSourceRoot is { } root ? [root] : report.SourceRoots;
+        var normalizedMetrics = metricsMembers?.Select(m => m with { File = MetricsFile(m.File, roots) }).ToArray();
+        var (selectedMetrics, exclusion) = report.SelectMetrics(normalizedMetrics);
+        var analysis = AnalyzeCore(report.Methods, selectedMetrics, report.ExcludedMethods);
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
         {
             AmbiguousFiles = report.AmbiguousFiles,
-            Exclusion = report.Exclusion
+            Exclusion = exclusion
         };
     }
 
@@ -222,16 +232,158 @@ public static class CrapAnalysis
     /// </param>
     public static CrapReport Analyze(
         IReadOnlyList<MethodCoverage> methods,
-        IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
+        IReadOnlyList<CodeMetricsMember>? metricsMembers = null) =>
+        AnalyzeCore(methods, metricsMembers, []);
+
+    private static CrapReport AnalyzeCore(
+        IReadOnlyList<MethodCoverage> methods,
+        IReadOnlyList<CodeMetricsMember>? metricsMembers,
+        IReadOnlyList<MethodCoverage> excludedMethods)
     {
         var order = FoldRawEntries(methods);            // 1. raw coverage → logical source methods
         FoldSyntheticGroups(order);                     // 2. state machines/lambdas → their origin
 
+        var excluded = FoldRawEntries(excludedMethods);
+        FoldSyntheticGroups(excluded);
+        metricsMembers = PrepareMetrics(metricsMembers, order.Concat(excluded));
+        var metricSignatures = metricsMembers?.Select(static m => MethodSignatures.Metrics(m.DisplayName)).ToArray() ?? [];
+        var qualifications = MethodSignatures.TypeQualifications(order.Concat(excluded).Select(static m => m.Signature),
+            metricSignatures);
+        foreach (var logical in order.Concat(excluded))
+            logical.Signature = MethodSignatures.QualifyTypes(logical.Signature, qualifications);
+        var nullableIdentities = new MethodSignatures.NullableIdentities(order.Concat(excluded).Select(m => m.Signature));
+        var signatures = metricSignatures.Select(s => MethodSignatures.ResolveNullable(
+            MethodSignatures.QualifyTypes(s, qualifications, fromMetrics: true), nullableIdentities)).ToArray();
         var consumed = new HashSet<int>();
-        var (scored, unscored) = ScoreMethods(order, metricsMembers, consumed);   // 3. resolve comp, score
+        // Exclusions remove methods from the measurement scope, not from the metrics file.
+        // Match their identities without scoring them, even when they have no line data.
+        var metricsIndex = IndexMetrics(metricsMembers, signatures);
+        // Source-bearing exclusions were removed by SelectMetrics. A retained member's
+        // known source must not be consumed by an excluded same-name sibling.
+        var excludedMetricsIndex = IndexMetrics(metricsMembers, signatures, onlyWithoutSource: true);
+        // Different raw signatures/files can have the same available metrics identity.
+        // Account for that identity once, even when every candidate is a zero-body declaration.
+        foreach (var logical in excluded.Where(static l => !l.FoldedAway)
+                     .DistinctBy(static l => (l.Name.TypeIdentity, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity, l.Signature)))
+            MatchExcludedMetrics(logical, excludedMetricsIndex, consumed);
+
+        var (scored, unscored) = ScoreMethods(order, metricsMembers, metricsIndex, consumed); // 3. resolve comp, score
+        ReconcileConstructorPairs(order, metricsMembers, consumed);
+        ReconcileSyntheticOverloads(order, metricsIndex, consumed);
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
 
         return new CrapReport(scored, unscored, unmatched);
+    }
+
+    // Roslyn displays static and parameterless instance constructors identically. Only a
+    // complete, measured pair in the same type and file proves both indistinguishable rows.
+    private static void ReconcileConstructorPairs(List<LogicalMethod> order,
+        IReadOnlyList<CodeMetricsMember>? members, HashSet<int> consumed)
+    {
+        if (members is null) return;
+        var pairs = order.Where(static method => !method.FoldedAway && method.Lines.Count > 0 &&
+                method.Signature is "" && method.Name.Method is ".ctor" or ".cctor")
+            .GroupBy(static method => method.Name.TypeIdentity)
+            .Where(static group => group.Count() == 2 &&
+                group.Select(method => method.Name.Method).Distinct().Count() == 2 &&
+                group.Select(method => method.File).Distinct().Count() == 1)
+            .ToDictionary(static group => group.Key, static group => group.First().File);
+        foreach (var group in members.Select(static (member, index) => (Member: member, Index: index))
+                     .Where(static entry => entry.Member.Kind is CodeMetricsMemberKind.Method &&
+                         entry.Member.MemberName is ".ctor" && entry.Member.ExecutableLines is not 0 &&
+                         entry.Member.Arity is null or 0)
+                     .GroupBy(static entry => entry.Member.TypeIdentity ?? entry.Member.TypeName))
+        {
+            var candidates = group.ToArray();
+            if (candidates.Length != 2 || candidates.Any(static entry =>
+                    MethodSignatures.Metrics(entry.Member.DisplayName) is not "")) continue;
+            if (!pairs.TryGetValue(group.Key, out var file) || !candidates.All(entry =>
+                    string.IsNullOrWhiteSpace(entry.Member.File) || entry.Member.File is "UNKNOWN" ||
+                    PathIdentity.NormalizeRoot(entry.Member.File) == file)) continue;
+            foreach (var entry in candidates) consumed.Add(entry.Index);
+        }
+    }
+
+    // Scoring may conservatively take the maximum complexity of several candidates.
+    // Exclusions cannot use that fallback: consuming siblings would hide missing coverage.
+    // Without source-file/signature identity, only a unique compatible member is proven.
+    private static void MatchExcludedMetrics(
+        LogicalMethod logical,
+        MetricsIndex metricsIndex,
+        HashSet<int> consumed)
+    {
+        var key = $"{logical.Name.TypeIdentity}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
+        var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature, logical.File);
+        if (compatible.UniqueMember is { } index) consumed.Add(index);
+    }
+
+    // Async and iterator overloads often reach coverage only as state machines, which carry no
+    // signature. When such bodies are all a file holds of one type's member, and exactly as many
+    // metrics rows exist for it, those rows are these bodies. Each body was already scored with
+    // the largest candidate complexity, so pairing them cannot lower a score.
+    // Rows without a source file belong to no file in particular, so they serve a member's
+    // bodies only when a single file holds such bodies.
+    private static void ReconcileSyntheticOverloads(List<LogicalMethod> order, MetricsIndex index, HashSet<int> consumed)
+    {
+        var buckets = order.Where(static m => !m.FoldedAway)
+            .GroupBy(static m => (m.Name.TypeIdentity, Member: MethodIdentity.MetricsMemberName(m.Name.Method), m.File))
+            .Where(static g => g.Count() > 1 && g.All(static m => m.Folded))
+            .Select(static g => (Key: $"{g.Key.TypeIdentity}|{g.Key.Member}", g.Key.File, Count: g.Count()))
+            .ToArray();
+        var filesPerKey = buckets.CountBy(static b => b.Key).ToDictionary(StringComparer.Ordinal);
+        foreach (var (key, file, count) in buckets)
+        {
+            var scoped = index.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(file));
+            var sourceless = filesPerKey[key] == 1 ? index.Rows.GetValueOrDefault(key, []) : [];
+            var rows = sourceless.Concat(scoped?.Rows.GetValueOrDefault(key, []) ?? []).ToArray();
+            if (rows.Length == count) consumed.UnionWith(rows);
+        }
+    }
+
+    private static IReadOnlyList<CodeMetricsMember>? PrepareMetrics(
+        IReadOnlyList<CodeMetricsMember>? members, IEnumerable<LogicalMethod> methods)
+    {
+        if (members is null) return null;
+        // Legacy callers supplied the generic-stripped TypeName. Recover arity only when
+        // the coverage scope contains exactly one possible declaring-type identity.
+        var types = methods.GroupBy(static m => m.TypeKey).ToDictionary(static g => g.Key,
+            static g => g.Select(m => m.Name.TypeIdentity).Distinct().Take(2).ToArray());
+        return members.Select(m => m with
+        {
+            TypeIdentity = m.TypeIdentity ?? (types.TryGetValue(m.TypeName, out var identities) &&
+                identities.Length == 1 ? identities[0] : null),
+            File = MetricsFile(m.File, [])
+        }).ToArray();
+    }
+
+    private static string? MetricsFile(string? file, IReadOnlyList<string> roots)
+    {
+        if (string.IsNullOrWhiteSpace(file) || file is "UNKNOWN") return file;
+        var path = PathIdentity.NormalizeRoot(file);
+        if (roots.Count == 1 && roots[0].Length > 0 && !path.StartsWith('/') &&
+            !(path.Length >= 2 && path[1] == ':'))
+            path = PathIdentity.NormalizeRoot($"{roots[0].TrimEnd('/')}/{path}");
+        return path;
+    }
+
+    private static MetricsCandidates CompatibleMetrics(MetricsIndex index, string key, int? arity,
+        string? signature, string file)
+    {
+        var scoped = index.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(file));
+        if (arity is null) return MergeCandidates(index.All.GetValueOrDefault(key),
+            scoped?.All.GetValueOrDefault(key) ?? default);
+        var compatible = MergeCandidates(
+            MergeCandidates(index.ByArity.GetValueOrDefault((key, arity)),
+                index.ByArity.GetValueOrDefault((key, null))),
+            MergeCandidates(scoped?.ByArity.GetValueOrDefault((key, arity)) ?? default,
+                scoped?.ByArity.GetValueOrDefault((key, null)) ?? default));
+        if (signature is not null && compatible.ExecutableCount > 0 && !compatible.HasUnknownSignature)
+        {
+            var exact = MergeCandidates(index.BySignature.GetValueOrDefault((key, signature)),
+                scoped?.BySignature.GetValueOrDefault((key, signature)) ?? default);
+            return exact.ExecutableCount > 0 ? exact : exact with { SignatureMismatch = true };
+        }
+        return compatible;
     }
 
     /// <summary>
@@ -266,11 +418,15 @@ public static class CrapAnalysis
             if (!byKey.TryGetValue(key, out var logical))
             {
                 int? arity = origin is null ? MethodIdentity.SignatureArity(mc.Signature) : null;
-                logical = new LogicalMethod(name, typeKey, arity, origin);
+                logical = new LogicalMethod(name, typeKey, arity, origin,
+                    origin is null ? MethodSignatures.Coverage(mc.Signature) : null);
                 byKey[key] = logical;
                 order.Add(logical);
             }
 
+            // Any own state-machine body makes this the origin's body, even if a lambda
+            // created the group first. Never downgrade it when later entries are lambdas.
+            if (origin is { OwnBody: true }) logical.Origin = origin;
             logical.MergeLines(mc.LineHits);
             logical.MergeEmbeddedComplexity(mc.Complexity);
         }
@@ -310,9 +466,9 @@ public static class CrapAnalysis
     private static (List<CrapMethod> Scored, List<CrapUnscoredMethod> Unscored) ScoreMethods(
         List<LogicalMethod> order,
         IReadOnlyList<CodeMetricsMember>? metricsMembers,
+        MetricsIndex metricsIndex,
         HashSet<int> consumed)
     {
-        var (metricsIndex, accessorFallback) = IndexMetrics(metricsMembers);
         var scored = new List<CrapMethod>();
         var unscored = new List<CrapUnscoredMethod>();
 
@@ -328,7 +484,7 @@ public static class CrapAnalysis
                 continue;
             }
 
-            var (complexity, source) = ResolveComplexity(logical, metricsMembers, metricsIndex, accessorFallback, consumed);
+            var (complexity, source) = ResolveComplexity(logical, metricsIndex, consumed);
             if (complexity is not { } comp)
             {
                 unscored.Add(new CrapUnscoredMethod(display, logical.File,
@@ -356,6 +512,7 @@ public static class CrapAnalysis
         if (metricsMembers is not null)
             for (var i = 0; i < metricsMembers.Count; i++)
                 if (metricsMembers[i].Kind is CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor &&
+                    metricsMembers[i].ExecutableLines is not 0 &&
                     !consumed.Contains(i))
                     unmatched.Add(metricsMembers[i].DisplayName);
         return unmatched;
@@ -364,13 +521,14 @@ public static class CrapAnalysis
     /// <summary>A logical method's name: file identity key, arity-preserving type identity, method name.</summary>
     private readonly record struct MethodName(string File, string TypeIdentity, string Method);
 
-    private sealed class LogicalMethod(MethodName name, string typeKey, int? arity, SyntheticOrigin? origin)
+    private sealed class LogicalMethod(MethodName name, string typeKey, int? arity, SyntheticOrigin? origin, string? signature)
     {
         public readonly MethodName Name = name;
         public readonly string TypeKey = typeKey;
         public readonly int? Arity = arity;
+        public string? Signature = signature;
         /// <summary>Set for compiler-synthesized material; null for a method the source names directly.</summary>
-        public readonly SyntheticOrigin? Origin = origin;
+        public SyntheticOrigin? Origin = origin;
         public bool Folded => Origin is not null;
         public string File => Name.File;
         public readonly Dictionary<int, int> Lines = new();
@@ -408,22 +566,69 @@ public static class CrapAnalysis
         }
     }
 
-    private static (Dictionary<string, List<int>> Index, Dictionary<string, int> AccessorFallback) IndexMetrics(
-        IReadOnlyList<CodeMetricsMember>? members)
+    private readonly record struct MetricsCandidates(int? Complexity, int? UniqueMember, int ExecutableCount,
+        bool HasUnknownSignature)
     {
-        var index = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        var accessorFallback = new Dictionary<string, int>(StringComparer.Ordinal);
-        if (members is null) return (index, accessorFallback);
+        public bool SignatureMismatch { get; init; }
+    }
+
+    private sealed class MetricsIndex
+    {
+        public readonly Dictionary<string, MetricsCandidates> All = new(StringComparer.Ordinal);
+        public readonly Dictionary<(string Key, int? Arity), MetricsCandidates> ByArity = new();
+        public readonly Dictionary<(string Key, string Signature), MetricsCandidates> BySignature = new();
+        public readonly Dictionary<string, (int Index, int Complexity)> AccessorFallback = new(StringComparer.Ordinal);
+        public readonly Dictionary<int, string> PropertyFiles = new();
+        public readonly Dictionary<string, MetricsIndex> ByFile = new(StringComparer.Ordinal);
+        /// <summary>Every method and accessor row per member key, for cardinality reconciliation.</summary>
+        public readonly Dictionary<string, List<int>> Rows = new(StringComparer.Ordinal);
+    }
+
+    private static MetricsCandidates MergeCandidates(MetricsCandidates left, MetricsCandidates right)
+    {
+        var complexity = left.Complexity is { } l && right.Complexity is { } r
+            ? Math.Max(l, r) : left.Complexity ?? right.Complexity;
+        var count = Math.Min(2, left.ExecutableCount + right.ExecutableCount);
+        return new MetricsCandidates(complexity, count is 1 ? left.UniqueMember ?? right.UniqueMember : null, count,
+            left.HasUnknownSignature || right.HasUnknownSignature);
+    }
+
+    private static void AddCandidates<TKey>(Dictionary<TKey, MetricsCandidates> index, TKey key,
+        MetricsCandidates candidate) where TKey : notnull =>
+        index[key] = MergeCandidates(index.GetValueOrDefault(key), candidate);
+
+    private static MetricsIndex IndexMetrics(IReadOnlyList<CodeMetricsMember>? members, string?[] signatures,
+        bool onlyWithoutSource = false)
+    {
+        var index = new MetricsIndex();
+        if (members is null) return index;
 
         for (var i = 0; i < members.Count; i++)
         {
             var m = members[i];
+            if (onlyWithoutSource && !string.IsNullOrWhiteSpace(m.File) && m.File is not "UNKNOWN") continue;
+            var target = index;
+            if (!string.IsNullOrWhiteSpace(m.File) && m.File is not "UNKNOWN")
+            {
+                if (!index.ByFile.TryGetValue(m.File, out target))
+                    index.ByFile.Add(m.File, target = new MetricsIndex());
+            }
             switch (m.Kind)
             {
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
-                    var key = $"{m.TypeName}|{m.MemberName}";
-                    if (!index.TryGetValue(key, out var list)) index[key] = list = [];
-                    list.Add(i);
+                    var key = $"{m.TypeIdentity ?? m.TypeName}|{m.MemberName}";
+                    var signature = signatures[i];
+                    // A zero-body declaration needs no coverage, and a complexity below 1 measured
+                    // nothing. Neither supplies complexity: both leave an empty bucket, so an
+                    // aggregate cannot fill in, and only the measured row remains unmatched.
+                    var measured = m.ExecutableLines is not 0 && m.CyclomaticComplexity >= 1;
+                    var candidate = measured ? new MetricsCandidates(m.CyclomaticComplexity, i, 1, signature is null) : default;
+                    AddCandidates(target.All, key, candidate);
+                    if (measured) (CollectionsMarshal.GetValueRefOrAddDefault(target.Rows, key, out _) ??= []).Add(i);
+                    AddCandidates(target.ByArity, (key, m.Arity), candidate);
+                    if (signature is not null) AddCandidates(target.BySignature, (key, signature), candidate);
+                    // The metrics display omits static/instance information for extension
+                    // blocks. An inferred receiver must not prove a match for a static member.
                     break;
 
                 case CodeMetricsMemberKind.Property:
@@ -431,31 +636,29 @@ public static class CrapAnalysis
                     // aggregate (sum over its accessors) is the honest-but-coarser fallback,
                     // used only when no accessor entry matched. An aggregate below 1 summed no
                     // declared accessor (a positional record property) — nothing was measured.
-                    if (m.CyclomaticComplexity < 1) break;
-                    accessorFallback.TryAdd($"{m.TypeName}|get_{m.MemberName}", i);
-                    accessorFallback.TryAdd($"{m.TypeName}|set_{m.MemberName}", i);
+                    if (m.CyclomaticComplexity < 1 || m.ExecutableLines is 0) break;
+                    target.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|get_{m.MemberName}", (i, m.CyclomaticComplexity));
+                    target.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|set_{m.MemberName}", (i, m.CyclomaticComplexity));
                     break;
             }
         }
 
-        return (index, accessorFallback);
+        return index;
     }
 
     /// <summary>
-    /// Two separate decisions. First the metrics table is consulted and every consulted member
-    /// is marked matched — a member with a coverage counterpart is matched whether or not its
-    /// value ends up being used. Then the value is chosen: embedded complexity wins because it
+    /// Two separate decisions. First the metrics table is consulted and a unique executable
+    /// counterpart is marked matched, whether or not its value ends up being used.
+    /// Then the value is chosen: embedded complexity wins because it
     /// measured the exact assembly that was covered; the metrics value fills in only when the
     /// report carries none.
     /// </summary>
     private static (int? Complexity, CrapComplexitySource Source) ResolveComplexity(
         LogicalMethod logical,
-        IReadOnlyList<CodeMetricsMember>? members,
-        Dictionary<string, List<int>> metricsIndex,
-        Dictionary<string, int> accessorFallback,
+        MetricsIndex metricsIndex,
         HashSet<int> consumed)
     {
-        var fromMetrics = MatchMetrics(logical, members, metricsIndex, accessorFallback, consumed);
+        var fromMetrics = MatchMetrics(logical, metricsIndex, consumed);
 
         if (logical.EmbeddedComplexity is { } embedded)
             return (embedded, CrapComplexitySource.CoverageReport);
@@ -464,45 +667,36 @@ public static class CrapAnalysis
     }
 
     /// <summary>
-    /// The metrics-file complexity for <paramref name="logical"/>, marking every consulted
-    /// member as matched; null when the table has no counterpart.
+    /// The metrics-file complexity for <paramref name="logical"/>, marking only a unique
+    /// executable candidate as matched; null when the table has no counterpart.
     /// </summary>
     private static int? MatchMetrics(
         LogicalMethod logical,
-        IReadOnlyList<CodeMetricsMember>? members,
-        Dictionary<string, List<int>> metricsIndex,
-        Dictionary<string, int> accessorFallback,
+        MetricsIndex metricsIndex,
         HashSet<int> consumed)
     {
-        if (members is null) return null;
-
-        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
-        if (metricsIndex.TryGetValue(key, out var candidates))
+        var key = $"{logical.Name.TypeIdentity}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
+        var scoped = metricsIndex.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(logical.File));
+        if (metricsIndex.All.ContainsKey(key) || (scoped?.All.ContainsKey(key) ?? false))
         {
-            // Overload disambiguation by arity when both sides know it. When arity is unknown
-            // (folded state machines/lambdas) or nothing matches it, take the MAX complexity
-            // among the same-named candidates — the conservative direction for a gate — and
-            // mark every candidate consulted as matched.
-            var pool = candidates;
-            if (logical.Arity is { } a)
-            {
-                var exact = candidates.Where(i => members[i].Arity == a).ToList();
-                if (exact.Count > 0) pool = exact;
-            }
-
-            var best = 0;
-            foreach (var i in pool)
-            {
-                consumed.Add(i);
-                best = Math.Max(best, members[i].CyclomaticComplexity);
-            }
-            return best;
+            // Keep the conservative complexity fallback when no arity matches, but never
+            // treat a provably incompatible candidate as evidence of complete coverage.
+            var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature, logical.File);
+            if (compatible.SignatureMismatch) return null;
+            if (compatible.UniqueMember is { } index && !consumed.Add(index)) return null;
+            return compatible.Complexity ?? MergeCandidates(metricsIndex.All.GetValueOrDefault(key),
+                scoped?.All.GetValueOrDefault(key) ?? default).Complexity;
         }
 
-        if (accessorFallback.TryGetValue(key, out var propertyIndex))
+        var propertyFound = scoped is not null && scoped.AccessorFallback.TryGetValue(key, out _);
+        var propertyIndex = propertyFound ? scoped! : metricsIndex;
+        if (propertyIndex.AccessorFallback.TryGetValue(key, out var property))
         {
-            consumed.Add(propertyIndex);
-            return members[propertyIndex].CyclomaticComplexity;
+            // A property roll-up can serve both accessors, but not a different file's property.
+            if (metricsIndex.PropertyFiles.TryGetValue(property.Index, out var file) && file != logical.File) return null;
+            metricsIndex.PropertyFiles[property.Index] = logical.File;
+            consumed.Add(property.Index);
+            return property.Complexity;
         }
 
         return null;

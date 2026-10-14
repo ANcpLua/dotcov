@@ -1,4 +1,5 @@
 using System.Text;
+using System.Xml;
 
 namespace DotCov.Tests;
 
@@ -253,6 +254,21 @@ public sealed class CodeMetricsReaderEdgeTests
     }
 
     [Test]
+    [Arguments("int A.this[int i].get", 1)]
+    [Arguments("void A.this[int i].set", 2)]
+    [Arguments("void A.this[int i].init", 2)]
+    [Arguments("int A.this[int i, int j].get", 2)]
+    [Arguments("void A.this[Dictionary<string, int> map, (int, int) pair, int[,] grid].set", 4)]
+    [Arguments("int A.this[int i]invalid.get", null)]
+    public async Task IndexerAccessorArity_IncludesIndicesAndSetterValue(string display, int? expected)
+    {
+        var member = await One(ParseMethod(display, type: "A"));
+
+        await Assert.That(member.Kind).IsEqualTo(CodeMetricsMemberKind.Accessor);
+        await Assert.That(member.Arity).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task ArrayReturnOperator_BracketsBeforeTheOperatorMarkerStayBalanced()
     {
         var m = await One(ParseMethod("int[] GlobalThing.operator +(GlobalThing a, int[,] b)"));
@@ -398,7 +414,7 @@ public sealed class CodeMetricsReaderEdgeTests
     [Arguments("2.5")]
     [Arguments("99999999999")]
     [Arguments("")]
-    public async Task NonIntegerComplexity_MemberSkippedNotZeroed(string value)
+    public async Task NonIntegerComplexity_IsKeptAsNoMeasurement(string value)
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp"><Types><NamedType Name="Calc"><Members>
@@ -406,7 +422,8 @@ public sealed class CodeMetricsReaderEdgeTests
             </Members></NamedType></Types></Namespace>
             """);
 
-        await Assert.That(members).IsEmpty();
+        var member = await Assert.That(members).HasSingleItem();
+        await Assert.That(member.CyclomaticComplexity).IsEqualTo(0);
     }
 
     [Test]
@@ -422,4 +439,35 @@ public sealed class CodeMetricsReaderEdgeTests
         await Assert.That(members.Count).IsEqualTo(1);
         await Assert.That(stream.CanRead).IsTrue();
     }
+    [Test]
+    public async Task DeepTypeScope_WithManyMembers_PreservesNamesWhenReturningToParent()
+    {
+        const int depth = 256;
+        const int count = 1000;
+        var xml = new StringBuilder("<Namespace Name=\"App\">");
+        for (var i = 0; i < depth; i++) xml.Append("<NamedType Name=\"A&lt;T&gt;\">");
+        for (var i = 0; i < count; i++) xml.Append($"<Method Name=\"void A.M{i}()\">{Metric3}</Method>");
+        for (var i = 1; i < depth; i++) xml.Append("</NamedType>");
+        xml.Append($"<Method Name=\"void A.Parent()\">{Metric3}</Method></NamedType></Namespace>");
+
+        var members = ParseRaw(xml.ToString());
+
+        await Assert.That(members.Count).IsEqualTo(count + 1);
+        await Assert.That(members.Take(count).Select(m => m.TypeName).Distinct())
+            .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A", depth))]);
+        await Assert.That(members.Take(count).Select(m => m.TypeIdentity!).Distinct())
+            .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A`1", depth))]);
+        await Assert.That(members[^1].TypeIdentity).IsEqualTo("App.A`1");
+        await Assert.That(members[^1].MemberName).IsEqualTo("Parent");
+    }
+
+    [Test]
+    public async Task ExcessiveNamedTypeNesting_IsRejectedBeforeIdentityExpansion()
+    {
+        var xml = string.Concat(Enumerable.Repeat("<NamedType Name=\"A\">", 257)) +
+                  string.Concat(Enumerable.Repeat("</NamedType>", 257));
+        var error = Assert.ThrowsExactly<XmlException>(() => ParseRaw(xml));
+        await Assert.That(error.Message).Contains("256 levels");
+    }
+
 }

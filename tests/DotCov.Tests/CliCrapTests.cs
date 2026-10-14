@@ -240,11 +240,6 @@ public sealed class CliCrapTests : IDisposable
                                   <Metric Name="CyclomaticComplexity" Value="6" />
                                 </Metrics>
                               </Method>
-                              <Method Name="void B.NeverCovered()">
-                                <Metrics>
-                                  <Metric Name="CyclomaticComplexity" Value="2" />
-                                </Metrics>
-                              </Method>
                             </Members>
                           </NamedType>
                         </Types>
@@ -260,11 +255,36 @@ public sealed class CliCrapTests : IDisposable
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).Contains("FAIL: worst CRAP 42.0");
-        // The unmatched metrics member is listed, never silently dropped.
-        await Assert.That(stdout).Contains("void B.NeverCovered()");
+        await Assert.That(stdout).Contains("MyApp.B.M");
     }
 
     // ── Output formats ──
+
+    [Test]
+    [Arguments("table")]
+    [Arguments("md")]
+    [Arguments("json")]
+    public async Task Crap_UninstrumentedMetricsMethod_WithholdsPass_Exits3(string format)
+    {
+        var metrics = _ws.Write("incomplete.Metrics.xml", CodeMetricsReportBuilder.Create()
+            .Namespace("MyApp", t => t.Type("A", m => m
+                .Method("void A.M()", 5)
+                .Method("void A.NeverCovered()", 9)))
+            .ToBytes());
+
+        var (code, stdout, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", metrics, "--format", format);
+
+        await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
+        await Assert.That(stderr).StartsWith("NODATA: worst CRAP 30.0 (max 30)");
+        await Assert.That(stderr).Contains("1 metrics members without coverage data");
+        await Assert.That(stdout).DoesNotContain("PASS:");
+        await Assert.That(stdout).Contains("void A.NeverCovered()");
+        if (format is "json")
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(stdout);
+            await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
+        }
+    }
 
     [Test]
     public async Task Crap_JsonFormat_EmitsGateAndMethods()

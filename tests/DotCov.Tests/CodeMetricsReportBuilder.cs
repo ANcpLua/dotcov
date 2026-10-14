@@ -67,18 +67,22 @@ internal sealed class CodeMetricsReportBuilder
 
     internal sealed class MemberListBuilder(XElement members)
     {
-        public MemberListBuilder Method(string display, int complexity) => Member("Method", display, complexity, null);
+        public MemberListBuilder Method(string display, int complexity, int? executableLines = null) =>
+            Member("Method", display, complexity, null, executableLines);
 
         public MemberListBuilder Property(string display, int complexity, Action<MemberListBuilder>? accessors = null) =>
             Member("Property", display, complexity, accessors);
 
-        private MemberListBuilder Member(string element, string display, int complexity, Action<MemberListBuilder>? accessors)
+        private MemberListBuilder Member(string element, string display, int complexity, Action<MemberListBuilder>? accessors,
+            int? executableLines = null)
         {
             var member = new XElement(element,
                 new XAttribute("Name", display),
-                new XAttribute("File", "/src/Probe.cs"),
                 new XAttribute("Line", "1"),
                 Metrics(complexity));
+            if (executableLines is { } lines)
+                member.Element("Metrics")!.Add(new XElement("Metric",
+                    new XAttribute("Name", "ExecutableLines"), new XAttribute("Value", lines)));
             if (accessors is not null)
             {
                 var list = new XElement("Accessors");

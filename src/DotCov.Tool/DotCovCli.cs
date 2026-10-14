@@ -62,7 +62,8 @@ public static partial class DotCovCli
     }
 
     static bool IsExpectedFailure(Exception ex) =>
-        ex is UsageError or CliError or UndeclaredSourceRootException or XmlException or IOException or UnauthorizedAccessException;
+        ex is UsageError or CliError or UndeclaredSourceRootException or XmlException or IOException or
+            InvalidDataException or UnauthorizedAccessException;
 
     // Not async: each arm hands back its command's Task, so a synchronous command's exception
     // still surfaces inside RunAsync's try, and the switch stays one branch per command.

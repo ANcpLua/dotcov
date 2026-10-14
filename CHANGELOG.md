@@ -2,40 +2,6 @@
 
 Rolling task-session log, oldest → newest, capped at 20 entries.
 
-## Task 1 — 2026-05-15 — Coverlet-cased `branch="True"`, branch dedup, 100% self-coverage
-
-Built on top of `b306779` (which switched `ParseClass` to a full `<class>` subtree walk
-with per-source-line Math.Max aggregation across multiple IL-type class blocks).
-
-Changed:
-- Case-insensitive match for `branch="true"` / `branch="True"` in `CoberturaParser`. The
-  previous literal-pattern compare rejected Coverlet's Pascal-cased value (`XmlConvert
-  .ToString(bool)`), silently dropping every branch line in Coverlet output — branch counts
-  rendered as a fake 100% because `TotalBranches` was 0.
-- New `BranchLinesSeen` set on `LineAccumulator` so branches are counted once per source
-  line. Without this, lines that appear both under `<methods>/<method>/<lines>` and
-  `<class>/<lines>` would double-count their branch totals.
-- `CoverageDiff.Compare` switch reordered to remove the unreachable `_ => throw` default.
-- `Ansi.EnableOnWindows` marked `[ExcludeFromCodeCoverage]` — its two branches can only be
-  exercised on different OSes; the "never throws" contract test still covers it.
-- Added `coverlet.runsettings` excluding `[CompilerGenerated]` and `[GeneratedCode]` types
-  and `obj/` source-generator output, so async-state-machine phantom branches don't cap us.
-
-Verified:
-- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` followed by
-  `dotcov report TestResults/ --exclude-generated` reports **Lines 100%** /
-  **Branches 100%** across 165 tests.
-- Regression tests cover the methods+class-level duplication (with `branch="True"`
-  branches that previously double-counted), case-insensitive `branch` attr matching across
-  `true`/`True`/`TRUE`, missing/malformed `hits`, and Removed/Added file rendering across
-  all three formatters (Table, Markdown, JSON).
-
-Notes:
-- Numbering starts at 1; no prior CHANGELOG existed in repo metadata.
-- The pre-existing `97.9% line / 100% branch` figure in commit `ee3bf32` was an artefact
-  of the casing bug — `branch="True"` lines were ignored, so total branches was 0 and the
-  rate trivially rendered as 100%.
-
 ## Task 2 — 2026-05-15 — Codecov-pattern alignment: branch dedup, strict line state, indirect-change diff
 
 Lifted three semantically-valuable patterns from Codecov's coverage model and grafted them
@@ -839,3 +805,42 @@ Verified:
   fails on `5a50ddf` and passes here; each policy has a contract test per command through the
   CLI entry point and through the Fallout target (`FalloutBuildTests`, `RepositoryBuildTests`);
   `dotcov test` contracts run against a stand-in dotnet (`FakeDotnet`).
+
+## Task 21 — 2026-10-14 — 3.0.1: CRAP completeness and exclusion corrections
+
+- Missing executable metrics members prevent PASS; ambiguous overloads and known arity
+  mismatches remain unmatched. Indexer accessors retain index and setter-value counts.
+- Metrics preserve executable-line counts and source paths. Non-executable declarations
+  neither require coverage nor provide executable complexity. Exclusions apply to
+  metrics-only files, preserve ordered keep rules, and never consume retained siblings.
+- Async bodies retain their own identity in either input order. Merged exclusion metadata
+  lists only absent files. Indexed metrics matching avoids repeated candidate scans.
+- Patched Fallout cryptography dependencies to 10.0.13 without suppressing NuGet audit.
+- A metrics complexity below 1 on an executable member supplies no complexity (reader input
+  and library callers alike) and the row still counts as unmatched, so the gate is NODATA.
+  The reader keeps rows with a missing or malformed complexity as 0 instead of dropping them.
+- Visual Basic metrics displays (`Sub`/`Function … As T`, generic `M(Of T)`, `Sub New`,
+  `ByRef`, `Optional`, `ParamArray`, `(Of T)`, `T()`) are normalized for matching while the
+  raw display is kept for listings; tuple syntax is validated there too, so a
+  malformed member names the metrics file and member.
+- Parentheses in a Cobertura signature (only a truncated function pointer produces them)
+  make it unknown instead of an error; malformed tuple syntax stays an input error in
+  metrics displays, where source tuple syntax really occurs.
+- Coverage signatures with a function pointer (Coverlet truncates them to `(System.Int32))`)
+  and metrics `delegate*` parameters are unknown signatures; `crap` no longer throws
+  `Unbalanced tuple type`. Escaped identifiers (`@int`) drop the escape after aliasing;
+  a generic `T?` that is a value type in one method and a reference type in another stays
+  unresolved instead of being forced to `Nullable<T>` report-wide.
+- Metrics `delegate*` parameters lower to one canonical identity (calling convention dropped,
+  `void` aliased to `System.Void`), so they conflict with other known signatures while
+  Coverlet's truncated spelling stays unknown.
+- State-machine-only async overloads consume their metrics rows when the body and row counts
+  of a member in one file agree (rows without a source file only when one file holds such
+  bodies); `--source-root` now also roots relative metrics paths.
+- `GateAwareTableWiringTests` use the shared `FakeDotnet`, so their two `dotcov test` cases
+  run on Windows too; one Linux/macOS-only test remains (Unix file modes).
+- Aligned package/action/README versions and rewrote `docs/releases/3.0.1.md` around
+  user-visible behaviour.
+
+Validation: each fix has a regression test that fails before it; PR #79's CI is the
+full-suite and 100/100 coverage record.

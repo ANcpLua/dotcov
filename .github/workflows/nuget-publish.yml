@@ -109,6 +109,21 @@ jobs:
         run: |
           dotnet tool restore
           dotnet fallout Coverage --reports TestResults
+      - name: Locate uncovered branches after a failed coverage gate
+        if: failure() && matrix.os == 'ubuntu-latest'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          for report in Path('TestResults').glob('**/*cobertura*.xml'):
+              print(f"Coverage diagnostics: {report}")
+              for source in ET.parse(report).findall('.//class'):
+                  for line in source.findall('./lines/line'):
+                      coverage = line.get('condition-coverage', '')
+                      if coverage and not coverage.startswith('100%'):
+                          print(f"{source.get('filename')}:{line.get('number')}: {coverage}")
+          PY
 
   # The integration matrices run on Linux and Windows. macOS adds no coverage path of its own
   # (POSIX paths like Linux); BadgeActionTests run badge.sh under macOS's bash 3.2 locally.

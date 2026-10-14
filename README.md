@@ -203,7 +203,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v3.0.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v3.0.1
     with:
       reports: TestResults
       min-line: 80
@@ -250,5 +250,5 @@ fallout Coverage                            # tests plus the coverage gate
 ## Feedback
 
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·
-[Release notes](docs/releases/3.0.0.md) ·
+[Release notes](docs/releases/3.0.1.md) ·
 [MIT](LICENSE)

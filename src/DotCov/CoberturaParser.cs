@@ -382,6 +382,9 @@ public static partial class CoberturaParser
 
         private void BeginMethod(XmlReader sub)
         {
+            if (methods is not null)
+                MethodSignatures.ValidateLength(sub.GetAttribute("signature") ?? "",
+                    $"Coverage signature for {className}.{sub.GetAttribute("name")} in {file}");
             _methodAcc = methods?.For(
                 new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
                 DecodeComplexity(sub.GetAttribute("complexity")));

@@ -69,4 +69,22 @@ internal static class BalancedText
         }
         return count;
     }
+
+    internal static IEnumerable<string> SplitTopLevel(string list)
+    {
+        if (list.Trim().Length is 0) yield break;
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < list.Length; i++)
+        {
+            if (depth is 0 && list[i] is ',')
+            {
+                yield return list[start..i].Trim();
+                start = i + 1;
+            }
+            if (list[i] is '"' or '\'') i = LiteralEnd(list, i);
+            else depth += DepthDelta(list[i]);
+        }
+        yield return list[start..].Trim();
+    }
 }

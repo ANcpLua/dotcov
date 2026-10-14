@@ -141,10 +141,11 @@ public sealed class CrapAnalysisEdgeTests
     }
 
     [Test]
-    public async Task ExtensionBlockMembers_MatchTheStaticClassImplementations()
+    public async Task ExtensionBlockMembers_ScoreConservativelyWithoutInventingReceiverIdentity()
     {
         // IL: P.Ext.Twice(string) and P.Ext.get_IsBig(string) — the receiver becomes the first
-        // parameter, so arity differs from the display and the name match decides.
+        // parameter. The metrics display omits whether a member is static or instance, so
+        // a receiver-inferred method match cannot prove completeness.
         var metrics = CodeMetricsReportBuilder.ParseType("P", "Ext.extension(string)", m => m
             .Method("int extension(string).Twice()", 3)
             .Property("bool extension(string).IsBig", 2, a => a.Method("bool extension(string).IsBig.get", 2)));
@@ -154,7 +155,8 @@ public sealed class CrapAnalysisEdgeTests
         var report = CrapAnalysis.Analyze([twice, isBig], metrics);
 
         await Assert.That(report.Unscored).IsEmpty();
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["int extension(string).Twice()"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
         await Assert.That(report.Methods).Contains(m => m is { Method: "P.Ext.Twice", Complexity: 3, Score: 12.0 });
         await Assert.That(report.Methods).Contains(m => m is { Method: "P.Ext.get_IsBig", Complexity: 2 });
     }
@@ -226,7 +228,7 @@ public sealed class CrapAnalysisEdgeTests
     }
 
     [Test]
-    public async Task UnparseableSignature_ArityUnknown_TakesTheMaxAcrossOverloads()
+    public async Task UnparseableSignature_ArityUnknown_TakesTheMaxButLeavesAmbiguousMetricsUnmatched()
     {
         var metrics = new[]
         {
@@ -240,7 +242,8 @@ public sealed class CrapAnalysisEdgeTests
 
             var m = await Assert.That(report.Methods).HasSingleItem();
             await Assert.That(m.Complexity).IsEqualTo(7);
-            await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+            await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(2);
+            await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
         }
     }
 

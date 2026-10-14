@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace DotCov;
 
 /// <summary>
@@ -30,6 +32,13 @@ namespace DotCov;
 /// </summary>
 internal static class MethodIdentity
 {
+    private static readonly Regex FileTypePrefix = new(@"<[A-Za-z0-9_]*>F[0-9A-F]{64}__",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
+    // The source file remains part of MethodName, so two file-local Worker types
+    // never become one logical method when their compiler prefixes are removed.
+    internal static string SourceTypeName(string name) => FileTypePrefix.Replace(name, "");
+
     /// <summary>
     /// Normalize an IL-level identity to its source-method identity. Returns <c>false</c> for
     /// pure compiler infrastructure with no source method to fold into — display-class
@@ -55,7 +64,7 @@ internal static class MethodIdentity
         methodKey = "";
         origin = null;
 
-        var chain = ScanClassChain(className);
+        var chain = ScanClassChain(SourceTypeName(className));
 
         if (chain.TypeSegments.Count is 0) return false;
         typeIdentity = string.Join(".", chain.TypeSegments);
@@ -78,6 +87,14 @@ internal static class MethodIdentity
             if (!TryMangledOrigin(methodName, out var name, out var ordinal)) return false;
             methodKey = name;
             origin = new SyntheticOrigin(ordinal ?? chain.ContainerOrdinal ?? "", OwnBody: false);
+            return true;
+        }
+
+        // The top-level entry point is a source method, not a synthetic group with an
+        // unknown ordinal. Its state machine can then attach to this direct entry.
+        if (methodName is "<Main>$")
+        {
+            methodKey = "Main";
             return true;
         }
 

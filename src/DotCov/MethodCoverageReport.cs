@@ -41,6 +41,41 @@ public sealed class MethodCoverageReport
     /// <summary>The exclusions applied to this report and the files they removed.</summary>
     public FileExclusion Exclusion { get; init; } = FileExclusion.None;
 
+    // Retain identities removed by Exclude for metrics completeness accounting only.
+    // They must never contribute lines, complexity, or unscored rows to the selected scope.
+    internal IReadOnlyList<MethodCoverage> ExcludedMethods { get; init; } = [];
+
+    // The root --source-root chose; relative metrics paths resolve against it as files did.
+    internal string? SelectedSourceRoot { get; init; }
+
+    // Preserve each operation: a keep in a later call cannot undo an earlier exclusion.
+    private IReadOnlyList<(List<string> Rules, List<string> Keep)> ExclusionSteps { get; init; } = [];
+
+    internal (IReadOnlyList<CodeMetricsMember>? Members, FileExclusion Exclusion) SelectMetrics(
+        IReadOnlyList<CodeMetricsMember>? members)
+    {
+        if (members is null || ExclusionSteps.Count is 0) return (members, Exclusion);
+        var selected = new List<CodeMetricsMember>();
+        var paths = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var member in members)
+        {
+            if (string.IsNullOrWhiteSpace(member.File) || member.File is "UNKNOWN")
+            {
+                selected.Add(member);
+                continue;
+            }
+            var path = PathIdentity.NormalizeRoot(member.File);
+            if (!paths.TryGetValue(path, out var excluded))
+            {
+                excluded = ExclusionSteps.Any(step => ExclusionRules.Excluded(path, step.Rules, step.Keep));
+                paths.Add(path, excluded);
+            }
+            if (!excluded) selected.Add(member);
+        }
+        return (selected, Exclusion.Union(new FileExclusion([], [],
+            paths.Where(static p => p.Value).Select(static p => p.Key).ToArray())));
+    }
+
     /// <summary>
     /// Remove every method whose file matches <paramref name="patterns"/>, unless it matches
     /// <paramref name="keep"/> — exactly the substring-match semantics of
@@ -55,11 +90,16 @@ public sealed class MethodCoverageReport
 
         var keepRules = keep.ToList();
         var (kept, excluded) = ExclusionRules.Partition(Methods, static m => m.File, rules, keepRules);
+        var excludedPaths = excluded.ToHashSet(StringComparer.Ordinal);
 
         return new MethodCoverageReport(kept, Warnings, SourceRoots)
         {
             AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
-            Exclusion = Exclusion.Then(rules, keepRules, excluded)
+            Exclusion = Exclusion.Then(rules, keepRules, excluded),
+            ExclusionSteps = [.. ExclusionSteps, (rules, keepRules)],
+            SelectedSourceRoot = SelectedSourceRoot,
+            ExcludedMethods = ExcludedMethods.Concat(
+                Methods.Where(m => excludedPaths.Contains(m.File))).ToArray()
         };
     }
 }

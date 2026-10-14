@@ -123,6 +123,25 @@ public sealed class CrapFoldingTests
     }
 
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task AsyncOverloadWithLambda_KeepsItsOwnBody_RegardlessOfEntryOrder(bool lambdaFirst)
+    {
+        // The covered sync overload would dilute the uncovered async body from 42 to 10.5
+        // if the first lambda's OwnBody=false survived merging the state machine.
+        var sync = Method("Ns.T", "M", "(System.Int32)", 1, [(4, 1), (5, 1), (6, 1)]);
+        var lambda = Method("Ns.T/<>c", "<M>b__1_0", "()", 1, [(12, 0)]);
+        var body = Method("Ns.T/<M>d__1", "MoveNext", "()", 6, [(11, 0), (12, 0), (13, 0)]);
+
+        var report = CrapAnalysis.Analyze(lambdaFirst ? [sync, lambda, body] : [sync, body, lambda]);
+
+        await Assert.That(report.Methods.Select(static m => (m.StartLine, m.Complexity, m.Coverage, m.Score)))
+            .IsEquivalentTo([(4, 1, 1.0, 1.0), (11, 6, 0.0, 42.0)]);
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Fail);
+    }
+
+    [Test]
     public async Task LambdasOfOneMethod_FoldIntoItsOnlyOverload()
     {
         // Everything synthesized for method #2 — two lambdas, a closure, a local function and

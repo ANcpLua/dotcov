@@ -791,6 +791,8 @@ public sealed class CoverageReport
 
         WarnOnAmbiguousFileIdentity(a, b, warnings);
 
+        var exclusion = a.Exclusion.Union(b.Exclusion);
+
         return new CoverageReport(merged.Values.ToList())
         {
             Warnings = warnings,
@@ -800,7 +802,12 @@ public sealed class CoverageReport
             SourceRoots = a.SourceRoots.Concat(b.SourceRoots)
                 .DistinctBy(PathIdentity.NormalizeRoot, StringComparer.Ordinal).ToList(),
             AmbiguousFiles = AmbiguousFile.Union(a.AmbiguousFiles.Concat(b.AmbiguousFiles)),
-            Exclusion = a.Exclusion.Union(b.Exclusion)
+            // The other input may reintroduce a previously excluded file. Keep the applied
+            // rules, but list only paths that remain absent, using the same identity as Files.
+            Exclusion = exclusion with
+            {
+                ExcludedFiles = exclusion.ExcludedFiles.Where(p => !merged.ContainsKey(p)).ToArray()
+            }
         };
     }
 
@@ -946,7 +953,7 @@ public static class ExclusionRules
 /// </summary>
 /// <param name="Patterns">Exclusion patterns, distinct, in first-applied order.</param>
 /// <param name="Keep">Keep exemptions, distinct, in first-applied order.</param>
-/// <param name="ExcludedFiles">Paths removed, distinct, in first-seen order.</param>
+/// <param name="ExcludedFiles">Paths removed and still absent from the report, distinct, in first-seen order.</param>
 public sealed record FileExclusion(
     IReadOnlyList<string> Patterns,
     IReadOnlyList<string> Keep,

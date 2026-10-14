@@ -24,7 +24,7 @@ public static partial class CoberturaParser
         using (var reader = CreateReader(stream, maxChars, async: false))
             CollectMethods(reader, methods, scope, sourceName: null);
         scope.RequireDeclaredRoot();
-        return methods.Materialize();
+        return methods.Materialize(identity?.SourceRoot);
     }
 
     /// <summary>
@@ -61,10 +61,14 @@ public static partial class CoberturaParser
             {
                 throw new ReportParseException(input.SourceName, ex);
             }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"{input.SourceName}: {ex.Message}", ex);
+            }
         }
 
         scope.RequireDeclaredRoot();
-        return methods.Materialize();
+        return methods.Materialize(identity?.SourceRoot);
     }
 
     /// <summary>Walk one document into <paramref name="methods"/>; roots are per document, warnings accumulate.</summary>
@@ -115,14 +119,15 @@ public static partial class CoberturaParser
                     _sourceRoots.Add(root);
         }
 
-        public MethodCoverageReport Materialize()
+        public MethodCoverageReport Materialize(string? sourceRoot)
         {
             var result = new List<MethodCoverage>(_order.Count);
             foreach (var entry in _order)
                 result.Add(entry.Materialize());
             return new MethodCoverageReport(result, _warnings, _sourceRoots)
             {
-                AmbiguousFiles = AmbiguousFile.Union(_ambiguous)
+                AmbiguousFiles = AmbiguousFile.Union(_ambiguous),
+                SelectedSourceRoot = sourceRoot
             };
         }
 

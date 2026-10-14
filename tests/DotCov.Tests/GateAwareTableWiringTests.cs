@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using DotCov.Tests.Infrastructure;
-using TUnit.Core.Enums;
 
 namespace DotCov.Tests;
 
@@ -53,13 +52,11 @@ public sealed class GateAwareTableWiringTests : IDisposable
     }
 
     [Test]
-    [RunOn(OS.Linux | OS.MacOs)]
     public async Task DotcovTest_FailingLineGate_TotalReadsAsTheVerdict(CancellationToken cancellationToken)
     {
-        var report = _ws.Write("fixture/nearly-full.xml", NearlyFull());
-        var dotnet = FakeDotnet();
+        var dotnet = FakeDotnet.Write(_ws, _ws.Write("fixture/nearly-full.xml", NearlyFull()));
 
-        var run = await DotcovTest(cancellationToken, dotnet, report, "--min-line", "100");
+        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "100");
 
         await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
         await Assert.That(TotalRow(run.StdOut)).Contains("19999/20000     99.9%");
@@ -68,13 +65,11 @@ public sealed class GateAwareTableWiringTests : IDisposable
     }
 
     [Test]
-    [RunOn(OS.Linux | OS.MacOs)]
     public async Task DotcovTest_PassingGate_KeepsNormalRounding(CancellationToken cancellationToken)
     {
-        var report = _ws.Write("fixture/nearly-full.xml", NearlyFull());
-        var dotnet = FakeDotnet();
+        var dotnet = FakeDotnet.Write(_ws, _ws.Write("fixture/nearly-full.xml", NearlyFull()));
 
-        var run = await DotcovTest(cancellationToken, dotnet, report, "--min-line", "99");
+        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "99");
 
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         await Assert.That(TotalRow(run.StdOut)).Contains("19999/20000    100.0%");
@@ -84,27 +79,8 @@ public sealed class GateAwareTableWiringTests : IDisposable
     private static string TotalRow(string output) =>
         output.Split('\n').Single(static line => line.TrimStart().StartsWith("TOTAL", StringComparison.Ordinal));
 
-    /// <summary>
-    /// A stand-in for dotnet that "runs the tests" by copying a prepared report into the
-    /// --results-directory dotcov passes, then exits 0; DOTNET_HOST_PATH makes dotcov start it.
-    /// </summary>
-    private string FakeDotnet()
-    {
-        var script = _ws.Write("fake-sdk/dotnet", """
-            #!/bin/sh
-            while [ $# -gt 0 ]; do
-              if [ "$1" = "--results-directory" ]; then results="$2"; fi
-              shift
-            done
-            cp "$DOTCOV_FAKE_REPORT" "$results/fake.cobertura.xml"
-            """);
-        if (!OperatingSystem.IsWindows())   // the tests that use it run on Linux and macOS only
-            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        return script;
-    }
-
     private async Task<ChildRun> DotcovTest(
-        CancellationToken cancellationToken, string dotnet, string report, params string[] args)
+        CancellationToken cancellationToken, string dotnet, params string[] args)
     {
         var directory = AppContext.BaseDirectory;
         var start = new ProcessStartInfo("dotnet")
@@ -126,7 +102,6 @@ public sealed class GateAwareTableWiringTests : IDisposable
         start.Environment.Remove("GITHUB_STEP_SUMMARY");
         start.Environment["NO_COLOR"] = "1";
         start.Environment["DOTNET_HOST_PATH"] = dotnet;
-        start.Environment["DOTCOV_FAKE_REPORT"] = report;
         return await ChildProcess.RunAsync(start, cancellationToken);
     }
 
