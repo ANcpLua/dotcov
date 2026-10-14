@@ -33,6 +33,24 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
         await Assert.That(error).Contains("Uploaded to");
     }
 
+    // The no-match hint lists the directory after the upload. A directory deleted meanwhile
+    // loses the hint, not the gate's exit code.
+    [Test]
+    public async Task Check_EmptyDirectoryDeletedDuringUpload_KeepsNoData(CancellationToken cancellationToken)
+    {
+        var empty = _workspace.CreateDirectory("vanishing");
+
+        var running = Run("check", empty, "--min-line", "40");
+        await endpoint.Received.WaitAsync(cancellationToken);
+        Directory.Delete(empty);
+        endpoint.RespondWith(HttpStatusCode.Created);
+        var (code, _, error) = await running;
+
+        await Assert.That(code).IsEqualTo(3).Because(error);
+        await Assert.That(error).StartsWith("NODATA:");
+        await Assert.That(error).Contains($"warning: no file in '{empty}' matches");
+    }
+
     [Test]
     [Arguments("40", HttpStatusCode.Created, 0, "PASS:", false)]
     [Arguments("80", HttpStatusCode.Created, 1, "FAIL:", false)]

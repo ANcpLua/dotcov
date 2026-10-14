@@ -475,10 +475,19 @@ public static partial class DotCovCli
     {
         if (inputs.Count > 0) return;
 
-        var xml = Directory.EnumerateFiles(path, "*.xml", XmlSearch)
-            .Select(file => Path.GetRelativePath(path, file))
-            .Order(StringComparer.Ordinal)
-            .ToList();
+        // Best effort: the gate already ran, so a directory gone by now loses the hint, never the result.
+        List<string> xml;
+        try
+        {
+            xml = Directory.EnumerateFiles(path, "*.xml", XmlSearch)
+                .Select(file => Path.GetRelativePath(path, file))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            xml = [];
+        }
         var warning = $"warning: no file in '{path}' matches '{pattern}'";
         if (xml.Count > 0)
         {
