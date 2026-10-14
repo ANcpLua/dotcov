@@ -242,16 +242,34 @@ public static class CrapAnalysis
         var consumed = new HashSet<int>();
         // Exclusions remove methods from the measurement scope, not from the metrics file.
         // Match their identities without scoring them, even when they have no line data.
-        var (metricsIndex, accessorFallback) = IndexMetrics(metricsMembers);
+        var (metricsIndex, _) = IndexMetrics(metricsMembers);
         var excluded = FoldRawEntries(excludedMethods);
         FoldSyntheticGroups(excluded);
         foreach (var logical in excluded.Where(static l => !l.FoldedAway))
-            MatchMetrics(logical, metricsMembers, metricsIndex, accessorFallback, consumed);
+            MatchExcludedMetrics(logical, metricsMembers, metricsIndex, consumed);
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, consumed);   // 3. resolve comp, score
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
 
         return new CrapReport(scored, unscored, unmatched);
+    }
+
+    // Scoring may conservatively take the maximum complexity of several candidates.
+    // Exclusions cannot use that fallback: consuming siblings would hide missing coverage.
+    // Without source-file/signature identity, only a unique compatible member is proven.
+    private static void MatchExcludedMetrics(
+        LogicalMethod logical,
+        IReadOnlyList<CodeMetricsMember>? members,
+        Dictionary<string, List<int>> metricsIndex,
+        HashSet<int> consumed)
+    {
+        if (members is null) return;
+        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
+        if (!metricsIndex.TryGetValue(key, out var candidates)) return;
+
+        var compatible = candidates.Where(i => logical.Arity is null || members[i].Arity is null ||
+            logical.Arity == members[i].Arity).ToList();
+        if (compatible.Count is 1) consumed.Add(compatible[0]);
     }
 
     /// <summary>

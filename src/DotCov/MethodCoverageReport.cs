@@ -59,13 +59,14 @@ public sealed class MethodCoverageReport
 
         var keepRules = keep.ToList();
         var (kept, excluded) = ExclusionRules.Partition(Methods, static m => m.File, rules, keepRules);
+        var excludedPaths = excluded.ToHashSet(StringComparer.Ordinal);
 
         return new MethodCoverageReport(kept, Warnings, SourceRoots)
         {
             AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
             Exclusion = Exclusion.Then(rules, keepRules, excluded),
             ExcludedMethods = ExcludedMethods.Concat(
-                Methods.Where(m => excluded.Contains(m.File, StringComparer.Ordinal))).ToArray()
+                Methods.Where(m => excludedPaths.Contains(m.File))).ToArray()
         };
     }
 }

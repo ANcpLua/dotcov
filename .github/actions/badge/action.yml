@@ -46,7 +46,7 @@ inputs:
     default: 'true'
   version:
     description: dotcov.tool version to install.
-    default: '3.0.0'
+    default: '3.0.1'
   command:
     description: >-
       Command that runs dotcov instead of installing it, split on whitespace, e.g.

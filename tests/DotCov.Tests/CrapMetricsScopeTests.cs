@@ -8,6 +8,67 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(string x)", 2)]
+    [Arguments("", "void A.M(int x)", "void A.M(string x)", 2)]
+    [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(int x, int y)", 1)]
+    [Arguments("(System.Int32)", "void A.M(int x, int y)", "void A.Other()", 2)]
+    [Arguments("(System.Int32)", "void A.M", "void A.Other()", 1)]
+    public async Task ExcludedOverloads_OnlyConsumeUniqueCompatibleMetrics(
+        string signature, string first, string second, int unmatched)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c => c.Method("M", signature, "1", m => m.Line(2, 1)))
+            .ToBytes());
+        var filtered = CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []);
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method(first, 1, 1).Method(second, 9, 1));
+
+        var report = CrapAnalysis.Analyze(filtered, metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(unmatched);
+        await Assert.That(report.UnmatchedMetricsMembers).Contains(second);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+        await Assert.That(report.Methods.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ExcludedMethodWithNoMetricsMatch_DoesNotHideAnotherMember()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c => c.Method("Generated", "()", "1", m => m.Line(2, 1)))
+            .ToBytes());
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []),
+            CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.Missing()", 1, 1)));
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Missing()"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task Cli_ExcludedSameArityOverload_CannotHideAnUninstrumentedSibling()
+    {
+        using var ws = TempWorkspace.Create("dotcov-crap-overload-scope-");
+        var coverage = ws.Write("coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(2, 1)))
+            .ToBytes());
+        var metrics = ws.Write("metrics.xml", CodeMetricsReportBuilder.Create().Namespace("App", t => t
+            .Type("A", m => m.Method("void A.M(int x)", 1, 1).Method("void A.M(string x)", 9, 1))).ToBytes());
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var exit = await DotCovCli.RunAsync(
+            ["crap", coverage, "--metrics", metrics, "--exclude-generated", "--format", "json"], stdout, stderr);
+
+        await Assert.That(exit).IsEqualTo(DotCovCli.NoDataExitCode);
+        using var json = JsonDocument.Parse(stdout.ToString());
+        await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
+        await Assert.That(stderr.ToString()).Contains("2 metrics members without coverage data");
+    }
+
+    [Test]
     [Arguments("0", 0)]
     [Arguments("3", 3)]
     [Arguments("-1", null)]
