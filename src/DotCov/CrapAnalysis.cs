@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using static System.FormattableString;
 
 namespace DotCov;
@@ -206,7 +207,8 @@ public static class CrapAnalysis
     public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var normalizedMetrics = metricsMembers?.Select(m => m with { File = MetricsFile(m.File, report.SourceRoots) }).ToArray();
+        IReadOnlyList<string> roots = report.SelectedSourceRoot is { } root ? [root] : report.SourceRoots;
+        var normalizedMetrics = metricsMembers?.Select(m => m with { File = MetricsFile(m.File, roots) }).ToArray();
         var (selectedMetrics, exclusion) = report.SelectMetrics(normalizedMetrics);
         var analysis = AnalyzeCore(report.Methods, selectedMetrics, report.ExcludedMethods);
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
@@ -267,6 +269,7 @@ public static class CrapAnalysis
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, metricsIndex, consumed); // 3. resolve comp, score
         ReconcileConstructorPairs(order, metricsMembers, consumed);
+        ReconcileSyntheticOverloads(order, metricsIndex, consumed);
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
 
         return new CrapReport(scored, unscored, unmatched);
@@ -312,6 +315,23 @@ public static class CrapAnalysis
         var key = $"{logical.Name.TypeIdentity}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature, logical.File);
         if (compatible.UniqueMember is { } index) consumed.Add(index);
+    }
+
+    // Async and iterator overloads often reach coverage only as state machines, which carry no
+    // signature. When such bodies are all a file holds of one type's member, and exactly as many
+    // metrics rows exist for it, those rows are these bodies. Each body was already scored with
+    // the largest candidate complexity, so pairing them cannot lower a score.
+    private static void ReconcileSyntheticOverloads(List<LogicalMethod> order, MetricsIndex index, HashSet<int> consumed)
+    {
+        foreach (var group in order.Where(static m => !m.FoldedAway).GroupBy(static m =>
+                     (m.Name.TypeIdentity, Member: MethodIdentity.MetricsMemberName(m.Name.Method), m.File)))
+        {
+            var key = $"{group.Key.TypeIdentity}|{group.Key.Member}";
+            var scoped = index.ByFile.GetValueOrDefault(PathIdentity.NormalizeRoot(group.Key.File));
+            var rows = index.Rows.GetValueOrDefault(key, []).Concat(scoped?.Rows.GetValueOrDefault(key, []) ?? []).ToArray();
+            if (group.Count() > 1 && group.All(static m => m.Folded) && rows.Length == group.Count())
+                consumed.UnionWith(rows);
+        }
     }
 
     private static IReadOnlyList<CodeMetricsMember>? PrepareMetrics(
@@ -557,6 +577,8 @@ public static class CrapAnalysis
         public readonly Dictionary<string, (int Index, int Complexity)> AccessorFallback = new(StringComparer.Ordinal);
         public readonly Dictionary<int, string> PropertyFiles = new();
         public readonly Dictionary<string, MetricsIndex> ByFile = new(StringComparer.Ordinal);
+        /// <summary>Every method and accessor row per member key, for cardinality reconciliation.</summary>
+        public readonly Dictionary<string, List<int>> Rows = new(StringComparer.Ordinal);
     }
 
     private static MetricsCandidates MergeCandidates(MetricsCandidates left, MetricsCandidates right)
@@ -598,6 +620,7 @@ public static class CrapAnalysis
                     var candidate = m.ExecutableLines is 0
                         ? default : new MetricsCandidates(m.CyclomaticComplexity, i, 1, signature is null);
                     AddCandidates(target.All, key, candidate);
+                    (CollectionsMarshal.GetValueRefOrAddDefault(target.Rows, key, out _) ??= []).Add(i);
                     AddCandidates(target.ByArity, (key, m.Arity), candidate);
                     if (signature is not null) AddCandidates(target.BySignature, (key, signature), candidate);
                     // The metrics display omits static/instance information for extension

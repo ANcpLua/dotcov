@@ -45,6 +45,9 @@ public sealed class MethodCoverageReport
     // They must never contribute lines, complexity, or unscored rows to the selected scope.
     internal IReadOnlyList<MethodCoverage> ExcludedMethods { get; init; } = [];
 
+    // The root --source-root chose; relative metrics paths resolve against it as files did.
+    internal string? SelectedSourceRoot { get; init; }
+
     // Preserve each operation: a keep in a later call cannot undo an earlier exclusion.
     private IReadOnlyList<(List<string> Rules, List<string> Keep)> ExclusionSteps { get; init; } = [];
 
@@ -94,6 +97,7 @@ public sealed class MethodCoverageReport
             AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
             Exclusion = Exclusion.Then(rules, keepRules, excluded),
             ExclusionSteps = [.. ExclusionSteps, (rules, keepRules)],
+            SelectedSourceRoot = SelectedSourceRoot,
             ExcludedMethods = ExcludedMethods.Concat(
                 Methods.Where(m => excludedPaths.Contains(m.File))).ToArray()
         };

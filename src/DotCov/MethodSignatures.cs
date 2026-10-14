@@ -14,7 +14,7 @@ internal static partial class MethodSignatures
         ["uint"] = "System.UInt32", ["long"] = "System.Int64", ["ulong"] = "System.UInt64",
         ["char"] = "System.Char", ["float"] = "System.Single", ["double"] = "System.Double",
         ["decimal"] = "System.Decimal", ["string"] = "System.String", ["object"] = "System.Object",
-        ["dynamic"] = "System.Object",
+        ["dynamic"] = "System.Object", ["void"] = "System.Void",
         ["nint"] = "System.IntPtr", ["nuint"] = "System.UIntPtr"
     };
     [GeneratedRegex(@"(?<![\w@.])\w+", RegexOptions.CultureInvariant)]
@@ -31,6 +31,11 @@ internal static partial class MethodSignatures
 
     [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
     private static partial Regex ConstructedArity();
+
+    // delegate*<P1, ..., R>, with or without a calling convention; the last '>' closes it.
+    [GeneratedRegex(@"^delegate\*\s*(?:managed|unmanaged(?:\[[^\]]*\])?)?\s*<(.*)>([^>]*)$",
+        RegexOptions.CultureInvariant | RegexOptions.Singleline)]
+    private static partial Regex FunctionPointerType();
 
     private const int MaxSignatureLength = 16_384;
     // Tokenize with the linear engine; no delimiter lookahead can force retries
@@ -188,8 +193,6 @@ internal static partial class MethodSignatures
             var declaration = equals < 0 ? parameter : parameter[..equals].TrimEnd();
             var space = BalancedText.LastIndexOfTopLevel(declaration, ' ');
             if (space < 0) return null;
-            // Coverage never carries a comparable function-pointer spelling (see Coverage).
-            if (declaration.Contains("delegate*", StringComparison.Ordinal)) return null;
             types.Add(NormalizeType(declaration[..space]));
         }
         if (valueType is not null) types.Add(NormalizeType(valueType));
@@ -299,6 +302,11 @@ internal static partial class MethodSignatures
                     type.StartsWith("in ", StringComparison.Ordinal);
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
         if (byRef && type.StartsWith("readonly ", StringComparison.Ordinal)) type = type[9..];
+        // One canonical function-pointer identity without its calling convention: it conflicts
+        // with every other parameter type, while Coverlet's truncated spelling stays unknown.
+        var pointer = FunctionPointerType().Match(type);
+        if (pointer.Success)
+            type = $"delegate*<{string.Join(",", BalancedText.SplitTopLevel(pointer.Groups[1].Value).Select(NormalizeType))}>{pointer.Groups[2].Value}";
         type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
         // @int names a type called int, never the alias: drop the escape once aliases are applied.

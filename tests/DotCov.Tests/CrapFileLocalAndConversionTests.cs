@@ -119,4 +119,71 @@ public sealed class CrapFileLocalAndConversionTests
         await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
     }
+
+    [Test]
+    public async Task FunctionPointerMetrics_DoNotMatchAMethodWithAnotherSignature()
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", "(System.String)", null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(delegate*<int, void> callback)", 2, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.M(delegate*<int, void> callback)"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    // Coverlet often emits only the state machines of async overloads, which carry no signature.
+    // Bodies and rows pair only when their counts agree.
+    [Test]
+    [Arguments("complete")]
+    [Arguments("missing body")]
+    [Arguments("extra row")]
+    public async Task AsyncOverloadsMeasuredOnlyThroughStateMachines_MatchTheirMetricsRowsTogether(string shape)
+    {
+        var doc = Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A/<M>d__0", c => c.Method("MoveNext", "()", null, m => m.Line(1, 1)));
+        if (shape is not "missing body")
+            doc.AddClass("src/A.cs", "App.A/<M>d__1", c => c.Method("MoveNext", "()", null, m => m.Line(5, 1)));
+        using var input = new MemoryStream(doc.ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m =>
+        {
+            m.Method("Task A.M(int value)", 2, 1).Method("Task A.M(string value)", 3, 1);
+            if (shape is "extra row") m.Method("Task A.M(bool value)", 1, 1);
+        });
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        // Which body is which overload is unknown: every body carries the largest complexity.
+        await Assert.That(report.Methods.Select(m => m.Complexity)).All(static c => c == 3);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(shape switch
+        {
+            "complete" => 0,
+            "missing body" => 2,
+            _ => 3
+        });
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(shape is "complete" ? GateOutcome.Pass : GateOutcome.NoData);
+    }
+
+    [Test]
+    public async Task ChosenSourceRoot_AlsoRootsRelativeMetricsPaths()
+    {
+        var xml = """
+            <coverage><sources><source>/other</source><source>/repo</source></sources>
+              <packages><package name="App"><classes>
+                <class name="App.A" filename="src/A.cs"><methods>
+                  <method name="M" signature="()"><lines><line number="1" hits="1" /></lines></method>
+                </methods><lines><line number="1" hits="1" /></lines></class>
+              </classes></package></packages></coverage>
+            """;
+        using var input = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml));
+        var coverage = CoberturaParser.ParseMethods(input, identity: FileIdentity.FromSourceRoot("/repo"));
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1))
+            .Select(static m => m with { File = "src/A.cs" }).ToArray();
+
+        var report = CrapAnalysis.Analyze(coverage, metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
 }

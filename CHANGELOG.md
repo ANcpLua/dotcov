@@ -826,6 +826,11 @@ Verified:
   `Unbalanced tuple type`. Escaped identifiers (`@int`) drop the escape after aliasing;
   a generic `T?` that is a value type in one method and a reference type in another stays
   unresolved instead of being forced to `Nullable<T>` report-wide.
+- Metrics `delegate*` parameters lower to one canonical identity (calling convention dropped,
+  `void` aliased to `System.Void`), so they conflict with other known signatures while
+  Coverlet's truncated spelling stays unknown.
+- State-machine-only async overloads consume their metrics rows when the body and row counts
+  of a member in one file agree; `--source-root` now also roots relative metrics paths.
 - `GateAwareTableWiringTests` use the shared `FakeDotnet`, so their two `dotcov test` cases
   run on Windows too; one Linux/macOS-only test remains (Unix file modes).
 - Aligned package/action/README versions and rewrote `docs/releases/3.0.1.md` around
