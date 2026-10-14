@@ -434,4 +434,24 @@ public sealed class CliCrapTests : IDisposable
         await Assert.That(code).IsEqualTo(0).Because(stderr);
         await Assert.That(stderr).StartsWith("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold");
     }
+
+    // Istanbul (Vitest, c8, Jest) and coverage.py write no complexity: --metrics, a .NET tool, cannot help.
+    [Test]
+    public async Task Crap_ReportWithoutAnyComplexity_SaysWhichEmittersWriteNone()
+    {
+        using var ws = TempWorkspace.Create("dotcov-crap-istanbul-");
+        var report = ws.Write("cobertura-coverage.xml", Cobertura.NewDoc().AddClass("src/shipping.ts", "shipping.ts", c => c
+            .Method("shippingCost", "()", null, m => m.Line(1, 1))
+            .Method("label", "()", null, m => m.Line(11, 0))).ToBytes());
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var code = await DotCovCli.RunAsync(["crap", report], stdout, stderr);
+
+        await Assert.That(code).IsEqualTo(3);
+        await Assert.That(stderr.ToString()).StartsWith(
+            "NODATA: worst CRAP n/a (max 30) - the report carries no complexity - Istanbul (Vitest, c8, Jest) and coverage.py write none");
+        await Assert.That(stderr.ToString()).DoesNotContain("dotnet msbuild");
+    }
 }
+

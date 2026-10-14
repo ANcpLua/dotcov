@@ -150,6 +150,14 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 AmbiguousFile.GateReason(AmbiguousFiles));
 
+        // A report in which no method has complexity came from an emitter that writes none, where
+        // --metrics (a .NET tool) cannot help: say so instead of sending a TypeScript or Python
+        // user to dotnet msbuild.
+        if (Methods.Count is 0 && Unscored.Count > 0 && Unscored.All(static u => u.Reason == CrapAnalysis.NoComplexityReason))
+            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
+                "the report carries no complexity - Istanbul (Vitest, c8, Jest) and coverage.py write none, " +
+                "so crap cannot score it; gate it with check, or give crap a Coverlet report or --metrics <file> for .NET");
+
         if (Unscored.Count > 0)
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{Unscored.Count} of {Methods.Count + Unscored.Count} methods could not be scored - ") +
@@ -180,6 +188,8 @@ public sealed class CrapReport
 /// </summary>
 public static class CrapAnalysis
 {
+    internal const string NoComplexityReason = "no complexity in the coverage report - supply --metrics <file>";
+
     /// <summary>The CRAP formula. <c>Score(5, 0) = 30</c>, <c>Score(5, 1) = 5</c>, <c>Score(1, 0) = 2</c>.</summary>
     public static double Score(int complexity, double coverage)
     {
@@ -501,7 +511,7 @@ public static class CrapAnalysis
             {
                 unscored.Add(new CrapUnscoredMethod(display, logical.File,
                     metricsMembers is null
-                        ? "no complexity in the coverage report - supply --metrics <file>"
+                        ? NoComplexityReason
                         : "no matching member in the metrics file"));
                 continue;
             }

@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.2.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.2.0 names code built elsewhere. Coverage tools instrument dependencies that ship a PDB and report them under SourceLink paths (/_/src/...); their lines count toward every rate.
-New ExternalSources warning names them (CLI stderr, JSON warnings, Fallout log) unless the report declares /_/ as its own source root.
-New --exclude-external (Fallout: --coverage-exclude-external-param, library: ExclusionRules.External) removes them like the other exclusions.
+DotCov 4.3.0 makes the TypeScript path and the crap scope explicit.
+README: Vitest (accurate source branches) and c8 (zero-config wrapper around node --test) produce Cobertura for check; Jest still works.
+crap is for .NET: a report in which no method has complexity (Istanbul: Vitest, c8, Jest; coverage.py) now gets a NODATA reason that says so instead of pointing at dotnet msbuild.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>
