@@ -197,4 +197,36 @@ public sealed class CliStreamContractTests : IDisposable
         await Assert.That(stdout).DoesNotContain("Still.cs");
         await Assert.That(stdout).Contains(count + Environment.NewLine);
     }
+
+    [Test]
+    [Arguments("table")]
+    [Arguments("json")]
+    public async Task Diff_AppliesTheExclusionsToBothSides_AndNamesThem(string format)
+    {
+        var before = _ws.Write("before.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 0))
+            .AddClass("obj/Gen.g.cs", c => c.Line(1, hits: 0)));
+        var after = _ws.Write("after.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", c => c.Line(1, hits: 1))
+            .AddClass("obj/Gen.g.cs", c => c.Line(1, hits: 1)));
+
+        var (code, stdout, stderr) = await Run("diff", before, after, "--format", format, "--exclude-generated");
+
+        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        await Assert.That(stdout).Contains("src/A.cs");
+        if (format is "json")
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(stdout);
+            await Assert.That(json.RootElement.GetProperty("files").GetArrayLength()).IsEqualTo(1);
+            await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
+                .IsEquivalentTo(["obj/Gen.g.cs"]);
+            await Assert.That(stderr).DoesNotContain("obj/Gen.g.cs");
+        }
+        else
+        {
+            await Assert.That(stdout).DoesNotContain("Gen.g.cs");
+            await Assert.That(stderr).Contains("obj/Gen.g.cs");
+        }
+    }
 }
+

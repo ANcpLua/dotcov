@@ -112,13 +112,23 @@ public sealed class CliMistakeTests
     [Test]
     [Arguments("check")]
     [Arguments("snapshot")]
-    public async Task NoColor_IsAnOptionOnlyOfCommandsThatColour(string command)
+    public async Task NoColor_IsAcceptedEvenWhereThereIsNoColour(string command)
     {
-        // check prints verdict lines and snapshot JSON: neither has colour to turn off.
-        var (code, stdout, stderr) = await Run(command, "missing.xml", "--no-color");
+        // check prints verdict lines and snapshot JSON: nothing to turn off, but a script that
+        // passes --no-color to every command must not get a usage error.
+        var report = Path.Combine(Path.GetTempPath(), $"dotcov-nocolor-{Guid.NewGuid():N}.xml");
+        await File.WriteAllTextAsync(report, """<coverage><packages><package name="p"><classes><class name="A" filename="src/A.cs"><lines><line number="1" hits="1"/></lines></class></classes></package></packages></coverage>""");
+        try
+        {
+            string[] args = command is "check" ? [command, report, "--no-color", "--min-line", "40"] : [command, report, "--no-color"];
+            var (code, stdout, stderr) = await Run(args);
 
-        await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stdout).IsEmpty();
-        await Assert.That(stderr).StartsWith($"error: Unknown option '--no-color' for '{command}'.{Environment.NewLine}");
+            await Assert.That(code).IsEqualTo(0).Because(stderr);
+            await Assert.That(stdout + stderr).DoesNotContain("\u001b[");
+        }
+        finally
+        {
+            File.Delete(report);
+        }
     }
 }

@@ -31,17 +31,17 @@ public static partial class DotCovCli
             ["format", "top", "threshold", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary"]),
         new("check", "dotcov check <path> --min-line N and/or --min-branch N [options]",
             ["CI gate: exit 1 when line or branch coverage is below its minimum."],
-            ["min-line", "min-branch", "format", "top", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary", "badge-dir"]),
+            ["min-line", "min-branch", "format", "top", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary", "badge-dir"]),
         new("crap", "dotcov crap <path> [options]",
             ["CRAP gate, comp^2*(1-cov)^3+comp per method: exit 1 when any method scores strictly",
              "above --max-crap (at-threshold passes; default 30; every method must be scored)."],
             ["max-crap", "top", "metrics", "format", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "github-summary"]),
         new("diff", "dotcov diff <before> <after> [options]",
             ["Compare two reports: the files whose coverage changed, and a count of the rest."],
-            ["format", "no-color", .. Identities, "pattern", "max-chars"]),
+            ["format", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars"]),
         new("snapshot", "dotcov snapshot <path> [options]",
             ["Create pipeline-ready JSON (identity defaults to 'unknown')."],
-            ["commit", "branch", "project", .. Exclusion, .. Identities, "pattern", "max-chars", "upload"]),
+            ["commit", "branch", "project", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "upload"]),
         new("test", "dotcov test [<project>] --min-line N and/or --min-branch N [options] [-- <dotnet test arguments>]",
             ["Run dotnet test with coverage into a fresh TestResults/<run>, then report and gate it",
              "like check."],
@@ -101,7 +101,9 @@ public static partial class DotCovCli
         new("badge-dir", "--badge-dir <dir>",
             ["Write the verdict as coverage-badge.svg and coverage-badge.json into",
              "<dir>, created if missing, for every outcome"]),
-        new("no-color", "--no-color", ["Plain output without ANSI colour, as NO_COLOR=1 gives"]),
+        new("no-color", "--no-color",
+            ["Plain output without ANSI colour, as NO_COLOR=1 gives; accepted by every command that",
+             "reads a report, so a script can pass it everywhere"]),
     ];
 
     static readonly Dictionary<string, OptionHelp> OptionsByName =
@@ -115,7 +117,7 @@ public static partial class DotCovCli
     static readonly string[] ReportCommands = [.. PathCommands, "test"];
     static readonly string[] GateCommands = ["check", "crap", "test"];
     static readonly string[] ColorCommands = ["report", "crap", "diff", "test"];
-    static readonly string[] ExclusionCommands = ["report", "check", "crap", "snapshot", "test"];
+    static readonly string[] ExclusionCommands = ["report", "check", "crap", "diff", "snapshot", "test"];
 
     static readonly HelpEntry[] Notes =
     [
