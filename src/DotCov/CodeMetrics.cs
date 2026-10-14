@@ -439,6 +439,15 @@ public static class CodeMetricsReader
         return lastDot < 0 ? head[start..] : head[(start + lastDot + 1)..];
     }
 
+    // Instance extension-block members add the receiver to their compiled parameter list.
+    // Inspect the declaring display prefix, not parameter/default-value text.
+    internal static bool IsExtensionBlockMember(string display)
+    {
+        var (head, _) = SplitParameterList(display);
+        var start = BalancedText.LastIndexOfTopLevel(head, ' ') + 1;
+        return StripGenericsPerSegment(head[start..]).StartsWith("extension(", StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// C# operator token → CLS <c>op_*</c> method name: a mechanical mapping, so a table, not a
     /// switch. Unary/binary <c>+</c> and <c>-</c> share a token and are disambiguated by arity

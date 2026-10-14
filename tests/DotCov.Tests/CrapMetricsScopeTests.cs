@@ -8,6 +8,48 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    [Arguments(false, "void A.M(int x)")]
+    [Arguments(true, "void A.M(int x)")]
+    [Arguments(false, "void A.M(string x = \" extension(string).M\")")]
+    public async Task DifferentKnownArities_CannotEstablishCoverage(bool embeddedComplexity, string display)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32,System.Int32)",
+                embeddedComplexity ? "1" : null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 9, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(embeddedComplexity ? 1 : 9);
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo([display]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task ExtensionReceiver_IsCompatibleForMeasuredAndExcludedMembers(bool exclude, bool generic)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/Ext.g.cs", "App.Ext", c => c.Method("M", "(System.String,System.Int32)",
+                "1", m => m.Line(2, 1))).ToBytes());
+        var coverage = CoberturaParser.ParseMethods(input);
+        if (exclude) coverage = coverage.Exclude([".g.cs"], []);
+        var extension = generic ? "extension<T>(T)" : "extension(string)";
+        var metrics = CodeMetricsReportBuilder.ParseType("App", $"Ext.{extension}", m => m
+            .Method($"int {extension}.M(int x)", 1, 1));
+
+        var report = CrapAnalysis.Analyze(coverage, metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Count).IsEqualTo(exclude ? 1 : 2);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task MeasuredOverload_CannotConsumeItsUnmeasuredSibling(bool embeddedComplexity)

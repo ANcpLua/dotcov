@@ -267,10 +267,13 @@ public static class CrapAnalysis
         var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         if (!metricsIndex.TryGetValue(key, out var candidates)) return;
 
-        var compatible = candidates.Where(i => logical.Arity is null || members[i].Arity is null ||
-            logical.Arity == members[i].Arity).ToList();
+        var compatible = candidates.Where(i => HasCompatibleArity(logical, members[i]));
         ConsumeUniqueExecutableMetrics(compatible, members, consumed);
     }
+
+    private static bool HasCompatibleArity(LogicalMethod logical, CodeMetricsMember member) =>
+        logical.Arity is null || member.Arity is null || logical.Arity == member.Arity ||
+        (logical.Arity == member.Arity + 1 && CodeMetricsReader.IsExtensionBlockMember(member.DisplayName));
 
     private static void ConsumeUniqueExecutableMetrics(
         IEnumerable<int> candidates, IReadOnlyList<CodeMetricsMember> members, HashSet<int> consumed)
@@ -528,18 +531,11 @@ public static class CrapAnalysis
         var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         if (metricsIndex.TryGetValue(key, out var candidates))
         {
-            // Overload disambiguation by arity when both sides know it. When arity is unknown
-            // (folded state machines/lambdas) or nothing matches it, take the MAX complexity
-            // among the same-named candidates — the conservative direction for a gate.
-            // Consulting an ambiguous candidate does not prove it has coverage.
-            var pool = candidates;
-            if (logical.Arity is { } a)
-            {
-                var exact = candidates.Where(i => members[i].Arity == a).ToList();
-                if (exact.Count > 0) pool = exact;
-            }
-
-            ConsumeUniqueExecutableMetrics(pool, members, consumed);
+            // Keep the conservative complexity fallback when no arity matches, but never
+            // treat a provably incompatible candidate as evidence of complete coverage.
+            var compatible = candidates.Where(i => HasCompatibleArity(logical, members[i])).ToList();
+            var pool = compatible.Count > 0 ? compatible : candidates;
+            ConsumeUniqueExecutableMetrics(compatible, members, consumed);
             var best = 0;
             foreach (var i in pool)
             {

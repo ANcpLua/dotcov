@@ -144,7 +144,7 @@ public sealed class CrapAnalysisEdgeTests
     public async Task ExtensionBlockMembers_MatchTheStaticClassImplementations()
     {
         // IL: P.Ext.Twice(string) and P.Ext.get_IsBig(string) — the receiver becomes the first
-        // parameter, so arity differs from the display and the name match decides.
+        // parameter, so matching accounts for that receiver in the extension-block display.
         var metrics = CodeMetricsReportBuilder.ParseType("P", "Ext.extension(string)", m => m
             .Method("int extension(string).Twice()", 3)
             .Property("bool extension(string).IsBig", 2, a => a.Method("bool extension(string).IsBig.get", 2)));
