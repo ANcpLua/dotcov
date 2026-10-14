@@ -609,6 +609,7 @@ public static partial class CoberturaParser
             return new CoverageReport(result)
             {
                 Warnings = document.Warnings,
+                Inputs = document.SourceName is { } input ? [input] : [],
                 // A report whose ONLY declared root is the no-op sentinel exposes no roots at
                 // all — lone <source>.</source> adds no identity information. Mixed declarations
                 // keep the sentinel so Merge can tell ('.', '/real') apart from ('/real').

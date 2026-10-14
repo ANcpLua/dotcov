@@ -22,6 +22,7 @@ public static partial class DotCovCli
         // Flag values are checked before anything runs: a typo, or a missing threshold, must not
         // cost a test run.
         if (!TryGetThresholds("test", opts, stderr, out var minLine, out var minBranch)) return UsageExitCode;
+        if (!TryGetGateOutput(opts, stderr, out var output)) return UsageExitCode;
         if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
         // A fresh directory per run, so the gate reads this run's reports and nothing an earlier
@@ -30,14 +31,18 @@ public static partial class DotCovCli
         var run = Path.Combine("TestResults", Guid.NewGuid().ToString("N"));
         var results = Directory.CreateDirectory(run).FullName;
 
+        // JSON and markdown keep stdout to the document and stderr to the verdict, so the dotnet
+        // test log is held back and shown only when the run fails.
+        var log = output.Format is "table" ? stdout : new StringWriter();
         var exitCode = await RunDotNet(
-            TestArguments(opts.GetValueOrDefault("file"), results, forwarded), stdout, opts.ContainsKey("no-color"));
+            TestArguments(opts.GetValueOrDefault("file"), results, forwarded), log, opts.ContainsKey("no-color"));
 
         // Coverage from a failed run measures tests that did not pass; it is not evaluated. Its
         // own exit code keeps a failing test apart from a report dotcov could not read.
         if (exitCode is not 0)
         {
             await stderr.WriteLineAsync($"error: dotnet test exited with code {exitCode}; coverage was not evaluated.");
+            if (log is StringWriter held) await stderr.WriteAsync(held.ToString());
             return TestRunFailedExitCode;
         }
 
@@ -47,8 +52,10 @@ public static partial class DotCovCli
         // TOTAL floors like the verdict does: 19999/20000 against --min-line 100 reads 99.9%
         // above "FAIL: line 99.9% (min 100%)", never 100.0%.
         var gate = report.Evaluate(minLine, minBranch);
-        await stdout.WriteAsync(TableFormatter.Format(report, gate, color));
-        return await Gate(report, gate, results, pattern: null, inputs, opts, stderr, reports: $"reports: {run}");
+        if (output.Format is "table")
+            await stdout.WriteAsync(TableFormatter.Format(report, gate, color));
+        return await Gate("test", report, gate, results, pattern: null, inputs, output, opts, stdout, stderr,
+            reports: $"reports: {run}");
     }
 
     /// <summary>
@@ -121,15 +128,16 @@ public static partial class DotCovCli
 
     /// <summary>
     /// Runs dotnet with <paramref name="arguments"/> and copies both of its streams to
-    /// <paramref name="stdout"/> line by line, so dotcov's stderr still leads with the verdict.
+    /// <paramref name="log"/> line by line: stdout for the table, so dotcov's stderr still leads
+    /// with the verdict; stderr for JSON and markdown, so stdout holds only the document.
     /// The command line is echoed first. $DOTNET_HOST_PATH, which the SDK sets for the tools it
     /// runs, selects the same dotnet; otherwise dotnet comes from PATH. --no-color reaches it as
     /// NO_COLOR=1, so its output is as plain as dotcov's.
     /// </summary>
-    static async Task<int> RunDotNet(List<string> arguments, TextWriter stdout, bool noColor)
+    static async Task<int> RunDotNet(List<string> arguments, TextWriter log, bool noColor)
     {
         var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : "dotnet";
-        await stdout.WriteLineAsync($"> {string.Join(' ', arguments.Prepend(dotnet).Select(Quote))}");
+        await log.WriteLineAsync($"> {string.Join(' ', arguments.Prepend(dotnet).Select(Quote))}");
 
         var start = new ProcessStartInfo(dotnet)
         {
@@ -148,7 +156,7 @@ public static partial class DotCovCli
         void Copy(object sender, DataReceivedEventArgs e)
         {
             if (e.Data is null) return;
-            lock (sync) stdout.WriteLine(e.Data);
+            lock (sync) log.WriteLine(e.Data);
         }
 
         process.OutputDataReceived += Copy;

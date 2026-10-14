@@ -16,17 +16,17 @@ namespace DotCov.Tool;
 public static partial class DotCovCli
 {
     /// <summary>Exit code 1: a gate measured coverage below its threshold.</summary>
-    public const int FailExitCode = 1;
+    public const int FailExitCode = ExitCodes.Fail;
     /// <summary>Exit code 2: invalid command-line usage.</summary>
-    public const int UsageExitCode = 2;
+    public const int UsageExitCode = ExitCodes.Usage;
     /// <summary>Exit code 3: a gate lacks the measurements it needs.</summary>
-    public const int NoDataExitCode = 3;
+    public const int NoDataExitCode = ExitCodes.NoData;
     /// <summary>Exit code 4: all thresholds are disabled.</summary>
-    public const int DisabledExitCode = 4;
+    public const int DisabledExitCode = ExitCodes.Disabled;
     /// <summary>Exit code 5: an input or IO error.</summary>
-    public const int ErrorExitCode = 5;
+    public const int ErrorExitCode = ExitCodes.Error;
     /// <summary>Exit code 6: the dotnet test run of `dotcov test` failed.</summary>
-    public const int TestRunFailedExitCode = 6;
+    public const int TestRunFailedExitCode = ExitCodes.TestRunFailed;
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -97,7 +97,7 @@ public static partial class DotCovCli
         command switch
         {
             "report" => Report(options, stdout, stderr, color),
-            "check" => Check(options, stderr),
+            "check" => Check(options, stdout, stderr),
             "crap" => Task.FromResult(Crap(options, stdout, stderr, color)),
             "diff" => Task.FromResult(Diff(options, stdout, stderr, color)),
             "snapshot" => Snapshot(options, stdout, stderr),
@@ -112,6 +112,7 @@ public static partial class DotCovCli
             return MissingPath("report", stderr);
 
         if (!TryGetFormat(opts, stderr, out var format)) return UsageExitCode;
+        if (!TryGetTop(opts, stderr, out var top)) return UsageExitCode;
 
         double? threshold = null;
         if (opts.TryGetValue("threshold", out var raw))
@@ -125,11 +126,12 @@ public static partial class DotCovCli
         var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
 
+        // --top truncates what is shown; the upload carries every file.
         var output = format switch
         {
-            "json" => JsonFormatter.Format(report),
-            "markdown" or "md" => MarkdownFormatter.Format(report, threshold),
-            _ => TableFormatter.Format(report, color)
+            "json" => JsonFormatter.Format(report, top),
+            "markdown" or "md" => MarkdownFormatter.Format(report, threshold, top),
+            _ => TableFormatter.Format(report, color, top)
         };
 
         await stdout.WriteAsync(output);
@@ -138,7 +140,7 @@ public static partial class DotCovCli
         var exitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
 
         if (opts.ContainsKey("github-summary"))
-            WriteGitHubSummary(MarkdownFormatter.Format(report, threshold), stderr);
+            WriteGitHubSummary(MarkdownFormatter.Format(report, threshold, top), stderr);
 
         // The table shows only a warning count; markdown and JSON already list each warning.
         // JSON carries the exclusion itself; the other formats name it on stderr.
@@ -147,71 +149,83 @@ public static partial class DotCovCli
         return exitCode;
     }
 
-    static async Task<int> Check(Dictionary<string, string> opts, TextWriter stderr)
+    static async Task<int> Check(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr)
     {
         if (!opts.TryGetValue("file", out var path))
             return MissingPath("check", stderr);
 
         if (!TryGetThresholds("check", opts, stderr, out var minLine, out var minBranch)) return UsageExitCode;
+        if (!TryGetGateOutput(opts, stderr, out var output)) return UsageExitCode;
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
         if (!TryGetBadgeDir(opts, stderr)) return UsageExitCode;
 
         var (merged, inputs) = ParseInput(path, pattern, maxChars, Identity(opts));
         var report = ApplyExclusions(merged, opts);
-        return await Gate(report, report.Evaluate(minLine, minBranch), path, pattern, inputs, opts, stderr);
+        return await Gate("check", report, report.Evaluate(minLine, minBranch), path, pattern, inputs, output, opts, stdout, stderr);
+    }
+
+    /// <summary>check's and test's --format and --top: the document format and how many offenders it lists.</summary>
+    readonly record struct GateOutput(string Format, int Top);
+
+    static bool TryGetGateOutput(Dictionary<string, string> opts, TextWriter stderr, out GateOutput output)
+    {
+        output = default;
+        if (!TryGetFormat(opts, stderr, out var format) || !TryGetTop(opts, stderr, out var top)) return false;
+
+        output = new GateOutput(format, top ?? CoverageReport.DefaultOffenderLimit);
+        return true;
     }
 
     /// <summary>
-    /// The line/branch gate over a parsed report, shared by check and test: verdict, offending
-    /// files, badge, upload, step summary, and diagnostics all come from one evaluation, the
-    /// <paramref name="gate"/> the caller evaluated (test also renders its table from it). The
-    /// verdict is the first stderr line on every outcome, followed by <paramref name="reports"/>
-    /// when the caller names where the reports came from. <paramref name="pattern"/> is null when
-    /// the reports were not found in a directory the user named, so no --pattern advice applies.
+    /// The line/branch gate over a parsed report, shared by check and test: document, verdict,
+    /// offending files, badge, upload, step summary, and diagnostics all come from one
+    /// evaluation, the <paramref name="gate"/> the caller evaluated (test also renders its table
+    /// from it). Stdout holds only the JSON or markdown document, offenders included. The verdict
+    /// is the first stderr line on every outcome, followed by <paramref name="reports"/> when the
+    /// caller names where the reports came from, then, for the table format, the offenders.
+    /// <paramref name="pattern"/> is null when the reports were not found in a directory the user
+    /// named, so no --pattern advice applies.
     /// </summary>
     static async Task<int> Gate(
-        CoverageReport report, GateResult gate, string path, ReportPattern? pattern, IReadOnlyList<ReportInput> inputs,
-        Dictionary<string, string> opts, TextWriter stderr, string? reports = null)
+        string command, CoverageReport report, GateResult gate, string path, ReportPattern? pattern,
+        IReadOnlyList<ReportInput> inputs, GateOutput output, Dictionary<string, string> opts,
+        TextWriter stdout, TextWriter stderr, string? reports = null)
     {
+        var json = new Lazy<string>(() => JsonFormatter.Format(report, gate, command, output.Top));
+        switch (output.Format)
+        {
+            case "json":
+                await stdout.WriteAsync(json.Value);
+                break;
+            case "markdown" or "md":
+                await stdout.WriteAsync(MarkdownFormatter.Format(report, gate, output.Top));
+                break;
+        }
+
         await stderr.WriteLineAsync(gate.ToString());
         if (reports is not null) await stderr.WriteLineAsync(reports);
 
-        // The offender list answers "which files caused the line-gate failure", so it prints
-        // only when the LINE gate actually failed. A branch-only failure listing line-threshold
-        // files (possibly with 100% branch coverage) would blame the wrong files; NoData/Disabled
-        // have no offenders at all — a branch-NoData gate can still carry a line rate below
-        // min-line, so the outcome is checked, not just the line comparison.
-        if (gate is { Outcome: GateOutcome.Fail, LineBelowThreshold: true })
-        {
-            await stderr.WriteLineAsync("files below line threshold:");
-            foreach (var f in report.BelowPercent(gate.MinLinePercent))
-                await stderr.WriteLineAsync(FormattableString.Invariant($"  {f.Path}: {FloorFailingPercent(f.LineRate!.Value):F1}%"));
-        }
+        // What to fix next: every file below a threshold the gate failed, worst first. JSON and
+        // markdown already carry the list; NoData and Disabled blame no file.
+        if (output.Format is "table")
+            await stderr.WriteAsync(TableFormatter.FormatOffenders(report, gate, output.Top));
 
         // Every outcome writes its badge and uploads: red runs are the ones a badge and a coverage
         // dashboard most need to show. Either failing turns a pass into exit 5; a non-passing
         // gate keeps its own exit code.
         var badgeWritten = WriteBadge(opts, gate, stderr);
-        var uploadExitCode = await MaybeUpload(opts, () => JsonFormatter.Format(report), stderr);
+        var uploadExitCode = await MaybeUpload(opts, () => json.Value, stderr);
 
         // Derived from the same GateResult as the exit code: MarkdownFormatter.Format(report, gate)
-        // renders badge, both thresholds, floored failing-dimension rates, AND the one-line verdict
-        // from it — no re-evaluation, no CLI-side splicing.
+        // renders badge, both thresholds, floored failing-dimension rates, the offenders, AND the
+        // one-line verdict from it — no re-evaluation, no CLI-side splicing.
         if (opts.ContainsKey("github-summary"))
-            WriteGitHubSummary(MarkdownFormatter.Format(report, gate), stderr);
+            WriteGitHubSummary(MarkdownFormatter.Format(report, gate, output.Top), stderr);
         WriteDiagnostics(path, pattern, inputs, report.Warnings, report.Exclusion, stderr);
 
-        if (!gate.IsPass) return GateExitCode(gate.Outcome);
+        if (!gate.IsPass) return ExitCodes.For(gate.Outcome);
         return badgeWritten ? uploadExitCode : ErrorExitCode;
     }
-
-    static int GateExitCode(GateOutcome outcome) => outcome switch
-    {
-        GateOutcome.Pass => 0,
-        GateOutcome.NoData => NoDataExitCode,
-        GateOutcome.Disabled => DisabledExitCode,
-        _ => FailExitCode
-    };
 
     static int Crap(Dictionary<string, string> opts, TextWriter stdout, TextWriter stderr, bool color)
     {
@@ -245,7 +259,7 @@ public static partial class DotCovCli
         if (opts.ContainsKey("github-summary"))
             WriteGitHubSummary(CrapFormatter.FormatMarkdown(report, gate, top), stderr);
         WriteDiagnostics(path, pattern, inputs, parsed.Warnings, exclusion, stderr);
-        return GateExitCode(gate.Outcome);
+        return ExitCodes.For(gate.Outcome);
     }
 
     static string RenderCrap(string format, CrapReport report, CrapGateResult gate, int? top, bool color) =>
@@ -646,13 +660,6 @@ public static partial class DotCovCli
         opts.TryGetValue("keep", out var raw)
             ? raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
-
-    // Display flooring for a rate in a FAILING dimension, one decimal: 79.96% renders 79.9%,
-    // never a rounded-up 80.0% that reads as equal to the minimum it missed. GateResult owns
-    // this policy (its ToString and the markdown gate overload apply the same floor through
-    // the internal GateResult.RateEpsilon = 1e-9, which this epsilon mirrors); this is the
-    // single copy on the DotCov.Tool side of the assembly boundary.
-    static double FloorFailingPercent(double rate) => Math.Floor(rate * 1000 + 1e-9) / 10;
 
     /// <summary>Every parser diagnostic, one line each, so a degraded input is never silent.</summary>
     static void WriteWarnings(IReadOnlyList<CoverageWarning> warnings, TextWriter stderr)

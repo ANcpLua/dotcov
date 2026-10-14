@@ -68,21 +68,25 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.Format(report);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
 
-        Assert.ThrowsExactly<KeyNotFoundException>(() => file.GetProperty("uncoveredLines"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() => file.GetProperty("uncovered"));
     }
 
     [Test]
-    public async Task Format_IncludesUncoveredLines_WhenPopulated()
+    [Arguments(new[] { 10, 20, 30 }, "10,20,30")]
+    [Arguments(new[] { 10, 11, 12, 20, 30, 31 }, "10-12,20,30-31")]
+    // A hand-built list need not be sorted or unique; the ranges still are.
+    [Arguments(new[] { 31, 10, 11, 11, 30 }, "10-11,30-31")]
+    public async Task Format_SpellsUncoveredLinesAsRanges_WhenPopulated(int[] lines, string expected)
     {
         var report = new CoverageReport([
-            new FileCoverage("a.cs", 1, 3, 0, 0) { UncoveredLines = [10, 20, 30] }
+            new FileCoverage("a.cs", 1, 3, 0, 0) { UncoveredLines = lines }
         ]);
 
         var json = JsonFormatter.Format(report);
         var file = JsonDocument.Parse(json).RootElement.GetProperty("files")[0];
-        var uncovered = file.GetProperty("uncoveredLines").EnumerateArray().Select(e => e.GetInt32()).ToArray();
 
-        await Assert.That(uncovered).IsEquivalentTo([10, 20, 30], CollectionOrdering.Matching);
+        await Assert.That(file.GetProperty("uncovered").GetString()).IsEqualTo(expected);
+        await Assert.That(file.TryGetProperty("uncoveredLines", out _)).IsFalse();
     }
 
     [Test]
@@ -403,28 +407,29 @@ public sealed class JsonFormatterTests
     }
 
     [Test]
-    public async Task FormatSnapshot_NoWarnings_OmitsWarningsField()
+    public async Task FormatSnapshot_NoWarnings_WritesAnEmptyWarningsArray()
     {
-        // Absent-key-when-clean contract holds on the snapshot exactly like on Format.
+        // The envelope's keys are always present on the snapshot, exactly like on Format.
         var snapshot = new CoverageSnapshot(
             CommitSha: "x", Branch: "y", Project: "z",
             Timestamp: DateTimeOffset.UnixEpoch, FileHash: null, Report: Reports.Mixed);
 
         var json = JsonFormatter.FormatSnapshot(snapshot);
 
-        await Assert.That(JsonDocument.Parse(json).RootElement.TryGetProperty("warnings", out _)).IsFalse();
+        await Assert.That(JsonDocument.Parse(json).RootElement.GetProperty("warnings").GetArrayLength()).IsEqualTo(0);
     }
 
-    // ── Warnings: same null-omission contract as `lineChanges` / `uncoveredLines` ──
+    // ── Warnings: part of the envelope, always present ──
 
     [Test]
-    public async Task Format_NoWarnings_OmitsWarningsField()
+    public async Task Format_NoWarnings_WritesAnEmptyWarningsArray()
     {
-        // Empty Warnings → field absent, so consumers can detect a clean report with TryGetProperty.
+        // Empty Warnings → an empty array: a consumer reads the key without probing for it.
         var json = JsonFormatter.Format(Reports.Mixed);
         var root = JsonDocument.Parse(json).RootElement;
 
-        await Assert.That(root.TryGetProperty("warnings", out _)).IsFalse();
+        await Assert.That(root.GetProperty("warnings").GetArrayLength()).IsEqualTo(0);
+        await Assert.That(root.GetProperty("inputs").GetArrayLength()).IsEqualTo(0);
     }
 
     [Test]

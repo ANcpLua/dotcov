@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
 using DotCov.Tests.Infrastructure;
+using TUnit.Assertions.Enums;
 
 namespace DotCov.Tests;
 
@@ -74,36 +75,40 @@ public sealed class FalloutBuildTests : IDisposable
     }
 
     [Test]
-    public async Task Fail_ExitsNonZero_WithTheThresholdMessage(CancellationToken cancellationToken)
+    public async Task Fail_Exits1_WithTheThresholdMessage_AndTheOffenders(CancellationToken cancellationToken)
     {
         WriteHalfCovered();
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "80");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        // dotcov's own exit code, so a caller can tell FAIL from NODATA.
+        await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
         await Assert.That(run.Output).Contains("Coverage below threshold: FAIL: line 50.0% (min 80%)");
+        await Assert.That(run.Output).Contains("files below line threshold:");
+        await Assert.That(run.Output).Contains("  src/A.cs  50.0% lines");
+        await Assert.That(run.Output).Contains("    uncovered 2");
     }
 
     [Test]
-    public async Task NoData_ParsedReportWithoutMeasurements_ExitsNonZero_Distinctly(CancellationToken cancellationToken)
+    public async Task NoData_ParsedReportWithoutMeasurements_Exits3(CancellationToken cancellationToken)
     {
         _ws.Write("TestResults/coverage.cobertura.xml", Cobertura.NewDoc());
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "80");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.Output).Contains("Coverage could not be measured: NODATA:");
         await Assert.That(run.Output).DoesNotContain("No files matching");
     }
 
     [Test]
-    public async Task Disabled_EveryThresholdZero_ExitsNonZero_Distinctly(CancellationToken cancellationToken)
+    public async Task Disabled_EveryThresholdZero_Exits4(CancellationToken cancellationToken)
     {
         WriteHalfCovered();
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "0", "--coverage-min-branch", "0");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(4).Because(run.Output);
         await Assert.That(run.Output).Contains("Coverage gate is disabled");
         await Assert.That(run.Output).Contains("DISABLED:");
     }
@@ -111,22 +116,23 @@ public sealed class FalloutBuildTests : IDisposable
     // ── Inputs ────────────────────────────────────────────────────────────────
 
     [Test]
-    public async Task MissingSearchDirectory_FailsNamingTheDirectory(CancellationToken cancellationToken)
+    public async Task MissingSearchDirectory_Exits5_NamingTheDirectory(CancellationToken cancellationToken)
     {
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
         await Assert.That(run.Output).Contains($"Coverage search directory '{_ws.PathOf("TestResults")}' does not exist");
     }
 
     [Test]
-    public async Task DirectoryWithoutMatches_FailsNamingThePattern(CancellationToken cancellationToken)
+    public async Task DirectoryWithoutMatches_Exits3_NamingThePattern(CancellationToken cancellationToken)
     {
         _ws.Write("TestResults/notes.txt", "nothing here");
 
         var run = await RunBuild(cancellationToken, null, "--coverage-pattern", "**/coverage.xml", "--coverage-min-line", "40");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        // Nothing was measured: NODATA, as check reads a directory without matches.
+        await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.Output).Contains($"No files matching '**/coverage.xml' found in {_ws.PathOf("TestResults")}");
     }
 
@@ -142,13 +148,13 @@ public sealed class FalloutBuildTests : IDisposable
     }
 
     [Test]
-    public async Task MalformedReport_FailsNamingTheFile(CancellationToken cancellationToken)
+    public async Task MalformedReport_Exits5_NamingTheFile(CancellationToken cancellationToken)
     {
         var bad = _ws.Write("TestResults/coverage.cobertura.xml", "<coverage><packa");
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
         await Assert.That(run.Output).Contains($"Could not parse coverage report {bad} (line 1, position ");
     }
 
@@ -170,7 +176,7 @@ public sealed class FalloutBuildTests : IDisposable
         // A threshold in the dimension the case does not test: the named parameter is the only error.
         var run = await RunBuild(cancellationToken, null, flag, value, "--coverage-min-branch", "0");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
         await Assert.That(run.Output).Contains(expected);
         await Assert.That(run.Output).DoesNotContain("src/A.cs");
     }
@@ -182,7 +188,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, "--coverage-max-chars-param", "50", "--coverage-min-line", "40");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
         await Assert.That(run.Output).Contains($"Could not parse coverage report {path}");
     }
 
@@ -227,7 +233,7 @@ public sealed class FalloutBuildTests : IDisposable
         var excluded = await RunBuild(cancellationToken, null, "--coverage-min-line", "70", "--coverage-exclude-test-code-param", "true");
 
         await Assert.That(kept.ExitCode).IsEqualTo(0).Because(kept.Output);
-        await Assert.That(excluded.ExitCode).IsNotEqualTo(0);
+        await Assert.That(excluded.ExitCode).IsEqualTo(1).Because(excluded.Output);
         await Assert.That(excluded.Output).Contains("Coverage below threshold: FAIL: line 50.0% (min 70%)");
         await Assert.That(excluded.Output).Contains("Excluded 1 files by");
         await Assert.That(excluded.Output).Contains("tests/A.Tests/ATests.cs");
@@ -243,7 +249,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken);
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
         await Assert.That(run.Output).Contains("Missing Coverage MinLine and Coverage MinBranch: the coverage gate has no default threshold.");
         await Assert.That(run.Output).DoesNotContain("Could not parse");
     }
@@ -259,7 +265,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, flag, value);
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
         await Assert.That(run.Output).Contains(expected);
         await Assert.That(run.Output).DoesNotContain("src/A.cs");
     }
@@ -291,7 +297,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(3).Because(run.Output);
         await Assert.That(run.Output).Contains(
             "Coverage could not be measured: NODATA: line 50.0% (min 40%), branch n/a (min 0%) - 1 file has ambiguous identity across 2 source roots");
         await Assert.That(run.Output).Contains("relative filename 'test_app.py' could belong to any of 2 <source> roots");
@@ -320,7 +326,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-source-root", "lib");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
         await Assert.That(run.Output).Contains("Invalid Coverage SourceRoot: source root 'lib' is not declared by ");
         await Assert.That(run.Output).DoesNotContain("PASS:");
     }
@@ -333,7 +339,7 @@ public sealed class FalloutBuildTests : IDisposable
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40",
             "--coverage-probe-sources-param", "true", "--coverage-source-root", "tests");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
         await Assert.That(run.Output).Contains("Coverage ProbeSourcesParam and Coverage SourceRoot are alternatives");
         await Assert.That(run.Output).DoesNotContain("test_app.py");
     }
@@ -368,7 +374,8 @@ public sealed class FalloutBuildTests : IDisposable
 
         await Assert.That(pass.ExitCode).IsEqualTo(0).Because(pass.Output);
         await Assert.That(passMarkdown).Contains("PASS: line 50.0% (min 40%)");
-        await Assert.That(fail.ExitCode).IsNotEqualTo(0);
+        await Assert.That(fail.ExitCode).IsEqualTo(1).Because(fail.Output);
+        await Assert.That(failMarkdown).Contains("- `src/A.cs` — 50.0% lines — uncovered 2");
         await Assert.That(failMarkdown).Contains("FAIL: line 50.0% (min 80%)");
     }
 
@@ -388,18 +395,18 @@ public sealed class FalloutBuildTests : IDisposable
     // ── Badge ─────────────────────────────────────────────────────────────────
 
     [Test]
-    [Arguments("40", false, true, "50.0%", "brightgreen")]
-    [Arguments("80", false, false, "50.0%", "red")]
-    [Arguments("0", false, false, "disabled", "yellow")]
-    [Arguments("80", true, false, "no data", "lightgrey")]
+    [Arguments("40", false, 0, "50.0%", "brightgreen")]
+    [Arguments("80", false, 1, "50.0%", "red")]
+    [Arguments("0", false, 4, "disabled", "yellow")]
+    [Arguments("80", true, 3, "no data", "lightgrey")]
     public async Task BadgeDirectory_WritesTheGateBadge_ForEveryOutcome(
-        string minLine, bool empty, bool passes, string message, string color, CancellationToken cancellationToken)
+        string minLine, bool empty, int exitCode, string message, string color, CancellationToken cancellationToken)
     {
         if (empty) _ws.Write("TestResults/coverage.cobertura.xml", Cobertura.NewDoc()); else WriteHalfCovered();
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", minLine, "--coverage-badge-directory", "out/badge");
 
-        await Assert.That(run.ExitCode is 0).IsEqualTo(passes).Because(run.Output);
+        await Assert.That(run.ExitCode).IsEqualTo(exitCode).Because(run.Output);
         await AssertBadge(_ws.PathOf("out/badge"), message, color);
     }
 
@@ -434,7 +441,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-badge-directory", "blocked");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
         await Assert.That(run.Output).Contains("Coverage gate passed, but its badge could not be written:");
         await Assert.That(run.Output).DoesNotContain("Coverage gate passed: PASS");
     }
@@ -447,7 +454,7 @@ public sealed class FalloutBuildTests : IDisposable
 
         var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "80", "--coverage-badge-directory", "blocked");
 
-        await Assert.That(run.ExitCode).IsNotEqualTo(0);
+        await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
         await Assert.That(run.Output).Contains("Could not write coverage badge to blocked:");
         await Assert.That(run.Output).Contains("Coverage below threshold: FAIL: line 50.0% (min 80%)");
     }
@@ -459,6 +466,69 @@ public sealed class FalloutBuildTests : IDisposable
 
         await Assert.That(svg).Contains($">{message}</text>");
         await Assert.That(json).IsEqualTo($$"""{"schemaVersion":1,"label":"Coverage","message":"{{message}}","color":"{{color}}"}""");
+    }
+
+    // ── JSON: the check document, on the log and in a file ────────────────────
+
+    [Test]
+    public async Task Format_Json_LogsTheGateDocument(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-format", "json", "--coverage-min-line", "80");
+
+        await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
+        await Assert.That(run.Output).Contains("\"command\": \"check\"");
+        await Assert.That(run.Output).Contains("\"outcome\": \"fail\"");
+        await Assert.That(run.Output).Contains("\"uncovered\": \"2\"");
+    }
+
+    [Test]
+    [Arguments("40", 0, "pass")]
+    [Arguments("80", 1, "fail")]
+    [Arguments("0", 4, "disabled")]
+    public async Task JsonPath_WritesTheGateDocument_ForEveryOutcome(
+        string minLine, int exitCode, string outcome, CancellationToken cancellationToken)
+    {
+        var report = WriteHalfCovered();
+
+        // Relative to the root, like the badge directory; the table still goes to the log.
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", minLine, "--coverage-json-path", "out/coverage.json");
+
+        await Assert.That(run.ExitCode).IsEqualTo(exitCode).Because(run.Output);
+        await Assert.That(run.Output).Contains("TOTAL");
+        var root = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(_ws.PathOf("out/coverage.json"), cancellationToken)).RootElement;
+        await Assert.That(root.GetProperty("schemaVersion").GetInt32()).IsEqualTo(1);
+        await Assert.That(root.GetProperty("command").GetString()).IsEqualTo("check");
+        await Assert.That(root.GetProperty("inputs").EnumerateArray().Select(static i => i.GetString()!)).IsEquivalentTo([report], CollectionOrdering.Matching);
+        await Assert.That(root.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo(outcome);
+        await Assert.That(root.GetProperty("gate").GetProperty("exitCode").GetInt32()).IsEqualTo(exitCode);
+    }
+
+    [Test]
+    public async Task JsonPath_Unwritable_FailsAPassingGate_With5(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+        _ws.Write("blocked", "a file where the directory should go");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", "--coverage-json-path", "blocked/coverage.json");
+
+        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
+        await Assert.That(run.Output).Contains("Coverage gate passed, but its JSON report could not be written:");
+        await Assert.That(run.Output).DoesNotContain("Coverage gate passed: PASS");
+    }
+
+    [Test]
+    public async Task JsonPath_Unwritable_KeepsTheFailingVerdict(CancellationToken cancellationToken)
+    {
+        WriteHalfCovered();
+        _ws.Write("blocked", "a file where the directory should go");
+
+        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "80", "--coverage-json-path", "blocked/coverage.json");
+
+        await Assert.That(run.ExitCode).IsEqualTo(1).Because(run.Output);
+        await Assert.That(run.Output).Contains("Could not write coverage JSON to blocked/coverage.json:");
+        await Assert.That(run.Output).Contains("Coverage below threshold: FAIL: line 50.0% (min 80%)");
     }
 
     // ── Target graph ──────────────────────────────────────────────────────────

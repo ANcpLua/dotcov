@@ -113,15 +113,12 @@ public sealed class CoberturaParserTests
     }
 
     [Test]
-    public async Task BelowPercent_ReturnsOnlyFilesUnderThreshold()
+    public async Task Offenders_ReturnOnlyFilesUnderTheFailedThreshold_WorstFirst()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var below80 = report.BelowPercent(80).ToList();
+        var offenders = report.Offenders(report.Evaluate(80));
 
-        await Assert.That(below80.Count).IsEqualTo(2);
-        await Assert.That(below80).Contains(f => f.Path == "src/Parser.cs");
-        await Assert.That(below80).Contains(f => f.Path == "src/Unused.cs");
-        await Assert.That(below80).DoesNotContain(f => f.Path == "src/Calculator.cs");
+        await Assert.That(offenders.Select(static f => f.Path)).IsEquivalentTo(["src/Unused.cs", "src/Parser.cs"], CollectionOrdering.Matching);
     }
 
     [Test]

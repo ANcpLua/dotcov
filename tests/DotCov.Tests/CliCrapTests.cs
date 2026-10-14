@@ -300,6 +300,63 @@ public sealed class CliCrapTests : IDisposable
     }
 
     [Test]
+    public async Task Crap_Table_LocatesEachMethodByFileAndStartLine()
+    {
+        var (_, stdout, _) = await Run("crap", AboveDefaultThreshold());
+
+        var rows = stdout.Split(Environment.NewLine);
+        await Assert.That(rows[0]).EndsWith("CRAP  Location");
+        await Assert.That(rows.Single(static r => r.StartsWith("MyApp.A.Risky", StringComparison.Ordinal))).EndsWith("  src/A.cs:1");
+        await Assert.That(rows.Single(static r => r.StartsWith("MyApp.A.Safe", StringComparison.Ordinal))).EndsWith("  src/A.cs:5");
+    }
+
+    [Test]
+    public async Task Crap_Markdown_LocatesEachMethodByFileAndStartLine()
+    {
+        var (_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "md");
+
+        await Assert.That(stdout).Contains("| Method | Comp | Cov % | CRAP | Location |");
+        await Assert.That(stdout).Contains("| `MyApp.A.Risky` | 6 | 0.0% | 42.0 ❌ | `src/A.cs:1` |");
+    }
+
+    [Test]
+    public async Task Crap_Json_GivesEachMethodItsLocationAndUncoveredRanges()
+    {
+        var report = _ws.Write("ranges.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "MyApp.A", c => c
+                .Method("Partly", "()", "2", m => m.Line(10, hits: 1).Line(11, hits: 0).Line(12, hits: 0).Line(14, hits: 0))
+                .Method("Fully", "()", "1", m => m.Line(20, hits: 1))));
+
+        var (code, stdout, stderr) = await Run("crap", report, "--format", "json");
+
+        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        var root = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+        var gate = root.GetProperty("gate");
+        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(0);
+        await Assert.That(gate.GetProperty("reason").GetString()).IsEqualTo("PASS: worst CRAP 3.7 (max 30) - all 2 methods at or below threshold");
+        var methods = root.GetProperty("methods").EnumerateArray().ToDictionary(static m => m.GetProperty("method").GetString()!);
+        var partly = methods["MyApp.A.Partly"];
+        await Assert.That(partly.GetProperty("file").GetString()).IsEqualTo("src/A.cs");
+        await Assert.That(partly.GetProperty("line").GetInt32()).IsEqualTo(10);
+        await Assert.That(partly.GetProperty("uncovered").GetString()).IsEqualTo("11-12,14");
+        await Assert.That(methods["MyApp.A.Fully"].TryGetProperty("uncovered", out _)).IsFalse();
+    }
+
+    [Test]
+    [Arguments("--max-crap", "6", 1, "fail")]
+    [Arguments("--max-crap", "Infinity", 4, "disabled")]
+    public async Task Crap_Json_GateCarriesTheExitCodeAndTheVerdictLine(string flag, string value, int exitCode, string outcome)
+    {
+        var (code, stdout, stderr) = await Run("crap", AboveDefaultThreshold(), "--format", "json", flag, value);
+
+        await Assert.That(code).IsEqualTo(exitCode);
+        var gate = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("gate");
+        await Assert.That(gate.GetProperty("outcome").GetString()).IsEqualTo(outcome);
+        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(exitCode);
+        await Assert.That(gate.GetProperty("reason").GetString()).IsEqualTo(stderr.Split(Environment.NewLine)[0]);
+    }
+
+    [Test]
     public async Task Crap_MarkdownFormat_EmitsBadgeAndVerdict()
     {
         var (code, stdout, _) = await Run("crap", AtDefaultThreshold(), "--format", "md");

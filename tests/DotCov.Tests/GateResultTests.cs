@@ -113,7 +113,7 @@ public sealed class GateResultTests
     }
 
     [Test]
-    public async Task BelowPercent_ExactlyMetFile_IsNotListed()
+    public async Task Offenders_ExactlyMetFile_IsNotListed()
     {
         // A file at exactly the threshold is not an offender: same comparison as the gate,
         // so `check` can never fail a report while listing zero files (or vice versa).
@@ -122,7 +122,7 @@ public sealed class GateResultTests
             new FileCoverage("below.cs", 28, 100, 0, 0),
         ]);
 
-        var below = report.BelowPercent(29).ToList();
+        var below = report.Offenders(report.Evaluate(29));
 
         await Assert.That(below).HasSingleItem();
         await Assert.That(below[0].Path).IsEqualTo("below.cs");
@@ -236,7 +236,7 @@ public sealed class GateResultTests
     }
 
     [Test]
-    public async Task BelowPercent_OmitsUnmeasuredFiles()
+    public async Task Offenders_OmitUnmeasuredFiles()
     {
         // An unmeasured file is not "below" a threshold; listing it as an offender sends people
         // to write tests for a file the report has nothing to say about.
@@ -245,7 +245,7 @@ public sealed class GateResultTests
             new FileCoverage("unmeasured.cs", 0, 0, 0, 0),
         ]);
 
-        var below = report.BelowPercent(80).ToList();
+        var below = report.Offenders(report.Evaluate(80));
 
         await Assert.That(below).HasSingleItem();
         await Assert.That(below[0].Path).IsEqualTo("measured.cs");

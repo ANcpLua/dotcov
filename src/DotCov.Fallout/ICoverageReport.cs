@@ -17,7 +17,10 @@ namespace DotCov.Fallout;
 /// implements it and runs on its own otherwise. There is no default threshold: MinLine,
 /// MinBranch, or both must be set, or the target fails before reading a report. The gate
 /// policy is fail-closed: only <see cref="GateOutcome.Pass"/> succeeds; a failed, unmeasurable,
-/// or disabled gate fails the target with a distinct message.
+/// or disabled gate fails the target with a distinct message, and the build exits with
+/// dotcov's own code for it (<see cref="ExitCodes"/>: 1 FAIL, 3 NODATA, 4 DISABLED, 2 for an
+/// invalid parameter, 5 for an unreadable report or an unwritable badge or JSON file), so a
+/// caller can tell them apart without reading the log.
 /// </summary>
 [ParameterPrefix("Coverage")]
 public interface ICoverageReport : IFalloutBuild
@@ -30,6 +33,9 @@ public interface ICoverageReport : IFalloutBuild
 
     [Parameter("Output format: table, json, markdown (md)")]
     string Format => TryGetValue(() => Format) ?? CoverageParameters.DefaultFormat;
+
+    [Parameter("File, relative to the root, to also write the JSON report with its gate to, for every outcome; empty = none")]
+    string JsonPath => TryGetValue(() => JsonPath) ?? CoverageParameters.DefaultJsonPath;
 
     [Parameter("Exclude generated files, migrations, GlobalUsings.cs, Program.cs (true/false)")]
     string ExcludeGeneratedParam => TryGetValue(() => ExcludeGeneratedParam) ?? CoverageParameters.DefaultExcludeGenerated;
@@ -59,17 +65,27 @@ public interface ICoverageReport : IFalloutBuild
         .TryDependsOn<ICompile>()
         .Executes(() =>
         {
-            var parameters = CoverageParameters.Parse(
-                MinLine, MinBranch, Format, ExcludeGeneratedParam, ExcludeTestCodeParam, Pattern, MaxCharsParam,
-                ProbeSourcesParam, SourceRoot);
+            CoverageParameters parameters;
+            try
+            {
+                parameters = CoverageParameters.Parse(
+                    MinLine, MinBranch, Format, ExcludeGeneratedParam, ExcludeTestCodeParam, Pattern, MaxCharsParam,
+                    ProbeSourcesParam, SourceRoot);
+            }
+            catch (ArgumentException)
+            {
+                ExitCode = ExitCodes.Usage;
+                throw;
+            }
 
             var searchDirectory = CoverageSearchDirectory.ToString();
-            Assert.True(Directory.Exists(searchDirectory),
-                $"Coverage search directory '{searchDirectory}' does not exist");
+            if (!Directory.Exists(searchDirectory))
+                throw Failure(ExitCodes.Error, $"Coverage search directory '{searchDirectory}' does not exist");
 
+            // Nothing to measure is NODATA, as check reads a directory without matches.
             var inputs = ReportResolver.ResolveDirectory(searchDirectory, parameters.Pattern);
-            Assert.True(inputs.Count > 0,
-                $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
+            if (inputs.Count is 0)
+                throw Failure(ExitCodes.NoData, $"No files matching '{parameters.Pattern}' found in {searchDirectory}");
 
             // Every match is merged, so a report an earlier run left under TestResults lifts the
             // result silently unless the merged set is named.
@@ -91,16 +107,19 @@ public interface ICoverageReport : IFalloutBuild
 
             var gate = report.Evaluate(parameters.MinLine, parameters.MinBranch);
 
-            // Rendered at most once: the markdown serves both the terminal (when selected)
-            // and the step summary.
+            // Rendered at most once each: the markdown serves both the terminal (when selected)
+            // and the step summary, the JSON both the terminal and the JsonPath file. The JSON is
+            // check's document, gate and offenders included.
             var markdown = new Lazy<string>(() => MarkdownFormatter.Format(report, gate));
+            var json = new Lazy<string>(() => JsonFormatter.Format(report, gate, "check"));
             var output = parameters.Format switch
             {
-                CoverageFormat.Json => JsonFormatter.Format(report),
+                CoverageFormat.Json => json.Value,
                 CoverageFormat.Markdown => markdown.Value,
                 // Rendered from the gate below the table, so a failing dimension floors like the
-                // verdict: never TOTAL 100.0% beside "FAIL: line 99.9% (min 100%)".
-                _ => TableFormatter.Format(report, gate)
+                // verdict: never TOTAL 100.0% beside "FAIL: line 99.9% (min 100%)". A failed gate
+                // lists what to fix next under it.
+                _ => TableFormatter.Format(report, gate) + TableFormatter.FormatOffenders(report, gate)
             };
             Log.Information("Coverage:\n{Output}", output);
 
@@ -116,53 +135,60 @@ public interface ICoverageReport : IFalloutBuild
                 !CoverageBadge.TryWrite(Path.GetFullPath(badgeDirectory, RootDirectory), gate, out badgeError))
                 Log.Error("Could not write coverage badge to {Directory}: {Error}", badgeDirectory, badgeError);
 
+            // Like the badge: written for every outcome, and a pass that cannot write it fails.
+            string? jsonError = null;
+            if (JsonPath is { Length: > 0 } jsonPath &&
+                !CoverageJsonFile.TryWrite(Path.GetFullPath(jsonPath, RootDirectory), json.Value, out jsonError))
+                Log.Error("Could not write coverage JSON to {Path}: {Error}", jsonPath, jsonError);
+
             switch (gate.Outcome)
             {
                 case GateOutcome.Pass when badgeError is not null:
-                    Assert.Fail($"Coverage gate passed, but its badge could not be written: {badgeError}");
-                    break;
+                    throw Failure(ExitCodes.Error, $"Coverage gate passed, but its badge could not be written: {badgeError}");
+                case GateOutcome.Pass when jsonError is not null:
+                    throw Failure(ExitCodes.Error, $"Coverage gate passed, but its JSON report could not be written: {jsonError}");
                 case GateOutcome.Pass:
                     Log.Information("Coverage gate passed: {Gate}", gate.ToString());
                     break;
                 case GateOutcome.Fail:
-                    Assert.Fail($"Coverage below threshold: {gate}");
-                    break;
+                    throw Failure(ExitCodes.Fail, $"Coverage below threshold: {gate}");
                 case GateOutcome.NoData:
-                    Assert.Fail($"Coverage could not be measured: {gate}");
-                    break;
+                    throw Failure(ExitCodes.NoData, $"Coverage could not be measured: {gate}");
                 default:
-                    Assert.Fail($"Coverage gate is disabled - every threshold is 0, so nothing was verified: {gate}");
-                    break;
+                    throw Failure(ExitCodes.Disabled, $"Coverage gate is disabled - every threshold is 0, so nothing was verified: {gate}");
             }
         });
 
     /// <summary>
-    /// Parse at the target boundary: a malformed report fails the target naming the file and XML
-    /// coordinates, and a SourceRoot no report declares fails naming the parameter.
+    /// What fails the target, as Assert.Fail would throw it, after recording dotcov's exit code
+    /// for the reason: Fallout returns a build's <see cref="IFalloutBuild.ExitCode"/> instead of
+    /// its generic failure code once it is set.
     /// </summary>
-    private static CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars, FileIdentity identity)
+    private Exception Failure(int exitCode, string message, Exception? cause = null)
     {
-        CoverageReport? report = null;
-        Exception? failure = null;
-        string? message = null;
+        ExitCode = exitCode;
+        return new Exception(message, cause);
+    }
+
+    /// <summary>
+    /// Parse at the target boundary: a malformed report fails the target naming the file and XML
+    /// coordinates (exit 5), and a SourceRoot no report declares fails naming the parameter
+    /// (exit 2, a parameter that cannot be honored).
+    /// </summary>
+    private CoverageReport ParseReports(IReadOnlyList<ReportInput> inputs, long maxChars, FileIdentity identity)
+    {
         try
         {
-            report = CoberturaParser.Parse(inputs, maxChars, identity);
+            return CoberturaParser.Parse(inputs, maxChars, identity);
         }
         catch (ReportParseException ex)
         {
-            (failure, message) = (ex, $"Could not parse coverage report {ex.SourceName} (line {ex.LineNumber}, position {ex.LinePosition}): {ex.Message}");
+            throw Failure(ExitCodes.Error,
+                $"Could not parse coverage report {ex.SourceName} (line {ex.LineNumber}, position {ex.LinePosition}): {ex.Message}", ex);
         }
         catch (UndeclaredSourceRootException ex)
         {
-            (failure, message) = (ex, $"Invalid Coverage SourceRoot: {ex.Message}");
+            throw Failure(ExitCodes.Usage, $"Invalid Coverage SourceRoot: {ex.Message}", ex);
         }
-
-        // Failed outside the catch blocks, so no statement has to follow Assert.Fail, which
-        // throws: only a successful parse reaches the return.
-        if (failure is not null)
-            Assert.Fail(message!, failure);
-
-        return report!;
     }
 }

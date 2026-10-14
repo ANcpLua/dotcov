@@ -88,6 +88,7 @@ checkj "report  json"  0 report   "$A" --format json
 check  "report  md"    0 report   "$A" --format md
 check  "check   pass"  0 check     "$A" --min-line 50
 check  "check   fail"  1 check     "$A" --min-line 99
+checkj "check   json"  0 check     "$A" --min-line 50 --format json
 checkj "diff    json"  0 diff      "$A" "$B" --format json
 check  "diff    table" 0 diff      "$A" "$B"
 checkj "snapshot json" 0 snapshot  "$A" --commit abc --branch main --project D

@@ -7,10 +7,12 @@ namespace DotCov.Formatters;
 // and scripts, so its shape must not follow the host locale (de-AT would write 62,1%).
 public static class TableFormatter
 {
-    public static string Format(CoverageReport report) => Format(report, color: false);
-
-    public static string Format(CoverageReport report, bool color) =>
-        Render(report, color, lineFloorBelow: null, branchFloorBelow: null);
+    /// <summary>
+    /// The report table, worst file first. With <paramref name="top"/>, only that many file rows
+    /// and a <c>… N more files</c> line; TOTAL still counts every file.
+    /// </summary>
+    public static string Format(CoverageReport report, bool color = false, int? top = null) =>
+        Render(report, color, lineFloorBelow: null, branchFloorBelow: null, top);
 
     /// <inheritdoc cref="Format(CoverageReport, GateResult, bool)"/>
     public static string Format(CoverageReport report, GateResult gate) => Format(report, gate, color: false);
@@ -28,11 +30,44 @@ public static class TableFormatter
     public static string Format(CoverageReport report, GateResult gate, bool color) =>
         Render(report, color,
             lineFloorBelow: gate.LineBelowThreshold ? gate.MinLinePercent : null,
-            branchFloorBelow: gate.BranchBelowThreshold ? gate.MinBranchPercent : null);
+            branchFloorBelow: gate.BranchBelowThreshold ? gate.MinBranchPercent : null,
+            top: null);
+
+    /// <summary>
+    /// What to fix next after a failed gate, as plain lines: a heading naming the failed
+    /// dimensions, then the first <paramref name="top"/> <see cref="CoverageReport.Offenders"/>,
+    /// each with its rates and, indented below, its uncovered line ranges and partially covered
+    /// branch lines; <c>… N more files</c> counts the rest. Empty when the gate blames no file.
+    /// <code>
+    /// files below line threshold:
+    ///   src/A.cs  57.1% lines  16.7% branches
+    ///     uncovered 21,23-24 · branches 20 (1/2), 26 (0/4)
+    /// </code>
+    /// </summary>
+    public static string FormatOffenders(CoverageReport report, GateResult gate, int top = CoverageReport.DefaultOffenderLimit)
+    {
+        var offenders = report.Offenders(gate);
+        if (offenders.Count is 0) return "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"files below {OffenderText.Dimensions(gate)} threshold:");
+        foreach (var f in offenders.Take(top))
+        {
+            sb.AppendLine($"  {f.Path}  {OffenderText.Rates(f, gate, "  ")}");
+            if (OffenderText.Detail(f) is { Length: > 0 } detail)
+                sb.AppendLine($"    {detail}");
+        }
+
+        if (offenders.Count > top)
+            sb.AppendLine(Invariant($"  … {offenders.Count - top} more files"));
+        return sb.ToString();
+    }
 
     /// <param name="lineFloorBelow">The missed line minimum when the gate failed lines, else null.</param>
     /// <param name="branchFloorBelow">The missed branch minimum when the gate failed branches, else null.</param>
-    private static string Render(CoverageReport report, bool color, double? lineFloorBelow, double? branchFloorBelow)
+    /// <param name="top">The number of file rows shown, or null for all of them.</param>
+    private static string Render(
+        CoverageReport report, bool color, double? lineFloorBelow, double? branchFloorBelow, int? top)
     {
         var pen = new AnsiPen(color);
         var sb = new StringBuilder();
@@ -42,7 +77,9 @@ public static class TableFormatter
         sb.AppendLine(pen.Bold(pen.Cyan(headerPlain)));
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 
-        foreach (var f in report.Files.WorstFirst())
+        IEnumerable<FileCoverage> rows = report.Files.WorstFirst();
+        if (top is { } shown) rows = rows.Take(shown);
+        foreach (var f in rows)
         {
             var lines = $"{f.LinesHit}/{f.LinesTotal}".PadLeft(10);
             var linePct = Pct(f.LineRate, Below(f.LineRate, lineFloorBelow));
@@ -58,6 +95,9 @@ public static class TableFormatter
                 $"{pen.Rate(branches, f.BranchRate)}  " +
                 $"{pen.Rate(branchPct, f.BranchRate)}");
         }
+
+        if (top is { } limit && report.Files.Count > limit)
+            sb.AppendLine(pen.Dim(Invariant($"… {report.Files.Count - limit} more files")));
 
         sb.AppendLine(pen.Dim(new string('-', headerPlain.Length)));
 

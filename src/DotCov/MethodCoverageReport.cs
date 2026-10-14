@@ -25,6 +25,9 @@ public sealed class MethodCoverageReport
     /// <summary>Every decoding anomaly raised while reading the inputs, in encounter order.</summary>
     public IReadOnlyList<CoverageWarning> Warnings { get; }
 
+    /// <summary>The same provenance as <see cref="CoverageReport.Inputs"/>: every parsed document's source name.</summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
     /// <summary>
     /// Declared <c>&lt;source&gt;</c> roots across all inputs, deduplicated by normalized
     /// identity — the same rule <see cref="CoverageReport.SourceRoots"/> follows.
@@ -94,6 +97,7 @@ public sealed class MethodCoverageReport
 
         return new MethodCoverageReport(kept, Warnings, SourceRoots)
         {
+            Inputs = Inputs,
             AmbiguousFiles = ExclusionRules.Remaining(AmbiguousFiles, excluded),
             Exclusion = Exclusion.Then(rules, keepRules, excluded),
             ExclusionSteps = [.. ExclusionSteps, (rules, keepRules)],

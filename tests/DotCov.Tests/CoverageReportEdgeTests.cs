@@ -272,7 +272,7 @@ public sealed class CoverageReportEdgeTests
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
         await Assert.That(gate.ToString()).IsEqualTo("FAIL: line 99.9% (min 100%), branch n/a (min 0%) - line coverage below threshold");
-        await Assert.That(report.BelowPercent(100).Single().Path).IsEqualTo("src/A.cs");
+        await Assert.That(report.Offenders(gate).Single().Path).IsEqualTo("src/A.cs");
     }
 
     [Test]

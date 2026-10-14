@@ -34,9 +34,9 @@ public enum GateOutcome
 /// from (null where unmeasured), the thresholds it was judged against, and why.
 /// </summary>
 /// <remarks>
-/// Deliberately carries no exit code and no severity. Whether <see cref="GateOutcome.NoData"/>
-/// should fail a build, warn, or be ignored is a policy decision belonging to whatever is driving
-/// the gate; this type only reports what is true.
+/// Carries no exit code and no severity; this type only reports what is true. dotcov's own
+/// mapping from outcome to exit code is <see cref="ExitCodes.For"/>, which a caller with another
+/// policy for <see cref="GateOutcome.NoData"/> need not use.
 /// </remarks>
 public readonly record struct GateResult(
     GateOutcome Outcome,
@@ -66,7 +66,7 @@ public readonly record struct GateResult(
 
     /// <summary>
     /// The one threshold comparison. <see cref="CoverageReport.Evaluate"/>,
-    /// <see cref="CoverageReport.BelowPercent"/>, <see cref="LineBelowThreshold"/>, and
+    /// <see cref="CoverageReport.Offenders"/>, <see cref="LineBelowThreshold"/>, and
     /// <see cref="BranchBelowThreshold"/> all route through here so verdict and display
     /// can never drift.
     /// </summary>
@@ -116,4 +116,7 @@ public readonly record struct GateResult(
     /// overloads so every surface prints the same failing number.
     /// </summary>
     internal static double FloorToTenth(double percent) => Math.Floor(percent * 10 + RateEpsilon) / 10;
+
+    /// <summary>The same floor at the two decimals JSON carries: 79.996% is <c>79.99</c>, never <c>80</c>.</summary>
+    internal static double FloorToHundredth(double percent) => Math.Floor(percent * 100 + RateEpsilon) / 100;
 }

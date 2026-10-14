@@ -36,7 +36,11 @@ public readonly record struct CrapMethod(
     int Complexity,
     double Coverage,
     double Score,
-    CrapComplexitySource ComplexitySource);
+    CrapComplexitySource ComplexitySource)
+{
+    /// <summary>The method's coverable lines with zero hits, ascending: what a test must reach to lower the score.</summary>
+    public IReadOnlyList<int> UncoveredLines { get => field ?? []; init; } = [];
+}
 
 /// <summary>A method that has coverage but could not be scored, and why. Listed, never dropped.</summary>
 public readonly record struct CrapUnscoredMethod(string Method, string File, string Reason);
@@ -101,6 +105,12 @@ public sealed class CrapReport
 
     /// <summary>The exclusions applied to the analyzed methods and the files they removed.</summary>
     public FileExclusion Exclusion { get; internal init; } = FileExclusion.None;
+
+    /// <summary>The parser's diagnostics for the documents this report was analyzed from.</summary>
+    public IReadOnlyList<CoverageWarning> Warnings { get; internal init; } = [];
+
+    /// <summary>The source names of the documents this report was analyzed from (<see cref="MethodCoverageReport.Inputs"/>).</summary>
+    public IReadOnlyList<string> Inputs { get; internal init; } = [];
 
     /// <summary>Scored methods in document order; formatters apply worst-first ordering.</summary>
     public IReadOnlyList<CrapMethod> Methods { get; }
@@ -214,7 +224,9 @@ public static class CrapAnalysis
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
         {
             AmbiguousFiles = report.AmbiguousFiles,
-            Exclusion = exclusion
+            Exclusion = exclusion,
+            Warnings = report.Warnings,
+            Inputs = report.Inputs
         };
     }
 
@@ -494,8 +506,11 @@ public static class CrapAnalysis
                 continue;
             }
 
-            var (coverage, start) = logical.LineStats();
-            scored.Add(new CrapMethod(display, logical.File, start, comp, coverage, Score(comp, coverage), source));
+            var (coverage, start, uncovered) = logical.LineStats();
+            scored.Add(new CrapMethod(display, logical.File, start, comp, coverage, Score(comp, coverage), source)
+            {
+                UncoveredLines = uncovered
+            });
         }
 
         return (scored, unscored);
@@ -552,17 +567,20 @@ public static class CrapAnalysis
                 EmbeddedComplexity = EmbeddedComplexity is { } e ? Math.Max(e, c) : c;
         }
 
-        /// <summary>Coverage ratio (covered ÷ coverable lines) and first known line (0 when none).</summary>
-        public (double Coverage, int StartLine) LineStats()
+        /// <summary>Coverage ratio (covered ÷ coverable lines), first known line (0 when none), and the lines with zero hits.</summary>
+        public (double Coverage, int StartLine, IReadOnlyList<int> Uncovered) LineStats()
         {
             var hit = 0;
             var start = 0;
+            var uncovered = new List<int>();
             foreach (var (line, hits) in Lines)
             {
                 if (hits > 0) hit++;
+                else uncovered.Add(line);
                 if (start is 0 || line < start) start = line;
             }
-            return ((double)hit / Lines.Count, start);
+            uncovered.Sort();
+            return ((double)hit / Lines.Count, start, uncovered);
         }
     }
 

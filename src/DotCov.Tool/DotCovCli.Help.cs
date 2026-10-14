@@ -28,10 +28,10 @@ public static partial class DotCovCli
     [
         new("report", "dotcov report <path> [options]",
             ["Parse and display coverage."],
-            ["format", "threshold", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary"]),
+            ["format", "top", "threshold", "no-color", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary"]),
         new("check", "dotcov check <path> --min-line N and/or --min-branch N [options]",
             ["CI gate: exit 1 when line or branch coverage is below its minimum."],
-            ["min-line", "min-branch", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary", "badge-dir"]),
+            ["min-line", "min-branch", "format", "top", .. Exclusion, .. Identities, "pattern", "max-chars", "upload", "github-summary", "badge-dir"]),
         new("crap", "dotcov crap <path> [options]",
             ["CRAP gate, comp^2*(1-cov)^3+comp per method: exit 1 when any method scores strictly",
              "above --max-crap (at-threshold passes; default 30; every method must be scored)."],
@@ -45,7 +45,7 @@ public static partial class DotCovCli
         new("test", "dotcov test [<project>] --min-line N and/or --min-branch N [options] [-- <dotnet test arguments>]",
             ["Run dotnet test with coverage into a fresh TestResults/<run>, then report and gate it",
              "like check."],
-            ["min-line", "min-branch", "no-color", .. Exclusion, .. Identities, "github-summary", "badge-dir"]),
+            ["min-line", "min-branch", "format", "top", "no-color", .. Exclusion, .. Identities, "github-summary", "badge-dir"]),
         new("version", "dotcov version, dotcov --version",
             ["Show the version."],
             []),
@@ -73,7 +73,9 @@ public static partial class DotCovCli
         new("min-line", "--min-line N", ["Minimum line coverage, 0 to 100; 0 disables the dimension"]),
         new("min-branch", "--min-branch N", ["Minimum branch coverage, 0 to 100; 0 disables the dimension"]),
         new("max-crap", "--max-crap N", ["Highest CRAP score that passes (default 30)"]),
-        new("top", "--top N", ["Show the N worst methods; the gate still evaluates every method"]),
+        new("top", "--top N",
+            ["Show the N worst files (report) or methods (crap), or list at most N files below a",
+             "threshold (check, test; default 20); a gate still evaluates everything"]),
         new("metrics", "--metrics <file>", ["Cyclomatic complexity from `dotnet msbuild /t:Metrics`, for emitters", "whose coverage XML does not carry it"]),
         new("commit", "--commit <sha>", ["Commit the snapshot is stamped with (default 'unknown', warned)"]),
         new("branch", "--branch <name>", ["Branch the snapshot is stamped with (default 'unknown', warned)"]),
@@ -133,8 +135,16 @@ public static partial class DotCovCli
              "results directory so an earlier run's report is not merged."]),
         new(ExclusionCommands,
             ["With an exclusion active, stderr lists its rules and every excluded file once; JSON",
-             "output (report --format json, crap --format json, snapshot) carries them as \"excluded\"",
-             "and \"exclusionRules\" instead."]),
+             "output carries them as \"excluded\" and \"exclusionRules\"."]),
+        new(ReportCommands,
+            ["JSON output starts with \"schemaVersion\": 1, \"command\", \"inputs\" (the merged reports), and",
+             "\"warnings\". Uncovered lines are range strings such as \"21,23-24\". check, test, and crap add a",
+             "\"gate\" object: outcome, exitCode, reason (the verdict line), and the thresholds; check and",
+             "test also list \"offenders\" with their uncovered lines and partially covered branches."]),
+        new(["check", "test"],
+            ["A FAIL lists every file below a failed threshold, worst first, with its uncovered line",
+             "ranges and partially covered branch lines - stderr for the table, in the document for",
+             "json and md. --top N caps the list (default 20)."]),
         new(ReportCommands,
             ["A report that declares several <source> roots does not say which root a relative",
              "filename belongs to. By default dotcov never guesses from the disk: the file is keyed",
@@ -144,7 +154,8 @@ public static partial class DotCovCli
             ["crap needs cyclomatic complexity for every method: coverlet embeds it in the coverage XML",
              "(used automatically); for other emitters pass --metrics <file> produced by",
              "`dotnet msbuild /t:Metrics` (Microsoft.CodeAnalysis.Metrics package). A method without",
-             "it is listed as unscored, and the gate exits 3 rather than vouch for code it did not score."]),
+             "it is listed as unscored, and the gate exits 3 rather than vouch for code it did not score.",
+             "The table's Location column gives each method's file:line."]),
         new(["diff"],
             ["diff lists the files that were added, removed, or whose line rate moved, then counts the",
              "unchanged files on one line; JSON lists every file with its change."]),
@@ -152,9 +163,10 @@ public static partial class DotCovCli
             ["test passes the coverage options of the runner dotnet test uses in this directory",
              "(DOTNET_TEST_RUNNER, else global.json test.runner, else VSTest). MTP test projects need",
              "Microsoft.Testing.Extensions.CodeCoverage; VSTest projects get the Code Coverage collector",
-             "from Microsoft.NET.Test.Sdk. dotnet test output goes to stdout ahead of the table; after",
-             "the verdict, stderr names the run's reports as 'reports: TestResults/<run>'. A failed run",
-             "exits 6 without evaluating coverage."]),
+             "from Microsoft.NET.Test.Sdk. dotnet test output goes to stdout ahead of the table; with",
+             "--format json or md it is held back and shown on stderr only if the run fails. After the",
+             "verdict, stderr names the run's reports as 'reports: TestResults/<run>'. A failed run exits",
+             "6 without evaluating coverage."]),
         new(ColorCommands,
             ["Tables are coloured on a terminal and in CI logs that render ANSI (GitHub Actions, GitLab,",
              "Azure Pipelines, ...). --no-color or NO_COLOR=1 turns colour off; test also passes",
@@ -162,9 +174,9 @@ public static partial class DotCovCli
     ];
 
     /// <summary>The one exit-code table: full help shows every row, a command's help the rows that apply to it.</summary>
-    static readonly HelpEntry[] ExitCodes =
+    static readonly HelpEntry[] ExitCodeEntries =
     [
-        new(AllCommands, ["0  success; check, crap, and test require a measured pass"]),
+        new(AllCommands, ["0  success; check, crap, and test require a measured pass (JSON: gate.exitCode)"]),
         new(GateCommands, ["1  FAIL: below a threshold"]),
         new(AllCommands,
             ["2  usage error: unknown command or option, invalid value, missing or extra argument,",
@@ -185,6 +197,8 @@ public static partial class DotCovCli
         new(["check"], ["dotcov check TestResults/ --min-line 80 --exclude-generated --github-summary"]),
         new(["check"], ["dotcov check TestResults/ --min-line 90 --min-branch 80 --badge-dir badge"]),
         new(["check"], ["dotcov check TestResults/ --min-branch 75 --exclude-test-code"]),
+        new(["check"], ["dotcov check TestResults/ --min-line 90 --format json   # verdict, offenders, ranges as JSON"]),
+        new(["report"], ["dotcov report TestResults/ --top 10   # the ten worst files"]),
         new(["crap"], ["dotcov crap TestResults/ --max-crap 6 --github-summary"]),
         new(["crap"], ["dotcov crap coverage.cobertura.xml --metrics MyApp.Metrics.xml --top 10 --no-color"]),
         new(["report"], ["dotcov report gcovr-output/ --pattern \"**/coverage.xml\"   # non-Coverlet report names"]),
@@ -234,7 +248,7 @@ public static partial class DotCovCli
             AppendLines(sb, note.Lines, "");
         }
 
-        AppendEntries(sb, "Exit codes:", ExitCodes);
+        AppendEntries(sb, "Exit codes:", ExitCodeEntries);
         AppendEntries(sb, "Examples:", Examples);
         return sb.ToString();
     }
@@ -257,7 +271,7 @@ public static partial class DotCovCli
             AppendLines(sb, note.Lines, "");
         }
 
-        AppendEntries(sb, "Exit codes:", ExitCodes.Where(e => e.Commands.Contains(command.Name)));
+        AppendEntries(sb, "Exit codes:", ExitCodeEntries.Where(e => e.Commands.Contains(command.Name)));
         AppendEntries(sb, "Examples:", Examples.Where(e => e.Commands.Contains(command.Name)));
         return sb.ToString();
     }

@@ -66,7 +66,7 @@ public sealed class CliTests : IDisposable
 
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).Contains("FAIL");
-        await Assert.That(stderr).Contains("src/A.cs: 50.0%");
+        await Assert.That(stderr).Contains("  src/A.cs  50.0% lines" + Environment.NewLine + "    uncovered 2");
     }
 
     [Test]
@@ -733,15 +733,15 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run("check", HalfCovered(), "--min-line", "90");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("files below line threshold:");
-        await Assert.That(stderr).Contains("src/A.cs: 50.0%");
+        await Assert.That(stderr).Contains("files below line threshold:" + Environment.NewLine + "  src/A.cs  50.0% lines");
     }
 
     [Test]
-    public async Task Check_BranchOnlyFailure_PrintsNoLineOffenderList()
+    public async Task Check_BranchOnlyFailure_ListsOnlyTheFilesBelowTheBranchThreshold()
     {
         // Line gate passes overall (5/7 ≈ 71.4% ≥ 50) but B.cs sits below min-line; the branch
-        // gate fails. B.cs has zero failing branches and must not be blamed for the failure.
+        // gate fails. B.cs has zero failing branches and must not be blamed for the failure;
+        // A.cs, whose branch is half covered, is.
         var path = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 1).Line(3, hits: 1).Branch(4, "50% (1/2)"))
             .AddClass("src/B.cs", c => c.Line(1, hits: 1).Line(2, hits: 0).Line(3, hits: 0))
@@ -752,7 +752,8 @@ public sealed class CliTests : IDisposable
         await Assert.That(code).IsEqualTo(1);
         await Assert.That(stderr).Contains("FAIL");
         await Assert.That(stderr).Contains("branch coverage below threshold");
-        await Assert.That(stderr).DoesNotContain("files below line threshold");
+        await Assert.That(stderr).Contains("files below branch threshold:" + Environment.NewLine +
+            "  src/A.cs  100.0% lines  50.0% branches" + Environment.NewLine + "    branches 4 (1/2)");
         await Assert.That(stderr).DoesNotContain("src/B.cs");
     }
 
@@ -777,7 +778,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run("check", path, "--min-line", "80");
 
         await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("src/F.cs: 79.9%");
+        await Assert.That(stderr).Contains("  src/F.cs  79.9% lines");
         await Assert.That(stderr).DoesNotContain("80.0%");
     }
 

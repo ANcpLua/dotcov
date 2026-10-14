@@ -285,7 +285,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
         using var json = JsonDocument.Parse(stdout);
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("pass");
         await Assert.That(json.RootElement.GetProperty("gate").GetProperty("reason").GetString())
-            .IsEqualTo("all 1 methods at or below threshold");
+            .IsEqualTo("PASS: worst CRAP 1.0 (max 30) - all 1 methods at or below threshold");
     }
 
     // ── A gate without a verdict blames no files ──

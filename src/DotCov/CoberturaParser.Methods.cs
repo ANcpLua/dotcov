@@ -95,6 +95,7 @@ public static partial class CoberturaParser
         private readonly List<CoverageWarning> _warnings = [];
         private readonly List<string> _sourceRoots = [];
         private readonly List<AmbiguousFile> _ambiguous = [];
+        private readonly List<string> _inputs = [];
 
         public Entry For(MethodKey key, int? complexity)
         {
@@ -111,6 +112,7 @@ public static partial class CoberturaParser
         /// <summary>Fold one finished document's diagnostics and roots into the result (same root rules as the file report).</summary>
         public void Complete(DocumentContext document)
         {
+            if (document.SourceName is { } input) _inputs.Add(input);
             _warnings.AddRange(document.Warnings);
             _ambiguous.AddRange(document.AmbiguousFiles);
             if (document.SourceRoots is [""]) return;
@@ -126,6 +128,7 @@ public static partial class CoberturaParser
                 result.Add(entry.Materialize());
             return new MethodCoverageReport(result, _warnings, _sourceRoots)
             {
+                Inputs = _inputs,
                 AmbiguousFiles = AmbiguousFile.Union(_ambiguous),
                 SelectedSourceRoot = sourceRoot
             };

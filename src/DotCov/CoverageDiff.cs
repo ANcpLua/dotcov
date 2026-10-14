@@ -221,6 +221,12 @@ public sealed class CoverageDiffResult(
 
     /// <summary>Total count of flipped lines across the whole report.</summary>
     public int TotalLineChanges => Files.Sum(static f => f.LineChanges.Count);
+
+    /// <summary>The "before" report's <see cref="CoverageReport.Inputs"/>, then the "after" report's.</summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
+    /// <summary>The "before" report's <see cref="CoverageReport.Warnings"/>, then the "after" report's.</summary>
+    public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
 }
 
 public static class CoverageDiff
@@ -300,7 +306,11 @@ public static class CoverageDiff
         return new CoverageDiffResult(
             deltas.OrderBy(static d => d.Delta).ToList(),
             before.LineRate,
-            after.LineRate);
+            after.LineRate)
+        {
+            Inputs = [.. before.Inputs, .. after.Inputs],
+            Warnings = [.. before.Warnings, .. after.Warnings]
+        };
 
         static FileDelta Changed(string path, FileCoverage b, FileCoverage a) =>
             FileDelta.Compared(path, b.LineRate, a.LineRate) with { LineChanges = ComputeLineChanges(b, a) };

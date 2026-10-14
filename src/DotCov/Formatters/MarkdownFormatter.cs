@@ -5,7 +5,11 @@ namespace DotCov.Formatters;
 
 public static class MarkdownFormatter
 {
-    public static string Format(CoverageReport report, double? threshold = null)
+    /// <summary>
+    /// The report summary, worst file first. With <paramref name="top"/>, only that many file
+    /// rows and a <c>… N more files</c> line; the totals still count every file.
+    /// </summary>
+    public static string Format(CoverageReport report, double? threshold = null, int? top = null)
     {
         // A gate that could not evaluate gets its own badge. Rendering NoData/Disabled as ✅
         // is what lets an unmeasured build read as a healthy one in a PR summary.
@@ -15,7 +19,7 @@ public static class MarkdownFormatter
         var thresholdLine = threshold.HasValue ? Invariant($"**Threshold:** {threshold.Value}%") : null;
         // Renders un-floored rates, an output shape this overload's consumers depend on. The
         // GateResult overload below is the floor-aware presentation.
-        return Render(report, gate, thresholdLine, floorLine: false, floorBranch: false);
+        return Render(report, gate, thresholdLine, floorLine: false, floorBranch: false, top, offenders: null);
     }
 
     /// <summary>
@@ -26,18 +30,23 @@ public static class MarkdownFormatter
     /// self-contradictory <c>80.0%</c> next to a <c>FAIL … 79.9%</c> verdict line. The
     /// backticked one-line <see cref="GateResult.ToString"/> verdict CI logs grep for closes
     /// the document — rendered here, not spliced on by callers, so badge, body, and verdict
-    /// can never come from different evaluations.
+    /// can never come from different evaluations. A failed gate lists what to fix next below the
+    /// table: the first <paramref name="top"/> <see cref="CoverageReport.Offenders"/> with their
+    /// rates, uncovered line ranges, and partially covered branch lines.
     /// </summary>
-    public static string Format(CoverageReport report, GateResult gate) =>
+    public static string Format(CoverageReport report, GateResult gate, int top = CoverageReport.DefaultOffenderLimit) =>
         Render(report, gate,
             Invariant($"**Threshold:** line {gate.MinLinePercent}%, branch {gate.MinBranchPercent}%"),
             // Floor only the dimension(s) that actually fell short: flooring a passing rate
             // would misreport it (2499/2500 must stay 100.0%, not become 99.9%).
-            floorLine: gate.LineBelowThreshold, floorBranch: gate.BranchBelowThreshold)
+            floorLine: gate.LineBelowThreshold, floorBranch: gate.BranchBelowThreshold, top: null, offenders: (gate, top))
         + Invariant($"{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
+    /// <param name="top">The number of file rows shown, or null for all of them.</param>
+    /// <param name="offenders">The gate whose offenders are listed and how many, or null for no list.</param>
     private static string Render(
-        CoverageReport report, GateResult? gate, string? thresholdLine, bool floorLine, bool floorBranch)
+        CoverageReport report, GateResult? gate, string? thresholdLine, bool floorLine, bool floorBranch,
+        int? top, (GateResult Gate, int Top)? offenders)
     {
         var sb = new StringBuilder();
 
@@ -49,12 +58,46 @@ public static class MarkdownFormatter
         sb.AppendLine("| File | Lines | Line % | Branches | Branch % |");
         sb.AppendLine("|------|------:|-------:|---------:|---------:|");
 
-        foreach (var f in report.Files.WorstFirst())
+        IEnumerable<FileCoverage> rows = report.Files.WorstFirst();
+        if (top is { } shown) rows = rows.Take(shown);
+        foreach (var f in rows)
             sb.AppendLine(FileRow(f, gate, floorLine, floorBranch));
+
+        // A blank line ends the table; without it GFM reads the next line as one more row.
+        if (top is { } limit && report.Files.Count > limit)
+        {
+            sb.AppendLine();
+            sb.AppendLine(Invariant($"_… {report.Files.Count - limit} more files_"));
+        }
+
+        if (offenders is { } list)
+            AppendOffenders(sb, report, list.Gate, list.Top);
 
         AppendWarnings(sb, report);
 
         return sb.ToString();
+    }
+
+    private static void AppendOffenders(StringBuilder sb, CoverageReport report, GateResult gate, int top)
+    {
+        var offenders = report.Offenders(gate);
+        if (offenders.Count is 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine($"### Files below {OffenderText.Dimensions(gate)} threshold");
+        sb.AppendLine();
+        foreach (var f in offenders.Take(top))
+        {
+            var detail = OffenderText.Detail(f);
+            sb.AppendLine($"- {Code(f.Path)} — {OffenderText.Rates(f, gate, ", ")}{(detail.Length > 0 ? $" — {detail}" : "")}");
+        }
+
+        // A blank line ends the list; without it the line continues the last item.
+        if (offenders.Count > top)
+        {
+            sb.AppendLine();
+            sb.AppendLine(Invariant($"_… {offenders.Count - top} more files_"));
+        }
     }
 
     private static string Badge(GateResult? gate) => gate?.Outcome switch

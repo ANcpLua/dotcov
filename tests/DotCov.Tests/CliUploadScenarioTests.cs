@@ -29,7 +29,7 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
         using var json = JsonDocument.Parse(request.Body);
         await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
         await Assert.That(json.RootElement.GetProperty("files")[0].GetProperty("path").GetString()).IsEqualTo("src/Größe.cs");
-        await Assert.That(request.Body).IsEqualTo(output.TrimEnd());
+        await Assert.That(request.Body).IsEqualTo(output);
         await Assert.That(error).Contains("Uploaded to");
     }
 
@@ -54,9 +54,27 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
         await Assert.That(output + error).Contains(verdict);
         await Assert.That(error).Contains(status == HttpStatusCode.Created ? "Uploaded to" : "Upload failed");
         using var json = JsonDocument.Parse(request.Body);
+        await Assert.That(json.RootElement.GetProperty("command").GetString()).IsEqualTo("check");
+        // The uploaded document carries the same verdict and exit code as the gate that ran.
+        var gate = json.RootElement.GetProperty("gate");
+        await Assert.That(gate.GetProperty("reason").GetString()).StartsWith(verdict);
+        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(expectedCode is 5 ? 0 : expectedCode);
         await Assert.That(json.RootElement.GetProperty("files").GetArrayLength()).IsEqualTo(empty ? 0 : 1);
         if (!empty)
             await Assert.That(json.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(50);
+    }
+
+    [Test]
+    public async Task Check_JsonFormat_UploadsExactlyTheDocumentItPrints(CancellationToken cancellationToken)
+    {
+        endpoint.RespondWith(HttpStatusCode.Created);
+
+        var (code, output, error) = await Run("check", Report(), "--min-line", "80", "--format", "json");
+        var request = await endpoint.Received.WaitAsync(cancellationToken);
+
+        await Assert.That(code).IsEqualTo(1).Because(error);
+        await Assert.That(request.Body).IsEqualTo(output);
+        await Assert.That(error).StartsWith("FAIL:");
     }
 
     [Test]
