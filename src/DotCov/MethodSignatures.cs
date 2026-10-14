@@ -139,7 +139,7 @@ internal static partial class MethodSignatures
                 closes.Add(open, i);
             }
         }
-        if (opens.Count != 0) throw new InvalidDataException("Unbalanced tuple type.");
+        if (opens.Count is not 0) throw new InvalidDataException("Unbalanced tuple type.");
         var output = new StringBuilder(type.Length);
         var frames = new Stack<TupleFrame>();
         var angle = 0;
@@ -170,7 +170,7 @@ internal static partial class MethodSignatures
             {
                 TrimTupleName(output, frame.ElementStart);
                 output.Append(',');
-                if (frame.Items++ % 7 == 0)
+                if (frame.Items++ % 7 is 0)
                 {
                     output.Append("System.ValueTuple<");
                     frame.RestDepth++;
