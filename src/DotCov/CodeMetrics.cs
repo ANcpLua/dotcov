@@ -55,6 +55,9 @@ public readonly record struct CodeMetricsMember(
     /// measurable body; null means the metric is absent or invalid, not zero.
     /// </summary>
     public int? ExecutableLines { get; init; }
+
+    /// <summary>Source path reported by the metrics producer, when available.</summary>
+    public string? File { get; init; }
 }
 
 /// <summary>
@@ -107,10 +110,11 @@ public static class CodeMetricsReader
         }
     }
 
-    private sealed class PendingMember(string display, string element)
+    private sealed class PendingMember(string display, string element, string? file)
     {
         public readonly string Display = display;
         public readonly string Element = element;
+        public readonly string? File = file;
         public int? Complexity;
         public int? ExecutableLines;
     }
@@ -191,7 +195,8 @@ public static class CodeMetricsReader
         // A member outside a NamedType is not ours; an empty member element carries no
         // Metrics — nothing to record.
         if (state.TypeChain.Count > 0 && !reader.IsEmptyElement)
-            state.MemberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName));
+            state.MemberStack.Push(new PendingMember(reader.GetAttribute("Name") ?? "", reader.LocalName,
+                reader.GetAttribute("File")));
     }
 
     private static void CloseMember(ParserState state)
@@ -235,7 +240,8 @@ public static class CodeMetricsReader
 
         return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display)
         {
-            ExecutableLines = pending.ExecutableLines
+            ExecutableLines = pending.ExecutableLines,
+            File = pending.File
         };
     }
 
@@ -446,15 +452,6 @@ public static class CodeMetricsReader
         var start = BalancedText.LastIndexOfTopLevel(head, ' ') + 1;   // skip the return type, if any
         var lastDot = BalancedText.LastIndexOfTopLevel(head.AsSpan(start), '.');
         return lastDot < 0 ? head[start..] : head[(start + lastDot + 1)..];
-    }
-
-    // Instance extension-block members add the receiver to their compiled parameter list.
-    // Inspect the declaring display prefix, not parameter/default-value text.
-    internal static bool IsExtensionBlockMember(string display)
-    {
-        var (head, _) = SplitParameterList(display);
-        var start = BalancedText.LastIndexOfTopLevel(head, ' ') + 1;
-        return StripGenericsPerSegment(head[start..]).StartsWith("extension(", StringComparison.Ordinal);
     }
 
     /// <summary>

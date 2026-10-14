@@ -206,11 +206,12 @@ public static class CrapAnalysis
     public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var analysis = AnalyzeCore(report.Methods, metricsMembers, report.ExcludedMethods);
+        var (selectedMetrics, exclusion) = report.SelectMetrics(metricsMembers);
+        var analysis = AnalyzeCore(report.Methods, selectedMetrics, report.ExcludedMethods);
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
         {
             AmbiguousFiles = report.AmbiguousFiles,
-            Exclusion = report.Exclusion
+            Exclusion = exclusion
         };
     }
 
@@ -488,17 +489,16 @@ public static class CrapAnalysis
             {
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
                     var key = $"{m.TypeName}|{m.MemberName}";
-                    // Summarize each bucket once. Zero-body declarations retain their scoring
-                    // value but never count toward executable-match ambiguity.
+                    // Summarize each executable bucket once.
                     var complexity = Math.Max(0, m.CyclomaticComplexity);
+                    // Retain an empty bucket for explicit zero-body accessors so an aggregate
+                    // cannot restore the declaration's non-executable complexity as a fallback.
                     var candidate = m.ExecutableLines is 0
-                        ? new MetricsCandidates(complexity, null, 0)
-                        : new MetricsCandidates(complexity, i, 1);
+                        ? default : new MetricsCandidates(complexity, i, 1);
                     AddCandidates(index.All, key, candidate);
                     AddCandidates(index.ByArity, (key, m.Arity), candidate);
-                    // Parse the extension display once, not inside every method/candidate match.
-                    if (m.Arity is { } arity && CodeMetricsReader.IsExtensionBlockMember(m.DisplayName))
-                        AddCandidates(index.ByArity, (key, arity + 1), candidate);
+                    // The metrics display omits static/instance information for extension
+                    // blocks. An inferred receiver must not prove a match for a static member.
                     break;
 
                 case CodeMetricsMemberKind.Property:
@@ -506,7 +506,7 @@ public static class CrapAnalysis
                     // aggregate (sum over its accessors) is the honest-but-coarser fallback,
                     // used only when no accessor entry matched. An aggregate below 1 summed no
                     // declared accessor (a positional record property) — nothing was measured.
-                    if (m.CyclomaticComplexity < 1) break;
+                    if (m.CyclomaticComplexity < 1 || m.ExecutableLines is 0) break;
                     index.AccessorFallback.TryAdd($"{m.TypeName}|get_{m.MemberName}", (i, m.CyclomaticComplexity));
                     index.AccessorFallback.TryAdd($"{m.TypeName}|set_{m.MemberName}", (i, m.CyclomaticComplexity));
                     break;
