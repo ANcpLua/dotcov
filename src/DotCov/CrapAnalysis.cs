@@ -150,13 +150,15 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 AmbiguousFile.GateReason(AmbiguousFiles));
 
-        // A report in which no method has complexity came from an emitter that writes none, where
-        // --metrics (a .NET tool) cannot help: say so instead of sending a TypeScript or Python
-        // user to dotnet msbuild.
-        if (Methods.Count is 0 && Unscored.Count > 0 && Unscored.All(static u => u.Reason == CrapAnalysis.NoComplexityReason))
+        // No method with complexity, or no method entries at all (coverage.py, Microsoft Code
+        // Coverage): the emitter writes none, and --metrics, a .NET tool, cannot help a TypeScript
+        // or Python project. Say so instead of pointing at dotnet msbuild.
+        if (Methods.Count is 0 && UnmatchedMetricsMembers.Count is 0 &&
+            Unscored.All(static u => u.Reason == CrapAnalysis.NoComplexityReason))
             return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
-                "the report carries no complexity - Istanbul (Vitest, c8, Jest) and coverage.py write none, " +
-                "so crap cannot score it; gate it with check, or give crap a Coverlet report or --metrics <file> for .NET");
+                "the report carries no method complexity - Istanbul (Vitest, c8, Jest), coverage.py and " +
+                "Microsoft Code Coverage write none, so crap cannot score it; gate it with check, or give crap " +
+                "a Coverlet report or --metrics <file> for .NET");
 
         if (Unscored.Count > 0)
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
@@ -167,10 +169,6 @@ public sealed class CrapReport
             return new CrapGateResult(GateOutcome.NoData, maxCrap, Methods.Count, above, worst,
                 Invariant($"{UnmatchedMetricsMembers.Count} metrics members without coverage data - ") +
                 "a verdict needs every method scored");
-
-        if (Methods.Count is 0)
-            return new CrapGateResult(GateOutcome.NoData, maxCrap, 0, 0, null,
-                "report carries no method-level data - nothing was measured per method");
 
         return above is 0
             ? new CrapGateResult(GateOutcome.Pass, maxCrap, Methods.Count, 0, worst,

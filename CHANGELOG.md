@@ -657,8 +657,11 @@ Validation: `fallout Coverage` 1,997 tests, 100.0% line and branch.
   c8 5 of 6 (it leaves out branches of functions no test called).
 - README "Other languages": Vitest first, c8 second, Jest kept as one line; crap sections in the
   README, tool README and `--help` say crap is for .NET and Istanbul/coverage.py write no complexity.
-- `CrapReport.Evaluate`: when no method has complexity, the NODATA reason names those emitters
-  and `check` instead of `dotnet msbuild`.
+- `CrapReport.Evaluate`: when no method has complexity, or the report has no method entries
+  (coverage.py, Microsoft Code Coverage), the NODATA reason names those emitters and `check`
+  instead of `dotnet msbuild`.
+- The TypeScript recipes include untested modules (`--coverage.include`, `--all --src`); without
+  them the trial read 83.3% lines instead of 62.5%.
 
-Validation: `fallout Coverage` 1,998 tests, 100.0% line and branch.
+Validation: `fallout Coverage` 1,999 tests, 100.0% line and branch.
 

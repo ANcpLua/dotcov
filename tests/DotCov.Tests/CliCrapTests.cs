@@ -450,8 +450,22 @@ public sealed class CliCrapTests : IDisposable
 
         await Assert.That(code).IsEqualTo(3);
         await Assert.That(stderr.ToString()).StartsWith(
-            "NODATA: worst CRAP n/a (max 30) - the report carries no complexity - Istanbul (Vitest, c8, Jest) and coverage.py write none");
+            "NODATA: worst CRAP n/a (max 30) - the report carries no method complexity - Istanbul (Vitest, c8, Jest), coverage.py");
         await Assert.That(stderr.ToString()).DoesNotContain("dotnet msbuild");
+    }
+
+    // coverage.py writes no <methods> at all: the same answer, not "no method-level data".
+    [Test]
+    public async Task Crap_CoveragePyReport_GetsTheSameAnswer()
+    {
+        var report = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Corpus", "coveragepy", "coverage.xml");
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var code = await DotCovCli.RunAsync(["crap", report], stdout, stderr);
+
+        await Assert.That(code).IsEqualTo(3);
+        await Assert.That(stderr.ToString()).StartsWith("NODATA: worst CRAP n/a (max 30) - the report carries no method complexity");
     }
 }
 

@@ -124,20 +124,22 @@ Jest) and coverage.py write none, so `crap` answers `NODATA` for their reports; 
 DotCov reads any Cobertura report. TypeScript with Vitest (`@vitest/coverage-v8`):
 
 ```bash
-npx vitest run --coverage.enabled --coverage.reporter=cobertura
+npx vitest run --coverage.enabled --coverage.reporter=cobertura --coverage.include='src/**'
 dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
 ```
 
 With c8, around `node --test` or any other runner, no config needed:
 
 ```bash
-npx c8 --reporter=cobertura node --test
+npx c8 --all --src src --reporter=cobertura node --test
 dotcov check coverage/cobertura-coverage.xml --min-line 90 --min-branch 90
 ```
 
-Vitest maps V8 coverage back to the TypeScript source, so every branch counts. c8 counts the
+Both report only the files a test loaded unless told where the sources are:
+`--coverage.include` and `--all --src` keep a module no test imports in the report, at 0%.
+Vitest maps V8 coverage back to the TypeScript source, so every branch counts; c8 counts the
 blocks V8 ran and leaves out the branches of functions no test called, so its branch rate can
-read higher for the same code. Jest works too:
+read higher. Jest works too:
 `npm test -- --coverage --coverageProvider=v8 --coverageReporters=cobertura`.
 
 Python with coverage.py:
