@@ -2,164 +2,117 @@
 
 # DotCov.Tool
 
-`dotcov` turns Cobertura XML into a build decision — a table, a markdown block, a JSON payload,
-and an exit code your CI can act on. Local by default; uploads are opt-in.
-
-## Getting started
+`dotcov` gates any Cobertura report: it tells you, your CI, or your coding agent whether coverage
+passes, and exactly which lines and branches to test next.
 
 ```bash
 dotnet tool install -g DotCov.Tool
 ```
 
+## Quick start
+
 ```bash
-dotnet test --results-directory TestResults --coverlet --coverlet-output-format cobertura
-dotcov check TestResults/ --min-line 80 --min-branch 60 --exclude-generated
+dotcov test --min-line 90 --min-branch 80                 # .NET: run the tests, then gate them
+dotcov check TestResults/ --min-line 90 --min-branch 80   # any Cobertura report
 ```
 
 ```
-PASS: line 96.5% (min 80%), branch 93.0% (min 60%) - thresholds met
+FAIL: line 81.8% (min 90%), branch 50.0% (min 80%) - line and branch coverage below threshold
+files below line or branch threshold:
+  src/Orders.cs  77.7% lines  33.3% branches
+    uncovered 14-15 · branches 12 (1/2), 18 (1/4)
 ```
 
-Pass a file or fresh run directory. A directory search matches `**/*cobertura*.xml` beneath it
-(hidden directories included) and merges every match, so a sharded test matrix needs no merge step.
-Merged reports are listed on stderr. Use a fresh directory for each run to avoid stale reports.
-Timestamped coverlet.MTP files match. For generic names such as gcovr's `coverage.xml`, select
-the filename explicitly with `--pattern`.
+The verdict is the first stderr line and matches the exit code. Below it is every file under a
+threshold, worst first, with the lines no test runs and the branches only partly taken.
+
+## For agents
+
+- **Streams.** Stdout carries only data: the table, markdown, or JSON. The verdict of `check`,
+  `test` and `crap` is always the first stderr line; warnings, excluded files and merged reports
+  follow it.
+- **JSON.** `--format json` prints one document that opens with `"schemaVersion": 1`, `"command"`,
+  `"inputs"` and `"warnings"`. `check`, `test` and `crap` add `gate`: `outcome`, `exitCode`,
+  `reason` (the verdict line), the thresholds, and for `check`/`test` the `offenders`, each with
+  `path`, `lineRate`, `branchRate`, `uncovered` (`"14-15,21"`) and `partialBranches`.
+- **Size.** `--top N` caps the offenders (default 20) or the files of `report`; uncovered lines
+  are ranges. `--no-color` or `NO_COLOR=1` removes ANSI.
+- **Help.** `dotcov <command> --help` prints that command's usage, options and exit codes. A
+  mistyped option answers with the closest valid one and the full option list, exit `2`.
+- **`dotcov test`** prints `reports: TestResults/<run>` on stderr after the verdict. With
+  `--format json` or `md` it holds the `dotnet test` log back and shows it only when the run fails.
 
 ## Commands
 
 ```bash
-dotcov report   TestResults/ --format table                      # also json or md
-dotcov check    TestResults/ --min-line 80 --exclude-generated   # CI gate, exit 1 if below
-dotcov crap     TestResults/ --max-crap 6                        # per-method risk gate
-dotcov diff     before.xml after.xml --format md                 # compare two reports
+dotcov test   [<project>] --min-line 80 [-- <dotnet test arguments>]
+dotcov check  TestResults/ --min-line 80 --min-branch 60 --format json
+dotcov report TestResults/ --top 10                       # the ten worst files
+dotcov crap   TestResults/ --max-crap 30                  # per-method risk gate
+dotcov diff   before.xml after.xml --format md
 dotcov snapshot TestResults/ --commit SHA --branch main --project MyApp
-dotcov test     tests/MyApp.Tests --min-line 80 -- -c Release    # dotnet test, then report and gate
 ```
 
-`check` and `test` have no default threshold: pass `--min-line`, `--min-branch`, or both, each a
-percentage from 0 to 100. A dimension left out is not checked; without either flag the command
-exits `2` before it reads a report or runs a test.
+`check` and `test` need `--min-line`, `--min-branch`, or both (0 to 100); a dimension left out is
+not checked, and `0` disables one. A path is a file or a directory; a directory is searched for
+`**/*cobertura*.xml` and every match is merged. Name other files with `--pattern`
+(`--pattern "**/coverage.xml"` for gcovr and coverage.py). A directory without a match gets a
+warning naming the `.xml` files it holds.
 
-`--github-summary` writes the markdown table to `$GITHUB_STEP_SUMMARY` on pass **and** fail, so a
-green build still shows its number. `--badge-dir <dir>` on `check` and `test` writes the verdict as
-`coverage-badge.svg` and `coverage-badge.json`, coloured by the outcome; the
-[badge action](https://github.com/ANcpLua/dotcov#badge) publishes them in one CI step.
-
-## Testing and gating in one step
-
-`dotcov test` runs `dotnet test` with Microsoft Code Coverage writing Cobertura into a fresh
-`TestResults/<run>` directory, then prints the table and gates that run like `check`:
-
-```bash
-dotcov test tests/MyApp.Tests --min-line 80 --exclude-generated -- -c Release
-```
-
-It passes the coverage options of the runner `dotnet test` uses in the current directory:
-`DOTNET_TEST_RUNNER`, else `test.runner` in the nearest `global.json`, else VSTest. On
-Microsoft.Testing.Platform the test project needs `Microsoft.Testing.Extensions.CodeCoverage`
-(TUnit includes it); on VSTest, `Microsoft.NET.Test.Sdk` brings the Code Coverage collector.
-Arguments after `--` go to `dotnet test` unchanged. Its output goes to stdout, so stderr still
-starts with the verdict. A failed test run exits `5` with `error:` and no coverage verdict.
+`dotcov test` passes the coverage options of the runner `dotnet test` uses here
+(`DOTNET_TEST_RUNNER`, else `test.runner` in `global.json`, else VSTest). Microsoft.Testing.Platform
+projects need `Microsoft.Testing.Extensions.CodeCoverage` (TUnit includes it); VSTest projects get
+the collector from `Microsoft.NET.Test.Sdk`.
 
 ## Exit codes
 
-Since 1.7, usage errors exit `2` instead of `5`; update scripts accordingly. A missing
-path argument exits `2`; a supplied nonexistent path exits `5`. Invalid upload URLs
-are usage errors; HTTP/connection failures remain execution errors. Since 3.0, `check` and `test`
-without a threshold exit `2`, and so does a `--source-root` no report declares.
-
-`check`, `crap`, and `test` return `0` only for a measured pass:
-
-| Token | Meaning | Exit |
+| Code | Verdict | Meaning |
 |---|---|---|
-| `PASS:` | met the threshold | 0 |
-| `FAIL:` | below the threshold | 1 |
-| `NODATA:` | the gate lacks the data needed to evaluate: nothing measured, a requested dimension missing, an unscored CRAP method, or a file whose `<source>` root is unresolved | 3 |
-| `DISABLED:` | both `check` thresholds are 0, or `crap --max-crap` is infinite, so the gate cannot fail | 4 |
-| `error:` | unreadable/nonexistent path, parse/size-cap error, upload or badge write failure, failed test run | 5 |
-| `error:` or unknown command | usage: unknown command/flag, invalid value (a threshold outside 0 to 100 included), missing/extra argument, no threshold for `check` or `test`, a `--source-root` no report declares | 2 |
+| 0 | `PASS` | Thresholds met; `report`, `diff`, `snapshot`: the command succeeded |
+| 1 | `FAIL` | Below a threshold |
+| 2 | `error:` | Usage: unknown command or option, invalid value, missing or extra argument, no threshold, a `--source-root` no report declares |
+| 3 | `NODATA` | Nothing measured, a dimension missing, an unscored CRAP method, a file whose `<source>` root is unresolved |
+| 4 | `DISABLED` | Every threshold is `0`, or `--max-crap` is infinite |
+| 5 | `error:` | A path, report, upload or badge failed; a non-passing gate keeps its own code |
+| 6 | `error:` | `dotcov test`: the test run failed, coverage was not evaluated |
 
-`report`, `diff`, and `snapshot` return `0` when rendering and any requested upload succeed.
-A passing gate whose badge cannot be written returns `5`; a non-passing gate keeps its code if an
-upload or badge write also fails.
-Reporting commands do not enforce thresholds. `report --threshold` affects
-presentation, not the exit code. Use `check` when CI must require measured coverage.
+## `crap`
 
-An existing directory with no matching reports is valid empty input for reporting commands;
-a supplied nonexistent path or malformed report exits `5`. An empty `report` displays `no data` in
-Markdown and `-` for percentages in the table. Its JSON has `files: []`, zero totals, and no
-`lineRate` or `branchRate` fields. These represent missing measurements, not 0% coverage.
-For that same empty directory, `check --min-line 1` returns `NODATA:` and exits `3`.
-
-## Deciding what to test next
-
-`crap` scores every method `comp² · (1 − cov)³ + comp` and sorts worst-first:
-
-```
-$ dotcov crap TestResults/ --exclude-generated --top 5 --max-crap 6
-Method                                              Comp     Cov %      CRAP
-----------------------------------------------------------------------------
-DotCov.Formatters.MarkdownFormatter.Render            43    100.0%      43.0
-DotCov.Tool.DotCovCli.RunAsync                        40    100.0%      40.0
-DotCov.Tool.DotCovCli.Diff                            14     50.0%      38.5
-DotCov.CoberturaParser.ConsumeClass                   34    100.0%      34.0
-DotCov.FileCoverage.MergeWith                         32    100.0%      32.0
-----------------------------------------------------------------------------
-... 250 more methods below (--top 5)
-FAIL: worst CRAP 43.0 (max 6) - 69 of 255 methods above threshold
-```
-
-Fully covered code scores its own complexity, fully uncovered code scores `comp² + comp` — so a
-100%-covered 43-branch method still scores 43 and the formula is telling you to split it, not to
-test it. The default `--max-crap` is 30, the original CRAP threshold; the `6` above also caps
-complexity, failing any method above complexity 6 however well it is tested. Complexity comes
-from coverlet's per-method attribute automatically; for emitters that write none, pass
+`crap` scores every method `comp² · (1 − cov)³ + comp`, worst first, with each method's
+`file:line`. A fully covered method scores its complexity, so a high score on covered code means
+split it, not test it. Coverlet embeds complexity in its report; for other emitters pass
 `--metrics` from `dotnet msbuild /t:Metrics`
 ([Microsoft.CodeAnalysis.Metrics](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Metrics)).
+Every method must be scored: one without complexity or lines makes the gate `NODATA`, and so
+does a metrics member no covered method matches.
 
-The gate needs every method scored. A method without complexity, or without lines, is listed as
-unscored in every format, and one such method makes the verdict `NODATA` (exit `3`): it may be
-the method above the limit. Emitters without a usable `complexity` attribute (gcovr
-placeholders, ReportGenerator merges, some converters) therefore need `--metrics` to pass at all.
+## Options
 
-## Flags
-
-| Flag | Effect |
+| Option | Effect |
 |---|---|
-| `--min-line <n>`, `--min-branch <n>` | `check`, `test`: thresholds from 0 to 100, no default; set one or both |
+| `--min-line <n>`, `--min-branch <n>` | `check`, `test`: thresholds from 0 to 100, no default |
+| `--format table\|json\|md` | Output format; `md` is GitHub-flavored markdown |
+| `--top <n>` | Show the N worst files (`report`) or methods (`crap`), or cap the offenders (`check`, `test`, default 20) |
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
-| `--exclude-test-code` | Skip test projects and fixtures: `*.Tests/`, `TestSupport/`, `TestFixtures/`. Test code counts unless you set it |
-| `--keep <subs>` | Comma-separated substrings exempt from both exclusions; requires one of them |
-| `--probe-sources` | Several `<source>` roots: resolve each relative file name against the root that holds it on this machine's disk |
-| `--source-root <root>` | Several `<source>` roots: resolve relative file names against this declared root |
-| `--pattern <glob>` | Filename to scan for. Default `**/*cobertura*.xml`, including timestamped MTP reports |
-| `--max-chars <n>` | Per-file XML character cap. Default `50000000`; `0` = uncapped |
-| `--format` | `table`, `json`, `md` |
-| `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY` |
-| `--upload <url>` | POST the JSON payload |
-| `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome; created if missing |
+| `--exclude-test-code` | Skip test projects and fixtures: `*.Tests/`, `TestSupport/`, `TestFixtures/` |
+| `--keep <subs>` | Comma-separated substrings exempt from both exclusions |
+| `--probe-sources` | Several `<source>` roots: resolve each file against the root that holds it on this disk |
+| `--source-root <root>` | Several `<source>` roots: resolve against this declared root |
+| `--pattern <glob>` | Report file name to search for; default `**/*cobertura*.xml` |
+| `--max-chars <n>` | Per-file XML character cap; default `50000000`, `0` = none |
+| `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY`, on pass and fail |
+| `--upload <url>` | POST the JSON document |
+| `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome |
+| `--no-color` | `report`, `crap`, `diff`, `test`: no ANSI colour; `test` passes `NO_COLOR=1` to `dotnet test` |
 
-Commands reject unused flags, `--name=value`, and extra paths; see `dotcov --help`.
-
-An active exclusion is named once: stderr lists its rules and every excluded file for table and
-markdown output, and JSON output (`report --format json`, `crap --format json`, `snapshot`)
-carries `excluded` and `exclusionRules` instead.
-
-A report with several `<source>` roots does not say which root a relative file name belongs to.
-By default DotCov never reads the disk to guess: the file is keyed under the first root with a
-`FileIdentityAmbiguous` warning, `report` prints as usual, and `check`, `crap` and `test` exit
-`3`. `--probe-sources` restores 2.0's disk probe — its answer depends on the machine running it,
-so run it where the sources are checked out — and `--source-root` names the root anywhere.
-
-`dotcov version` and `dotcov --version` print the version. Percentages use `62.0%` on every host.
+A command rejects an option it does not take, `--name=value`, and a second path; it never
+ignores one. An active exclusion is listed on stderr and in the JSON as `excluded` and
+`exclusionRules`. Percentages read `62.0%` on every host.
 
 ## Also in this family
 
-[DotCov](https://www.nuget.org/packages/DotCov/) — the parser as a library, zero dependencies ·
-[DotCov.Fallout](https://www.nuget.org/packages/DotCov.Fallout/) — Fallout build component
-
-## Feedback
+[DotCov](https://www.nuget.org/packages/DotCov/) — the parser and gates as a library ·
+[DotCov.Fallout](https://www.nuget.org/packages/DotCov.Fallout/) — coverage targets for Fallout builds
 
 [Documentation](https://github.com/ANcpLua/dotcov#readme) ·
 [Issues](https://github.com/ANcpLua/dotcov/issues) ·

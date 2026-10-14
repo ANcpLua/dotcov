@@ -86,8 +86,13 @@ the excluded paths, and `JsonFormatter` writes them as `excluded` and `exclusion
 `ExclusionRules.WellKnown` covers generated code and build output, `ExclusionRules.TestCode` test
 projects and fixtures.
 
+`report.Offenders(gate)` lists the files below a failed threshold, worst first, with their
+uncovered line ranges and partially covered branch lines: what to test next.
 `TableFormatter`, `MarkdownFormatter`, and `JsonFormatter` render a report for a terminal, a PR
-comment, or a pipeline. `BadgeFormatter.Svg(gate)` and `BadgeFormatter.ShieldsJson(gate)` draw an
+comment, or a pipeline; every JSON document opens with `schemaVersion`, `command`, `inputs`, and
+`warnings`, and `JsonFormatter.Format(report, gate, command)` adds the `gate` object.
+`ExitCodes.For(outcome)` maps a gate outcome to the process exit code the CLI and the Fallout
+component use. `BadgeFormatter.Svg(gate)` and `BadgeFormatter.ShieldsJson(gate)` draw an
 evaluated `GateResult` as a coverage badge, coloured by its outcome. Every numeric rendering is
 invariant-formatted: `62.0%` on every host, never `62,0%`. `CoverageSnapshot` wraps a report with commit, branch, project, timestamp, and a
 SHA-256 of the source file.

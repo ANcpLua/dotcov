@@ -5,19 +5,6 @@
 Coverage reporting and threshold gating for [Fallout](https://fallout.build) builds — one
 interface, no target wiring.
 
-## Migrating from DotCov.Nuke
-
-Version 1.0 replaces `DotCov.Nuke` with this package; it is not a NUKE compatibility
-shim. First migrate your build with the
-[Fallout migration guide](https://github.com/Fallout-build/Fallout/blob/develop/docs/Migration/from-nuke.md),
-then replace the `DotCov.Nuke` package reference with `DotCov.Fallout` version
-`1.0.0` and change `using DotCov.Nuke;` to `using DotCov.Fallout;`.
-Keep `ICoverageReport` on your `FalloutBuild`. Existing `DotCov.Nuke` 0.x packages
-remain separate and do not automatically redirect to this package.
-
-See the [1.0 migration notes](https://github.com/ANcpLua/dotcov/blob/main/docs/releases/1.0.0.md)
-for the accompanying parser API changes.
-
 ## Getting started
 
 ```bash
@@ -50,7 +37,8 @@ build without requiring you to implement `ICompile`.
 |---|---|---|
 | `--coverage-min-line` | none | Minimum line coverage percentage, 0 to 100 (invariant number); set it, `--coverage-min-branch`, or both |
 | `--coverage-min-branch` | none | Minimum branch coverage percentage, 0 to 100; a dimension left unset is not checked |
-| `--coverage-format` | `table` | `table`, `json`, `markdown`, or `md` |
+| `--coverage-format` | `table` | `table`, `json`, `markdown`, or `md`; `json` logs the same document as `dotcov check --format json`, gate included |
+| `--coverage-json-path` | empty (off) | Also write that JSON document to this file, relative to the root, for every outcome |
 | `--coverage-exclude-generated-param` | `false` | `true`/`false`: apply `ExclusionRules.WellKnown` before gating |
 | `--coverage-exclude-test-code-param` | `false` | `true`/`false`: apply `ExclusionRules.TestCode` before gating; the excluded files are logged |
 | `--coverage-probe-sources-param` | `false` | `true`/`false`: resolve a relative file name under several `<source>` roots against the root that holds it on this machine's disk |
@@ -65,18 +53,17 @@ somewhere other than `RootDirectory / "TestResults"`.
 
 ## Outcomes
 
-| Situation | Result |
-|---|---|
-| Search directory missing | Target fails: `Coverage search directory '…' does not exist` |
-| Directory exists, no matching report | Target fails: `No files matching '…' found in …` |
-| No threshold set, or one outside 0 to 100 | Target fails before reading a report, naming `Coverage MinLine`/`Coverage MinBranch` |
-| Reports parsed, but nothing measured | Target fails: `Coverage could not be measured: NODATA: …` |
-| Several `<source>` roots, file identity unresolved | Target fails: `Coverage could not be measured: NODATA: … ambiguous identity …` |
-| `--coverage-source-root` not declared by any report | Target fails: `Invalid Coverage SourceRoot: …` |
-| Coverage below a threshold | Target fails: `Coverage below threshold: FAIL: …` |
-| Every threshold is `0` | Target fails: `Coverage gate is disabled …` |
-| Thresholds met | Target succeeds; the verdict is logged |
-| Thresholds met, badge directory unwritable | Target fails: `Coverage gate passed, but its badge could not be written: …` |
+A failing target exits with the same code `dotcov` would, so a script can tell a failed gate
+from one that could not measure.
+
+| Situation | Exit | Result |
+|---|---|---|
+| Thresholds met | 0 | Target succeeds; the verdict is logged |
+| Coverage below a threshold | 1 | `Coverage below threshold: FAIL: …`, then the files below it with their uncovered lines |
+| No threshold set, one outside 0 to 100, or `--coverage-source-root` not declared by any report | 2 | Fails before reading a report, naming the parameter |
+| No matching report, nothing measured, or a file identity unresolved across several `<source>` roots | 3 | `No files matching '…'` or `Coverage could not be measured: NODATA: …` |
+| Every threshold is `0` | 4 | `Coverage gate is disabled …` |
+| Search directory missing, a report unreadable, or a passing gate whose badge or JSON file cannot be written | 5 | The error, naming the path |
 
 Parser warnings (malformed hit counts, contradictory branch data, ambiguous source roots, …) are
 logged one per line. Only an unresolved file identity changes the verdict, to `NODATA`. The badge is written before a failing verdict fails the target, so

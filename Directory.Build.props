@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">3.0.1</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.0.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,10 +29,11 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 3.0.1 fixes CRAP passes that 3.0.0 could not prove; line and branch gates are unchanged.
-CRAP: an unmeasured metrics method, an ambiguous overload match or a complexity below 1 now gives NODATA (exit 3); async overloads keep their own body, so diluted scores rise; state-machine-only async overloads match their metrics rows; function-pointer parameters no longer abort crap; declarations without a body need no coverage; --source-root also roots relative metrics paths; Visual Basic metrics displays match.
-Exclusions: excluded methods count as measured without a score and never hide a kept sibling; merged reports no longer list a re-added file as excluded.
-DotCov.Fallout requires System.Security.Cryptography.Pkcs/Xml 10.0.13.
+DotCov 4.0.0 is built for coding agents and scripts; three contracts change.
+1. Streams: stdout carries only data; the verdict of check, test and crap is always the first stderr line, PASS included.
+2. Exit codes: a failed dotnet test run inside dotcov test exits 6 (was 5); the Fallout component exits with dotcov's codes 1-5 instead of one generic failure.
+3. JSON: every document opens with schemaVersion, command, inputs and warnings; uncoveredLines arrays become "uncovered" range strings; crap's gate.reason is the full verdict line.
+New: --format json|md and --top on check and test with a gate object and worst-first offenders (uncovered ranges, partial branches); report --top; a Location column in crap; per-command --help; did-you-mean for options and commands; a warning when a directory matches no report; --no-color; diff lists only changed files; Fallout --coverage-json-path.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>
