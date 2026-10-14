@@ -6,44 +6,59 @@ using DotCov.Tool;
 using Fallout.Common;
 using Fallout.Common.Git;
 using Fallout.Common.IO;
+using JetBrains.Annotations;
 using Serilog;
 using static Fallout.Common.Tools.DotNet.DotNetTasks;
 
+// Fallout reads [Parameter] properties and runs Target properties by reflection, by name
+// (`fallout Coverage`). Fallout itself ships no JetBrains annotations, so [UsedImplicitly] tells
+// Rider which members are entry points instead of dead code.
 class Build : FalloutBuild
 {
     public static int Main() => Execute<Build>(x => x.Test);
 
     [Parameter("Test configuration")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string Configuration { get; set; } = "Release";
 
     [Parameter("TUnit tree-node filter")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string Filter { get; set; } = "/*/*/*/*";
 
     [Parameter("Existing report file or directory; skips coverage collection")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string? Reports { get; set; }
 
     [Parameter("Minimum line coverage")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string MinLine { get; set; } = "100";
 
     [Parameter("Minimum branch coverage")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string MinBranch { get; set; } = "100";
 
     [Parameter("Output format: table, json, md")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string Format { get; set; } = "table";
 
     [Parameter("Maximum CRAP score")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string MaxCrap { get; set; } = "30";
 
     [Parameter("Number of methods displayed; the CRAP gate still checks all methods")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string Top { get; set; } = "20";
 
     [Parameter("Optional metrics XML for CRAP analysis")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string? Metrics { get; set; }
 
     [Parameter("Baseline Cobertura file or directory for Diff")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string? Before { get; set; }
 
     [Parameter("Directory Coverage writes coverage-badge.svg and coverage-badge.json to, for every outcome")]
+    [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string? BadgeDirectory { get; set; }
 
     private readonly string _runId = Guid.NewGuid().ToString("N");
@@ -60,6 +75,7 @@ class Build : FalloutBuild
         .OnlyWhenStatic(() => Reports is null)
         .Executes(() => RunTests(coverage: true));
 
+    [UsedImplicitly]
     Target Coverage => d => d
         .Description("Collect coverage, require every src project in it, and enforce line/branch thresholds; --badge-directory draws the verdict")
         .DependsOn(CollectCoverage)
@@ -75,11 +91,13 @@ class Build : FalloutBuild
                          "code if no input can reach it. Never exclude code from measurement.");
         });
 
+    [UsedImplicitly]
     Target Report => d => d
         .Description("Collect and display coverage; --format selects table/json/md")
         .DependsOn(CollectCoverage)
         .Executes(() => RunDotCov(["report", Input, "--format", Format]));
 
+    [UsedImplicitly]
     Target Crap => d => d
         .Description("Collect method coverage and enforce the CRAP gate")
         .DependsOn(CollectCoverage)
@@ -91,6 +109,7 @@ class Build : FalloutBuild
             return RunDotCov([.. args]);
         });
 
+    [UsedImplicitly]
     Target Snapshot => d => d
         .Description("Write snapshot JSON with Git identity under artifacts/<run>/")
         .DependsOn(CollectCoverage)
@@ -110,6 +129,7 @@ class Build : FalloutBuild
             Log.Information("Snapshot: {Path}", path);
         });
 
+    [UsedImplicitly]
     Target Diff => d => d
         .Description("Compare --before with freshly collected coverage or --reports")
         .Requires(() => Before)

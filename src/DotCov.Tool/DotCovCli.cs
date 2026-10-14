@@ -307,8 +307,11 @@ public static partial class DotCovCli
         if (!TryGetParseOptions(opts, stderr, out var pattern, out var maxChars)) return UsageExitCode;
 
         var identity = Identity(opts);
-        var (beforeReport, beforeInputs) = ParseInput(before, pattern, maxChars, identity);
-        var (afterReport, afterInputs) = ParseInput(after, pattern, maxChars, identity);
+        var (beforeParsed, beforeInputs) = ParseInput(before, pattern, maxChars, identity);
+        var (afterParsed, afterInputs) = ParseInput(after, pattern, maxChars, identity);
+        // The same exclusions on both sides, so excluded files neither appear nor disappear.
+        var beforeReport = ApplyExclusions(beforeParsed, opts);
+        var afterReport = ApplyExclusions(afterParsed, opts);
         var result = CoverageDiff.Compare(beforeReport, afterReport);
 
         stdout.Write(format switch
@@ -318,8 +321,10 @@ public static partial class DotCovCli
             _ => TableFormatter.FormatDiff(result, color)
         });
 
+        // JSON carries the exclusion itself; the other formats name it once, after both sides.
         WriteDiagnostics(before, pattern, beforeInputs, beforeReport.Warnings, FileExclusion.None, stderr);
-        WriteDiagnostics(after, pattern, afterInputs, afterReport.Warnings, FileExclusion.None, stderr);
+        WriteDiagnostics(after, pattern, afterInputs, afterReport.Warnings,
+            format is "json" ? FileExclusion.None : result.Exclusion, stderr);
         return 0;
     }
 

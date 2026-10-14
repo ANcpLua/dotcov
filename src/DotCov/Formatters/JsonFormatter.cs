@@ -67,6 +67,7 @@ public static class JsonFormatter
     public static string FormatDiff(CoverageDiffResult diff) => Write(writer =>
     {
         WriteHeader(writer, "diff", diff.Inputs, diff.Warnings);
+        WriteExclusion(writer, diff.Exclusion);
 
         writer.WriteStartObject("summary");
         if (diff.BeforeRate is { } bRate) writer.WriteNumber("before", Pct(bRate));

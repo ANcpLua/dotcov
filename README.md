@@ -65,7 +65,8 @@ dotcov is built to be driven by a coding agent:
   ```
 
 - **Few tokens.** Uncovered lines are ranges (`"14-15,21"`), `--top N` caps the list (default 20)
-  and says how many more there are, and `--no-color` or `NO_COLOR=1` strips ANSI.
+  and says how many more there are, and `--no-color` (accepted by every command that reads a
+  report) or `NO_COLOR=1` strips ANSI.
 - **Help where you are.** `dotcov <command> --help` prints only that command. A mistyped flag
   answers `Did you mean '--min-line'?` and lists the command's valid options, with exit `2`.
 - **Nothing silent.** An exclusion, a report that matched no file, a method that could not be
@@ -143,7 +144,8 @@ checks DotCov's counts against the producers' own numbers on real upstream proje
 
 `--exclude-generated` skips generated code, build output, migrations, `GlobalUsings.cs` and
 `Program.cs`. `--exclude-test-code` skips test projects and fixtures. `--keep <substrings>`
-exempts paths from both. Stderr and the JSON (`excluded`, `exclusionRules`) list what was left out.
+exempts paths from both. Every command that reads a report takes them (`diff` applies them to
+both sides). Stderr and the JSON (`excluded`, `exclusionRules`) list what was left out.
 
 ## GitHub badge
 
@@ -156,7 +158,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v4.0.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v4.1.0
     with:
       reports: TestResults
       min-line: 80
@@ -182,9 +184,9 @@ to GitHub's image proxy.
 
 ## Upgrading
 
-4.0 moves every verdict to stderr, gives a failed `dotcov test` run its own exit code `6`, and
-reshapes the JSON; the [Release notes](docs/releases/4.0.0.md) list each change, and older ones
-are in [docs/releases](docs/releases/).
+4.0 moved every verdict to stderr, gave a failed `dotcov test` run its own exit code `6`, and
+reshaped the JSON. The [Release notes](docs/releases/4.1.0.md) cover this release and link the
+4.0 changes; older ones are in [docs/releases](docs/releases/).
 
 ## Contributing
 

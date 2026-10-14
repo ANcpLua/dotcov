@@ -227,6 +227,9 @@ public sealed class CoverageDiffResult(
 
     /// <summary>The "before" report's <see cref="CoverageReport.Warnings"/>, then the "after" report's.</summary>
     public IReadOnlyList<CoverageWarning> Warnings { get; init; } = [];
+
+    /// <summary>The exclusions applied to either report and the files they removed from it.</summary>
+    public FileExclusion Exclusion { get; init; } = FileExclusion.None;
 }
 
 public static class CoverageDiff
@@ -309,7 +312,8 @@ public static class CoverageDiff
             after.LineRate)
         {
             Inputs = [.. before.Inputs, .. after.Inputs],
-            Warnings = [.. before.Warnings, .. after.Warnings]
+            Warnings = [.. before.Warnings, .. after.Warnings],
+            Exclusion = before.Exclusion.Union(after.Exclusion)
         };
 
         static FileDelta Changed(string path, FileCoverage b, FileCoverage a) =>

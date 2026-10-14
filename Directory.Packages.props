@@ -16,6 +16,8 @@
     <PackageVersion Include="Fallout.Common" Version="$(FalloutVersion)" />
     <PackageVersion Include="Fallout.Components" Version="$(FalloutVersion)" />
     <PackageVersion Include="ANcpLua.Analyzers" Version="$(ANcpLuaAnalyzersVersion)" />
+    <!-- Build-script only: tells Rider/ReSharper which members Fallout uses by reflection. -->
+    <PackageVersion Include="JetBrains.Annotations" Version="2026.2.0" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>

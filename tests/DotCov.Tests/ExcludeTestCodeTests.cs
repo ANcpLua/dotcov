@@ -186,12 +186,10 @@ public sealed class ExcludeTestCodeTests : IDisposable
     [Test]
     public async Task ExclusionFlag_OnACommandThatTakesNone_IsAUsageError()
     {
-        var path = Mixed();
-
-        var (code, _, stderr) = await Run("diff", path, path, "--exclude-test-code");
+        var (code, _, stderr) = await Run("version", "--exclude-test-code");
 
         await Assert.That(code).IsEqualTo(DotCovCli.UsageExitCode);
-        await Assert.That(stderr).StartsWith("error: Unknown option '--exclude-test-code' for 'diff'.");
+        await Assert.That(stderr).StartsWith("error: Unknown option '--exclude-test-code' for 'version'.");
     }
 
     [Test]

@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Fallout.Common" />
+    <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />
     <ProjectReference Include="../src/DotCov.Tool/DotCov.Tool.csproj" />
   </ItemGroup>
 </Project>
