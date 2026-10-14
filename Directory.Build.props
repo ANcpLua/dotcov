@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.0.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.1.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,11 +29,10 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.0.0 is built for coding agents and scripts; three contracts change.
-1. Streams: stdout carries only data; the verdict of check, test and crap is always the first stderr line, PASS included.
-2. Exit codes: a failed dotnet test run inside dotcov test exits 6 (was 5); the Fallout component exits with dotcov's codes 1-5 instead of one generic failure.
-3. JSON: every document opens with schemaVersion, command, inputs and warnings; uncoveredLines arrays become "uncovered" range strings; crap's gate.reason is the full verdict line.
-New: --format json|md and --top on check and test with a gate object and worst-first offenders (uncovered ranges, partial branches); report --top; a Location column in crap; per-command --help; did-you-mean for options and commands; a warning when a directory matches no report; --no-color; diff lists only changed files; Fallout --coverage-json-path.
+DotCov 4.1.0 adds to the 4.0 agent contract without changing it.
+diff accepts --exclude-generated, --exclude-test-code and --keep, applied to both reports and listed as excluded/exclusionRules in JSON.
+--no-color is accepted by every command that reads a report, so a script can pass it everywhere.
+4.0 changed three contracts (verdict on stderr, exit 6 for a failed test run, the JSON envelope); see the 4.0.0 notes.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

@@ -2,67 +2,6 @@
 
 Rolling task-session log, oldest → newest, capped at 20 entries.
 
-## Task 3 — 2026-05-15 — Polish pass on `e08ddec`: plural-singular bug, doc drift, test gaps
-
-Multi-agent review of `e08ddec` surfaced one real bug, three doc-vs-code drifts, and four
-test gaps that left the new public surface "covered" (executed) but undertested. This task
-closes the punch list without expanding scope into new public API.
-
-Changed:
-- `TableFormatter.FormatDiff` and `MarkdownFormatter.AppendIndirectChanges` now pluralise
-  both `line/lines` AND `file/files` independently. Previous output `"1 lines flipped across
-  1 file"` corrected to `"1 line flipped across 1 file"`; the corresponding regression test
-  had codified the bug verbatim and is now flipped to assert the singular form.
-- `LineDelta` XML doc tightened to document the per-`LineChangeKind` invariants explicitly
-  (`Added` ⇒ `BeforeHits is null`, `Removed` ⇒ `AfterHits is null`, hit-count-still-hit
-  transitions like `100 → 1` are dropped). Tests now pin those payloads for `Added`,
-  `Removed`, and `NewlyHit` instead of asserting only `.Change`.
-- `BranchesByLine` doc adds a `<para>` note that `MergeWith` uses `Math.Max` per component
-  and that a mismatched `Total` for the same line across reports usually means different
-  compile targets — the merge keeps the larger total without flagging the divergence.
-- `GetLineStatus` doc adds the "tracked-but-zero-hits vs not-tracked" caveat plus a
-  pointer at `LineHits.ContainsKey` for callers needing the distinction.
-- `StrictLineRate` doc replaced the verbatim `hits/(hits+partials+misses)` formula with
-  the actual implementation (`StrictlyHitLines / LinesTotal`) plus a note that the two are
-  equal only under the parser's invariant `LineHits.Count == LinesTotal`. Hand-built
-  `FileCoverage` records can diverge from the Codecov formula by exactly that gap.
-- `ComputeLineChanges` inline comment rewritten to match the actual structure — early-return
-  guards for readability — instead of overclaiming a coverlet short-circuit workaround.
-- `README.md` Public API surface block extended with the new types: `LineStatus`,
-  `LineDelta`, `LineChangeKind`, `FileDelta.LineChanges`, `CoverageDiffResult.WithLineChanges`,
-  `TotalLineChanges`, plus `FileCoverage.BranchesByLine`, `GetLineStatus`, `StrictLineRate`,
-  `StrictlyHitLines`, `PartiallyHitLines`, `BranchDetail`. README had silently fallen behind
-  `e08ddec`'s public surface.
-
-Added tests:
-- `Parse_BranchedLines_PopulatesBranchesByLineFromXml` — round-trips the parser's output
-  through `BranchesByLine` + `GetLineStatus`. Closes the largest test asymmetry: every
-  prior `BranchesByLine` test used a hand-built `FileCoverage`, so a parser regression
-  would have left aggregate counts correct while silently zeroing the per-line dict.
-- `FileCoverage_MergeWith_BranchesOnlyInOther_PreservesEntry` — single-sided merge.
-  A regression that overwrote with an empty dict instead of unioning would flip the
-  merged line from `Partial` back to `Hit`; no prior test would have caught it.
-- `StrictLineRate_AllLinesPartial_IsZero` — boundary case where every tracked line is
-  `Partial`. Asserts `StrictLineRate == 0` while `LineRate == 1.0`.
-- `FormatDiff_OneLineFlippedAcrossOneFile_TrailerUsesSingularForBoth` and
-  `FormatDiff_MultipleLinesAndFilesAffected_TrailerUsesPluralForBoth` (table) plus
-  `FormatDiff_MultipleLinesAndFiles_HeadingUsesPluralForBoth` (markdown) — pin both
-  pluralisation branches now that they're independent.
-
-Verified:
-- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` followed
-  by `dotcov report TestResults/ --exclude-generated` still reports **Lines 100%** /
-  **Branches 100%** across the expanded test suite. Test count grew by 6 over `e08ddec`'s
-  193.
-
-Explicitly skipped (each would have required new public API or breaking changes):
-- Codecov-style `MergeWith` divergence warnings (would need a new `CoverageReport.Warnings`
-  collection; deferred until a real consumer asks for it).
-- `TryGetLineStatus` sibling for the unknown-line distinction (additive but no in-tree
-  caller needs it yet; documented in the XML comment instead).
-- `O(n²)` cache on `StrictlyHitLines` + `PartiallyHitLines` (correctness-neutral; defer
-  until a 50 MB+ report actually shows up in a benchmark).
-
 ## Task 4 — 2026-05-15 — `LineDelta` sealed-hierarchy: compile-time invariant enforcement
 
 Picked up Task 3's explicitly-deferred refactor: the per-`LineChangeKind` invariants
@@ -821,4 +760,16 @@ full-suite and 100/100 coverage record.
   READMEs and release notes rewritten; the oldest changelog entry dropped to keep 20.
 
 Validation: `fallout Coverage` 1,977 tests, 100.0% line and branch; CI on the PR.
+
+## Task 23 — 2026-10-14 — 4.1.0: diff exclusions, --no-color everywhere, Rider entry points
+
+- `diff` accepts the exclusion flags, applies them to both reports, lists the exclusion once
+  on stderr and carries `excluded`/`exclusionRules` in JSON (`CoverageDiffResult.Exclusion`).
+- `--no-color` is accepted by `check` and `snapshot` too.
+- `build/Build.cs` marks Fallout's reflection entry points with `[UsedImplicitly]`
+  (JetBrains.Annotations as a private build-only package). Upstream Fallout dropped JetBrains
+  annotations (Fallout-build/Fallout#76), so the fix lives here; InspectCode reports no unused
+  member in `Build.cs`.
+
+Validation: `fallout Coverage` 1,981 tests, 100.0% line and branch.
 

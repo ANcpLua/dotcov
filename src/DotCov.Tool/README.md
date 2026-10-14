@@ -96,7 +96,7 @@ does a metrics member no covered method matches.
 | `--top <n>` | Show the N worst files (`report`) or methods (`crap`), or cap the offenders (`check`, `test`, default 20) |
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
 | `--exclude-test-code` | Skip test projects and fixtures: `*.Tests/`, `TestSupport/`, `TestFixtures/` |
-| `--keep <subs>` | Comma-separated substrings exempt from both exclusions |
+| `--keep <subs>` | Comma-separated substrings exempt from both exclusions (`diff` applies all three to both reports) |
 | `--probe-sources` | Several `<source>` roots: resolve each file against the root that holds it on this disk |
 | `--source-root <root>` | Several `<source>` roots: resolve against this declared root |
 | `--pattern <glob>` | Report file name to search for; default `**/*cobertura*.xml` |
@@ -104,7 +104,7 @@ does a metrics member no covered method matches.
 | `--github-summary` | Append markdown to `$GITHUB_STEP_SUMMARY`, on pass and fail |
 | `--upload <url>` | POST the JSON document |
 | `--badge-dir <dir>` | `check`, `test`: write `coverage-badge.svg` and `coverage-badge.json` for every outcome |
-| `--no-color` | `report`, `crap`, `diff`, `test`: no ANSI colour; `test` passes `NO_COLOR=1` to `dotnet test` |
+| `--no-color` | No ANSI colour; accepted by every command that reads a report; `test` passes `NO_COLOR=1` to `dotnet test` |
 
 A command rejects an option it does not take, `--name=value`, and a second path; it never
 ignores one. An active exclusion is listed on stderr and in the JSON as `excluded` and
