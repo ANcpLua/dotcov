@@ -6,6 +6,10 @@ public sealed class CrapSignatureMatchingTests
 {
     [Test]
     [Arguments("int x", "System.Int32")]
+    [Arguments("int? x", "System.Nullable`1<System.Int32>")]
+    [Arguments("decimal?[] x", "System.Nullable`1<System.Decimal>[]")]
+    [Arguments("ref long? x", "System.Nullable`1<System.Int64>&")]
+    [Arguments("List<int?> x", "List<System.Nullable`1<System.Int32>>")]
     [Arguments("int x = 1", "System.Int32")]
     [Arguments("char x = ','", "System.Char")]
     [Arguments("string x = \"a,(b)=c\"", "System.String")]
@@ -83,4 +87,43 @@ public sealed class CrapSignatureMatchingTests
         await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.M(string value)"]);
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
+    [Test]
+    [Arguments("get", false)]
+    [Arguments("set", false)]
+    [Arguments("init", false)]
+    [Arguments("get", true)]
+    [Arguments("set", true)]
+    public async Task SameArityIndexers_MatchParametersAndSetterValue(string accessor, bool missing)
+    {
+        var method = accessor == "get" ? "get_Item" : "set_Item";
+        var value = accessor == "get" ? "" : ",System.String";
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c =>
+        {
+            c.Method(method, $"(System.Int32{value})", null, m => m.Line(1, 1));
+            if (!missing) c.Method(method, $"(System.String{value})", null, m => m.Line(2, 1));
+        }).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method($"string A.this[int x].{accessor}", 2, 1)
+            .Method($"string A.this[string x].{accessor}", 7, 1));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(missing ? 1 : 0);
+        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo(missing ? [2] : new[] { 2, 7 });
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(missing ? GateOutcome.NoData : GateOutcome.Pass);
+    }
+
+    [Test]
+    [Arguments("string A.this[int x.get")]
+    [Arguments("string A.this[int x].unknown")]
+    [Arguments("A.this[int x].set")]
+    public async Task MalformedIndexerSignature_DoesNotProveAnOverloadMatch(string display)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c =>
+            c.Method("get_Item", "(System.Int32)", "1", m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method(display, 2, 1).Method("string A.this[bool x].get", 7, 1));
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers).IsNotEmpty();
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
 }

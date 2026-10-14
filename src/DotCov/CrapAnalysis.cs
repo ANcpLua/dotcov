@@ -252,13 +252,41 @@ public static class CrapAnalysis
         // Different raw signatures/files can have the same available metrics identity.
         // Account for that identity once, even when every candidate is a zero-body declaration.
         foreach (var logical in excluded.Where(static l => !l.FoldedAway)
-                     .DistinctBy(static l => (l.TypeKey, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity, l.Signature)))
+                     .DistinctBy(static l => (l.Name.TypeIdentity, MethodIdentity.MetricsMemberName(l.Name.Method), l.Arity, l.Signature)))
             MatchExcludedMetrics(logical, excludedMetricsIndex, consumed);
 
         var (scored, unscored) = ScoreMethods(order, metricsMembers, metricsIndex, consumed); // 3. resolve comp, score
+        ReconcileConstructorPairs(order, metricsMembers, consumed);
         var unmatched = CollectUnmatched(metricsMembers, consumed);               // 4. honesty channel
 
         return new CrapReport(scored, unscored, unmatched);
+    }
+
+    // Roslyn displays static and parameterless instance constructors identically. Only a
+    // complete, measured pair in the same type and file proves both indistinguishable rows.
+    private static void ReconcileConstructorPairs(List<LogicalMethod> order,
+        IReadOnlyList<CodeMetricsMember>? members, HashSet<int> consumed)
+    {
+        if (members is null) return;
+        var pairs = order.Where(static method => !method.FoldedAway && method.Lines.Count > 0 &&
+                method.Signature is "" && method.Name.Method is ".ctor" or ".cctor")
+            .GroupBy(static method => (method.Name.TypeIdentity, method.File))
+            .Where(static group => group.Select(method => method.Name.Method).Distinct().Count() == 2)
+            .ToLookup(static group => group.Key.TypeIdentity, static group => group.Key.File);
+        foreach (var group in members.Select(static (member, index) => (Member: member, Index: index))
+                     .Where(static entry => entry.Member.Kind is CodeMetricsMemberKind.Method &&
+                         entry.Member.MemberName is ".ctor" && entry.Member.ExecutableLines is not 0 &&
+                         entry.Member.Arity is null or 0)
+                     .GroupBy(static entry => entry.Member.TypeIdentity ?? entry.Member.TypeName))
+        {
+            var candidates = group.ToArray();
+            if (candidates.Length != 2 || candidates.Any(static entry =>
+                    MethodSignatures.Metrics(entry.Member.DisplayName) is not "")) continue;
+            if (!pairs[group.Key].Any(file => candidates.All(entry =>
+                    string.IsNullOrWhiteSpace(entry.Member.File) || entry.Member.File is "UNKNOWN" ||
+                    PathIdentity.NormalizeRoot(entry.Member.File) == file))) continue;
+            foreach (var entry in candidates) consumed.Add(entry.Index);
+        }
     }
 
     // Scoring may conservatively take the maximum complexity of several candidates.
@@ -269,7 +297,7 @@ public static class CrapAnalysis
         MetricsIndex metricsIndex,
         HashSet<int> consumed)
     {
-        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
+        var key = $"{logical.Name.TypeIdentity}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         var compatible = CompatibleMetrics(metricsIndex, key, logical.Arity, logical.Signature);
         if (compatible.UniqueMember is { } index) consumed.Add(index);
     }
@@ -500,7 +528,7 @@ public static class CrapAnalysis
             switch (m.Kind)
             {
                 case CodeMetricsMemberKind.Method or CodeMetricsMemberKind.Accessor:
-                    var key = $"{m.TypeName}|{m.MemberName}";
+                    var key = $"{m.TypeIdentity ?? m.TypeName}|{m.MemberName}";
                     // Summarize each executable bucket once.
                     var complexity = Math.Max(0, m.CyclomaticComplexity);
                     var signature = MethodSignatures.Metrics(m.DisplayName);
@@ -521,8 +549,8 @@ public static class CrapAnalysis
                     // used only when no accessor entry matched. An aggregate below 1 summed no
                     // declared accessor (a positional record property) — nothing was measured.
                     if (m.CyclomaticComplexity < 1 || m.ExecutableLines is 0) break;
-                    index.AccessorFallback.TryAdd($"{m.TypeName}|get_{m.MemberName}", (i, m.CyclomaticComplexity));
-                    index.AccessorFallback.TryAdd($"{m.TypeName}|set_{m.MemberName}", (i, m.CyclomaticComplexity));
+                    index.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|get_{m.MemberName}", (i, m.CyclomaticComplexity));
+                    index.AccessorFallback.TryAdd($"{m.TypeIdentity ?? m.TypeName}|set_{m.MemberName}", (i, m.CyclomaticComplexity));
                     break;
             }
         }
@@ -559,7 +587,7 @@ public static class CrapAnalysis
         MetricsIndex metricsIndex,
         HashSet<int> consumed)
     {
-        var key = $"{logical.TypeKey}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
+        var key = $"{logical.Name.TypeIdentity}|{MethodIdentity.MetricsMemberName(logical.Name.Method)}";
         if (metricsIndex.All.TryGetValue(key, out var candidates))
         {
             // Keep the conservative complexity fallback when no arity matches, but never

@@ -18,6 +18,9 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"(?<![\w@.])\w+", RegexOptions.CultureInvariant)]
     private static partial Regex TypeWords();
 
+    [GeneratedRegex(@"\bSystem\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Char|Single|Double|Decimal|IntPtr|UIntPtr)\?", RegexOptions.CultureInvariant)]
+    private static partial Regex NullableValueTypes();
+
     internal static string? Coverage(string signature)
     {
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')') return null;
@@ -26,11 +29,32 @@ internal static partial class MethodSignatures
 
     internal static string? Metrics(string display)
     {
-        if (!display.EndsWith(')')) return null;
-        var open = BalancedText.LastIndexOfTopLevel(display, '(');
-        if (open < 0) return null;
+        string parameters;
+        string? valueType = null;
+        if (display.EndsWith(')'))
+        {
+            var open = BalancedText.LastIndexOfTopLevel(display, '(');
+            if (open < 0) return null;
+            parameters = display[(open + 1)..^1];
+        }
+        else
+        {
+            var indexer = display.IndexOf(".this[", StringComparison.Ordinal);
+            var close = display.LastIndexOf(']');
+            if (indexer < 0 || close < indexer) return null;
+            var accessor = display[(close + 1)..];
+            if (accessor is not (".get" or ".set" or ".init")) return null;
+            parameters = display[(indexer + 6)..close];
+            if (accessor is not ".get")
+            {
+                var space = BalancedText.LastIndexOfTopLevel(display.AsSpan(0, indexer), ' ');
+                if (space < 0) return null;
+                valueType = display[..space];
+                if (valueType is "void") return null;
+            }
+        }
         var types = new List<string>();
-        foreach (var parameter in BalancedText.SplitTopLevel(display[(open + 1)..^1]))
+        foreach (var parameter in BalancedText.SplitTopLevel(parameters))
         {
             var equals = BalancedText.LastIndexOfTopLevel(parameter, '=');
             var declaration = equals < 0 ? parameter : parameter[..equals].TrimEnd();
@@ -38,6 +62,7 @@ internal static partial class MethodSignatures
             if (space < 0) return null;
             types.Add(NormalizeType(declaration[..space]));
         }
+        if (valueType is not null) types.Add(NormalizeType(valueType));
         return string.Join(",", types);
     }
 
@@ -50,6 +75,7 @@ internal static partial class MethodSignatures
                     type.StartsWith("in ", StringComparison.Ordinal);
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
+        type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
         return type.Replace(" ", "", StringComparison.Ordinal) + (byRef ? "&" : "");
     }
 }

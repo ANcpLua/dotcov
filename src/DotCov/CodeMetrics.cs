@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Xml;
+using System.Text.RegularExpressions;
 
 namespace DotCov;
 
@@ -58,6 +59,9 @@ public readonly record struct CodeMetricsMember(
 
     /// <summary>Source path reported by the metrics producer, when available.</summary>
     public string? File { get; init; }
+
+    /// <summary>IL type identity with generic arity retained; null for callers using the legacy type name.</summary>
+    public string? TypeIdentity { get; init; }
 }
 
 /// <summary>
@@ -73,7 +77,7 @@ public readonly record struct CodeMetricsMember(
 /// <c>Type.Type(int seed)</c> for constructors, and <c>string Type.Prop.get</c> for accessors.
 /// Same XmlReader streaming + hardening ethos as <see cref="CoberturaParser"/>.
 /// </summary>
-public static class CodeMetricsReader
+public static partial class CodeMetricsReader
 {
     private const long DefaultMaxChars = 50_000_000;
     private const string GlobalNamespaceDisplay = "<global namespace>";
@@ -126,7 +130,7 @@ public static class CodeMetricsReader
     {
         public readonly List<CodeMetricsMember> Members = [];
         public string Namespace = "";
-        public readonly List<string> TypeChain = [];        // generic-stripped dotted segments, e.g. "Outer.Inner"
+        public readonly List<string> TypeChain = [];        // raw named-type displays, including generic parameters
         public readonly Stack<PendingMember> MemberStack = new();   // Property → its Accessor methods nest
     }
 
@@ -157,7 +161,7 @@ public static class CodeMetricsReader
             case "NamedType":
                 // Empty elements raise no EndElement, so only a real subtree pushes.
                 if (!reader.IsEmptyElement)
-                    state.TypeChain.Add(TypeSegment(reader.GetAttribute("Name") ?? ""));
+                    state.TypeChain.Add(reader.GetAttribute("Name") ?? "");
                 break;
 
             case "Metric":
@@ -238,16 +242,22 @@ public static class CodeMetricsReader
     private static CodeMetricsMember Materialize(
         PendingMember pending, string ns, List<string> typeChain, int complexity)
     {
-        var typeName = string.Join(".", typeChain);
-        if (ns.Length > 0) typeName = $"{ns}.{typeName}";
+        var typeName = string.Join(".", typeChain.Select(static name => TypeSegment(name)));
+        var typeIdentity = string.Join(".", typeChain.Select(static name => TypeSegment(name, retainArity: true)));
+        if (ns.Length > 0)
+        {
+            typeName = $"{ns}.{typeName}";
+            typeIdentity = $"{ns}.{typeIdentity}";
+        }
 
-        var enclosingSimpleName = SimpleName(typeChain[^1]);
+        var enclosingSimpleName = SimpleName(TypeSegment(typeChain[^1]));
         var (memberName, arity, kind) = ParseDisplay(pending.Display, pending.Element, enclosingSimpleName);
 
         return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display)
         {
             ExecutableLines = pending.HasExecutableLines ? pending.ExecutableLines : pending.LegacyExecutableLines,
-            File = pending.File
+            File = pending.File,
+            TypeIdentity = typeIdentity
         };
     }
 
@@ -262,9 +272,15 @@ public static class CodeMetricsReader
     /// trailing C# 14 extension block (<c>Ext.extension(string)</c>) dropped — its members are
     /// emitted as static methods of the enclosing static class.
     /// </summary>
-    private static string TypeSegment(string name)
+    [GeneratedRegex(@"<([^<>]*)>", RegexOptions.CultureInvariant)]
+    private static partial Regex TypeParameterLists();
+
+    private static string TypeSegment(string name, bool retainArity = false)
     {
-        var stripped = StripGenericsPerSegment(name);
+        var stripped = retainArity
+            ? TypeParameterLists().Replace(name, static match =>
+                $"`{BalancedText.CountTopLevelItems(match.Groups[1].Value)}")
+            : StripGenericsPerSegment(name);
         var dot = BalancedText.LastIndexOfTopLevel(stripped, '.');
         return dot >= 0 && stripped.AsSpan(dot + 1).StartsWith("extension(", StringComparison.Ordinal)
             ? stripped[..dot]
