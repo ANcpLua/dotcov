@@ -50,6 +50,34 @@ public sealed class CrapTypeAndConstructorTests
     }
 
     [Test]
+    [Arguments(null, false)]
+    [Arguments(null, true)]
+    [Arguments("UNKNOWN", false)]
+    [Arguments("UNKNOWN", true)]
+    [Arguments("src/A.cs", false)]
+    [Arguments("src/A.cs", true)]
+    public async Task ConstructorPair_CannotBeReusedAcrossFiles(string? source, bool secondPair)
+    {
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("A.A()", 2, 1).Method("A.A()", 7, 1))
+            .Select(m => m with { File = source }).ToArray();
+        var doc = Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method(".ctor", "()", null, m => m.Line(1, 1))
+            .Method(".cctor", "()", null, m => m.Line(2, 1)))
+            .AddClass("other/A.cs", "App.A", c =>
+            {
+                c.Method(".ctor", "()", null, m => m.Line(3, 1));
+                if (secondPair) c.Method(".cctor", "()", null, m => m.Line(4, 1));
+            });
+        using var input = new MemoryStream(doc.ToBytes());
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(2);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
     [Arguments("missing")]
     [Arguments("no-lines")]
     [Arguments("other-file")]

@@ -270,9 +270,11 @@ public static class CrapAnalysis
         if (members is null) return;
         var pairs = order.Where(static method => !method.FoldedAway && method.Lines.Count > 0 &&
                 method.Signature is "" && method.Name.Method is ".ctor" or ".cctor")
-            .GroupBy(static method => (method.Name.TypeIdentity, method.File))
-            .Where(static group => group.Select(method => method.Name.Method).Distinct().Count() == 2)
-            .ToLookup(static group => group.Key.TypeIdentity, static group => group.Key.File);
+            .GroupBy(static method => method.Name.TypeIdentity)
+            .Where(static group => group.Count() == 2 &&
+                group.Select(method => method.Name.Method).Distinct().Count() == 2 &&
+                group.Select(method => method.File).Distinct().Count() == 1)
+            .ToDictionary(static group => group.Key, static group => group.First().File);
         foreach (var group in members.Select(static (member, index) => (Member: member, Index: index))
                      .Where(static entry => entry.Member.Kind is CodeMetricsMemberKind.Method &&
                          entry.Member.MemberName is ".ctor" && entry.Member.ExecutableLines is not 0 &&
@@ -282,9 +284,9 @@ public static class CrapAnalysis
             var candidates = group.ToArray();
             if (candidates.Length != 2 || candidates.Any(static entry =>
                     MethodSignatures.Metrics(entry.Member.DisplayName) is not "")) continue;
-            if (!pairs[group.Key].Any(file => candidates.All(entry =>
+            if (!pairs.TryGetValue(group.Key, out var file) || !candidates.All(entry =>
                     string.IsNullOrWhiteSpace(entry.Member.File) || entry.Member.File is "UNKNOWN" ||
-                    PathIdentity.NormalizeRoot(entry.Member.File) == file))) continue;
+                    PathIdentity.NormalizeRoot(entry.Member.File) == file)) continue;
             foreach (var entry in candidates) consumed.Add(entry.Index);
         }
     }
