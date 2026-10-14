@@ -17,6 +17,7 @@ internal sealed record CoverageParameters(
     CoverageFormat Format,
     bool ExcludeGenerated,
     bool ExcludeTestCode,
+    bool ExcludeExternal,
     ReportPattern Pattern,
     long MaxChars,
     FileIdentity Identity)
@@ -24,6 +25,7 @@ internal sealed record CoverageParameters(
     public const string DefaultFormat = "table";
     public const string DefaultExcludeGenerated = "false";
     public const string DefaultExcludeTestCode = "false";
+    public const string DefaultExcludeExternal = "false";
     public const string DefaultPattern = ReportPattern.DefaultText;
     public const string DefaultMaxChars = "50000000";
     public const string DefaultBadgeDirectory = "";
@@ -32,7 +34,7 @@ internal sealed record CoverageParameters(
 
     public static CoverageParameters Parse(
         string? minLine, string? minBranch, string format, string excludeGenerated, string excludeTestCode,
-        string pattern, string maxChars, string probeSources, string? sourceRoot)
+        string excludeExternal, string pattern, string maxChars, string probeSources, string? sourceRoot)
     {
         // No default threshold: a gate nobody set a threshold for would pass on a number nobody chose.
         if (minLine is null && minBranch is null)
@@ -46,16 +48,18 @@ internal sealed record CoverageParameters(
             ParseFormat(format, "Coverage Format"),
             ParseFlag(excludeGenerated, "Coverage ExcludeGeneratedParam"),
             ParseFlag(excludeTestCode, "Coverage ExcludeTestCodeParam"),
+            ParseFlag(excludeExternal, "Coverage ExcludeExternalParam"),
             ParsePattern(pattern, "Coverage Pattern"),
             ParseMaxChars(maxChars, "Coverage MaxCharsParam"),
             ParseIdentity(ParseFlag(probeSources, "Coverage ProbeSourcesParam"), sourceRoot));
     }
 
-    /// <summary>The exclusion patterns the two flags select; empty when neither is set.</summary>
+    /// <summary>The exclusion patterns the three flags select; empty when none is set.</summary>
     public IReadOnlyList<string> ExclusionPatterns =>
     [
         .. ExcludeGenerated ? ExclusionRules.WellKnown : [],
         .. ExcludeTestCode ? ExclusionRules.TestCode : [],
+        .. ExcludeExternal ? ExclusionRules.External : [],
     ];
 
     /// <summary>

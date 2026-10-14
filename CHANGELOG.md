@@ -2,75 +2,6 @@
 
 Rolling task-session log, oldest → newest, capped at 20 entries.
 
-## Task 4 — 2026-05-15 — `LineDelta` sealed-hierarchy: compile-time invariant enforcement
-
-Picked up Task 3's explicitly-deferred refactor: the per-`LineChangeKind` invariants
-documented on the flat `LineDelta` record struct (Added ⇒ `BeforeHits is null`, etc.) were
-runtime conventions — `new LineDelta(42, BeforeHits: null, AfterHits: null, NewlyHit)`
-compiled and survived every consumer. Closed sealed-hierarchy collapses the discriminator
-+ payload into one type per variant so the illegal combinations literally don't exist on
-the type.
-
-Breaking change to the `DotCov` public API; the JSON wire format stays compatible.
-
-Changed:
-- `LineDelta` is now an `abstract record` with a **private** constructor and four nested
-  sealed records: `Added(int Line, int AfterHits)`, `Removed(int Line, int BeforeHits)`,
-  `NewlyHit(int Line, int BeforeHits, int AfterHits)`, `NewlyMissed(int Line, int BeforeHits,
-  int AfterHits)`. Private base ctor restricts derivation to the four nested types so the
-  set is closed at the type system level.
-- `LineChangeKind` enum **deleted** — fully redundant with the variant discriminator.
-- `CoverageDiff.ComputeLineChanges` constructs the right variant at each guard arm instead
-  of building a flat record with positional nulls. `new LineDelta.Added(line, afterHits)`
-  replaces `new LineDelta(line, null, afterHits, LineChangeKind.Added)`, etc.
-- `JsonFormatter` discriminates the variants via a typed `is`-pattern chain and emits the
-  same all-lowercase `change` strings (`"added"`, `"removed"`, `"newlyhit"`, `"newlymissed"`)
-  the previous code produced via `enum.ToString().ToLowerInvariant()`. `beforeHits` /
-  `afterHits` are omitted on the variants that don't carry them, preserving the existing
-  `WhenWritingNull` contract.
-- `MarkdownFormatter.AppendIndirectChanges` aggregates per-variant counts via the same
-  type-pattern chain instead of four enum-`.Count` calls. Per-file fragment order
-  (newly missed → newly hit → added → removed) is preserved verbatim.
-- `TableFormatter` was unaffected (it never per-variant-rendered, only counts the
-  aggregate `TotalLineChanges`); verified by re-running its 19 tests unchanged.
-- Test assertions like `Assert.Equal(LineChangeKind.Added, d.Change)` rewritten as
-  `Assert.IsType<LineDelta.Added>(d)`; the existing payload-pinning lines
-  (`Assert.Equal(4, removed.BeforeHits); Assert.Null(removed.AfterHits);`) collapse to a
-  single non-nullable `Assert.Equal(4, removed.BeforeHits)` because the variant has no
-  AfterHits field to assert against.
-- README `Public API surface` block updated: `LineChangeKind` removed, `LineDelta` rewritten
-  as the sealed-hierarchy declaration.
-
-Added tests (3 new, in `JsonFormatterTests.cs`):
-- `FormatDiff_AddedLine_EmitsAddedChangeWithOnlyAfterHits` — pins JSON wire format for the
-  Added variant: `change="added"`, `afterHits` populated, `beforeHits` key absent.
-- `FormatDiff_RemovedLine_EmitsRemovedChangeWithOnlyBeforeHits` — symmetric pin for Removed.
-- `FormatDiff_NewlyHitLine_EmitsNewlyHitChangeWithBothHits` — pins the all-lowercase
-  `"newlyhit"` wire-format string. (`"newlymissed"` was already pinned.)
-
-Verified:
-- `dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings` —
-  **200 tests, 0 failed**.
-- `dotcov report tests/DotCov.Tests/TestResults --exclude-generated` — **Lines 577/577
-  (100%) / Branches 300/300 (100%)** across every file in the library, including the
-  four files modified for this task (`CoverageDiff.cs`, `JsonFormatter.cs`,
-  `MarkdownFormatter.cs`, `TableFormatter.cs`).
-
-Notes:
-- The JSON wire format **stays binary-compatible**: same property names (`line`,
-  `beforeHits`, `afterHits`, `change`), same omit-when-null contract, same all-lowercase
-  `change` discriminator strings. Downstream consumers don't need to change.
-- Roslyn doesn't currently prove exhaustiveness for switch-expressions over an abstract
-  record + private-ctor + nested-sealed-derivatives shape; a `c switch { … }` would force
-  an unreachable `_ => throw` arm that breaks the 100%-coverage gate. Consumers use
-  `is`-pattern chains ending in an unguarded cast instead — equivalent at the IL level,
-  reachable for coverage, and a future variant would surface as an `InvalidCastException`
-  rather than slipping through silently.
-- `LineDelta`'s public surface intentionally exposes a `Line` get-only property on the base
-  rather than primary-constructor positional deconstruction; positional records on the base
-  would have leaked an inherited `Line` parameter conflicting with each variant's own
-  `Line`. The current shape mirrors the standard C# sealed-hierarchy idiom.
-
 ## Task 5 — 2026-05-15 — `CoverageWarning` surface for silent merge/parse anomalies
 
 Lifts the "defer-until-asked" warnings collection Task 3 explicitly skipped into a real
@@ -772,4 +703,17 @@ Validation: `fallout Coverage` 1,977 tests, 100.0% line and branch; CI on the PR
   member in `Build.cs`.
 
 Validation: `fallout Coverage` 1,985 tests, 100.0% line and branch.
+
+## Task 24 — 2026-10-14 — 4.2.0: name and exclude code built elsewhere
+
+- Found by adding the badge to ANcpLua/TourPlanner: coverlet instrumented 11 dependency
+  assemblies (~560 files under `/_/src/...`), so dotcov read 27.3% where the repository's own
+  code is at 92.6% lines / 77.1% branches.
+- `CoverageWarningKind.ExternalSources`, derived from the files a report holds (recomputed
+  by Exclude, Merge and the method report constructor), unless `/_/` is a declared root.
+- `ExclusionRules.External` (`/_/`), CLI `--exclude-external`, Fallout
+  `--coverage-exclude-external-param`; `--keep` accepts it as its exclusion.
+- README: exclusion and badge sections name the cause and both fixes.
+
+Validation: `fallout Coverage` 1,993 tests, 100.0% line and branch.
 

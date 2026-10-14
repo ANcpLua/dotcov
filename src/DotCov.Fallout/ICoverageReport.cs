@@ -43,6 +43,9 @@ public interface ICoverageReport : IFalloutBuild
     [Parameter("Exclude test projects and fixtures: *.Tests/, TestSupport/, TestFixtures/ (true/false)")]
     string ExcludeTestCodeParam => TryGetValue(() => ExcludeTestCodeParam) ?? CoverageParameters.DefaultExcludeTestCode;
 
+    [Parameter("Exclude code built elsewhere: SourceLink paths (/_/...) of dependencies the coverage tool instrumented (true/false)")]
+    string ExcludeExternalParam => TryGetValue(() => ExcludeExternalParam) ?? CoverageParameters.DefaultExcludeExternal;
+
     [Parameter("Resolve a relative filename under several <source> roots against the root that holds it on this machine's disk (true/false)")]
     string ProbeSourcesParam => TryGetValue(() => ProbeSourcesParam) ?? CoverageParameters.DefaultProbeSources;
 
@@ -69,7 +72,7 @@ public interface ICoverageReport : IFalloutBuild
             try
             {
                 parameters = CoverageParameters.Parse(
-                    MinLine, MinBranch, Format, ExcludeGeneratedParam, ExcludeTestCodeParam, Pattern, MaxCharsParam,
+                    MinLine, MinBranch, Format, ExcludeGeneratedParam, ExcludeTestCodeParam, ExcludeExternalParam, Pattern, MaxCharsParam,
                     ProbeSourcesParam, SourceRoot);
             }
             catch (ArgumentException)

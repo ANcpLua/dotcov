@@ -96,7 +96,8 @@ does a metrics member no covered method matches.
 | `--top <n>` | Show the N worst files (`report`) or methods (`crap`), or cap the offenders (`check`, `test`, default 20) |
 | `--exclude-generated` | Skip `.g.cs`, `.designer.cs`, `/obj/`, `/bin/`, `/Migrations/`, `GlobalUsings.cs`, `Program.cs` |
 | `--exclude-test-code` | Skip test projects and fixtures: `*.Tests/`, `TestSupport/`, `TestFixtures/` |
-| `--keep <subs>` | Comma-separated substrings exempt from both exclusions (`diff` applies all three to both reports) |
+| `--exclude-external` | Skip code built elsewhere: SourceLink paths (`/_/...`) of dependencies the coverage tool instrumented; otherwise a warning names them |
+| `--keep <subs>` | Comma-separated substrings exempt from the exclusions (`diff` applies them to both reports) |
 | `--probe-sources` | Several `<source>` roots: resolve each file against the root that holds it on this disk |
 | `--source-root <root>` | Several `<source>` roots: resolve against this declared root |
 | `--pattern <glob>` | Report file name to search for; default `**/*cobertura*.xml` |

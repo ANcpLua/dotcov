@@ -15,7 +15,8 @@ public sealed class MethodCoverageReport
         IReadOnlyList<string> sourceRoots)
     {
         Methods = methods;
-        Warnings = warnings;
+        // As on CoverageReport: the external-sources warning follows the methods held.
+        Warnings = ExclusionRules.WithExternalWarning(warnings, methods.Select(static m => m.File), sourceRoots);
         SourceRoots = sourceRoots;
     }
 

@@ -233,7 +233,7 @@ public sealed class CliTests : IDisposable
         var (code, _, stderr) = await Run("report", HalfCovered(), "--keep", "Program.cs");
 
         await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated or --exclude-test-code.");
+        await Assert.That(stderr).StartsWith("error: --keep only applies together with --exclude-generated, --exclude-test-code or --exclude-external.");
     }
 
     [Test]
