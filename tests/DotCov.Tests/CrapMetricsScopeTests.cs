@@ -511,6 +511,40 @@ public sealed class CrapMetricsScopeTests
         await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
     }
 
+    [Test]
+    [Arguments("0", null, false, 0)]
+    [Arguments("2", null, false, 2)]
+    [Arguments("-1", null, false, null)]
+    [Arguments("invalid", null, false, null)]
+    [Arguments("0", "2", false, 2)]
+    [Arguments("0", "2", true, 2)]
+    [Arguments("2", "0", false, 0)]
+    [Arguments("2", "0", true, 0)]
+    [Arguments("0", "invalid", false, null)]
+    [Arguments("0", "invalid", true, null)]
+    [Arguments("0", "-1", false, null)]
+    public async Task LegacyExecutableLines_AreUsedOnlyWhenModernMetricIsAbsent(
+        string legacy, string? modern, bool modernFirst, int? expected)
+    {
+        var legacyMetric = $"<Metric Name=\"LinesOfCode\" Value=\"{legacy}\" />";
+        var modernMetric = modern is null ? "" : $"<Metric Name=\"ExecutableLines\" Value=\"{modern}\" />";
+        var ordered = modernFirst ? modernMetric + legacyMetric : legacyMetric + modernMetric;
+        var xml = $"""
+            <CodeMetricsReport><Namespace Name="App"><NamedType Name="A"><Members>
+              <Method Name="void A.Missing()"><Metrics>
+                <Metric Name="CyclomaticComplexity" Value="1" />
+                {ordered}
+              </Metrics></Method>
+            </Members></NamedType></Namespace></CodeMetricsReport>
+            """;
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var metrics = CodeMetricsReader.Parse(input);
+        await Assert.That(metrics.Single().ExecutableLines).IsEqualTo(expected);
+        var report = CrapAnalysis.Analyze(KeptCoverage(), metrics);
+        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(expected is 0 ? 0 : 1);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(expected is 0 ? GateOutcome.Pass : GateOutcome.NoData);
+    }
+
     private static MethodCoverageReport KeptCoverage()
     {
         using var input = new MemoryStream(Cobertura.NewDoc()

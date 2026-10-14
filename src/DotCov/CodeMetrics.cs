@@ -117,6 +117,8 @@ public static class CodeMetricsReader
         public readonly string? File = file;
         public int? Complexity;
         public int? ExecutableLines;
+        public int? LegacyExecutableLines;
+        public bool HasExecutableLines;
     }
 
     /// <summary>The document position ParseCore threads through its element handlers.</summary>
@@ -213,18 +215,22 @@ public static class CodeMetricsReader
     {
         // Assign to the innermost OPEN member: a Property's own Metrics arrive before its
         // <Accessors>, so accessor metrics can never leak upward.
-        if (state.MemberStack.Count is 0 ||
-            !int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-            return;
-
+        if (state.MemberStack.Count is 0) return;
         var pending = state.MemberStack.Peek();
-        switch (reader.GetAttribute("Name"))
+        var name = reader.GetAttribute("Name");
+        if (name is "ExecutableLines") pending.HasExecutableLines = true;
+        if (!int.TryParse(reader.GetAttribute("Value"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            return;
+        switch (name)
         {
             case "CyclomaticComplexity":
                 pending.Complexity = value;
                 break;
             case "ExecutableLines":
                 pending.ExecutableLines = value >= 0 ? value : null;
+                break;
+            case "LinesOfCode":
+                pending.LegacyExecutableLines = value >= 0 ? value : null;
                 break;
         }
     }
@@ -240,7 +246,7 @@ public static class CodeMetricsReader
 
         return new CodeMetricsMember(typeName, memberName, kind, arity, complexity, pending.Display)
         {
-            ExecutableLines = pending.ExecutableLines,
+            ExecutableLines = pending.HasExecutableLines ? pending.ExecutableLines : pending.LegacyExecutableLines,
             File = pending.File
         };
     }
