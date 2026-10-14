@@ -23,6 +23,8 @@ description: >-
    the distinction between PR/main validation and release-triggered packing
    and publication. DotCov's Linux/Windows test matrix applies to ordinary CI;
    Fallout upstream's release-only cross-platform policy does not apply here.
+   Pull requests run `build`, `test` and the Linux `badge-action`; the consumer and
+   README badge matrices run on pushes to main and on tags, and `publish` needs them.
    The `badge-action` Linux/Windows matrix invokes the composite action with
    its default tool installation against a local bare origin; preserve that isolation
    and its publication dependency so validation never recreates GitHub's `badges` branch.

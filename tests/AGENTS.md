@@ -82,7 +82,7 @@ den Repository-Wrapper ebenfalls als echten Prozess: Parameter, Eingaben und Exi
 - `BadgeActionTests` laufen auch unter Windows und wählen dort explizit Git for Windows' Bash
   statt eines möglichen WSL-Bash auf PATH. Die `badge-action`-CI-Matrix prüft zusätzlich die
   Composite Action mit dem lokal gepackten Kandidaten und ihrem Standard-Installer auf Linux
-  und Windows; Pushes gehen ausschließlich an ein lokales Bare-Repository.
+  und Windows (Pull Requests nur Linux); Pushes gehen ausschließlich an ein lokales Bare-Repository.
 
 ## Isolation messen
 
