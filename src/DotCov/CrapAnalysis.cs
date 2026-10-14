@@ -269,7 +269,14 @@ public static class CrapAnalysis
 
         var compatible = candidates.Where(i => logical.Arity is null || members[i].Arity is null ||
             logical.Arity == members[i].Arity).ToList();
-        if (compatible.Count is 1) consumed.Add(compatible[0]);
+        ConsumeUniqueExecutableMetrics(compatible, members, consumed);
+    }
+
+    private static void ConsumeUniqueExecutableMetrics(
+        IEnumerable<int> candidates, IReadOnlyList<CodeMetricsMember> members, HashSet<int> consumed)
+    {
+        var executable = candidates.Where(i => members[i].ExecutableLines is not 0).Take(2).ToList();
+        if (executable.Count is 1) consumed.Add(executable[0]);
     }
 
     /// <summary>
@@ -506,8 +513,8 @@ public static class CrapAnalysis
     }
 
     /// <summary>
-    /// The metrics-file complexity for <paramref name="logical"/>, marking every consulted
-    /// member as matched; null when the table has no counterpart.
+    /// The metrics-file complexity for <paramref name="logical"/>, marking only a unique
+    /// executable candidate as matched; null when the table has no counterpart.
     /// </summary>
     private static int? MatchMetrics(
         LogicalMethod logical,
@@ -523,8 +530,8 @@ public static class CrapAnalysis
         {
             // Overload disambiguation by arity when both sides know it. When arity is unknown
             // (folded state machines/lambdas) or nothing matches it, take the MAX complexity
-            // among the same-named candidates — the conservative direction for a gate — and
-            // mark every candidate consulted as matched.
+            // among the same-named candidates — the conservative direction for a gate.
+            // Consulting an ambiguous candidate does not prove it has coverage.
             var pool = candidates;
             if (logical.Arity is { } a)
             {
@@ -532,10 +539,10 @@ public static class CrapAnalysis
                 if (exact.Count > 0) pool = exact;
             }
 
+            ConsumeUniqueExecutableMetrics(pool, members, consumed);
             var best = 0;
             foreach (var i in pool)
             {
-                consumed.Add(i);
                 best = Math.Max(best, members[i].CyclomaticComplexity);
             }
             return best;

@@ -226,7 +226,7 @@ public sealed class CrapAnalysisEdgeTests
     }
 
     [Test]
-    public async Task UnparseableSignature_ArityUnknown_TakesTheMaxAcrossOverloads()
+    public async Task UnparseableSignature_ArityUnknown_TakesTheMaxButLeavesAmbiguousMetricsUnmatched()
     {
         var metrics = new[]
         {
@@ -240,7 +240,8 @@ public sealed class CrapAnalysisEdgeTests
 
             var m = await Assert.That(report.Methods).HasSingleItem();
             await Assert.That(m.Complexity).IsEqualTo(7);
-            await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+            await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(2);
+            await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
         }
     }
 

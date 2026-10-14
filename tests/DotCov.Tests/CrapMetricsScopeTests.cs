@@ -8,6 +8,67 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task MeasuredOverload_CannotConsumeItsUnmeasuredSibling(bool embeddedComplexity)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)",
+                embeddedComplexity ? "1" : null, m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.M(int x)", 1, 1).Method("void A.M(string x)", 9, 1));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.Methods.Single().Complexity).IsEqualTo(embeddedComplexity ? 1 : 9);
+        await Assert.That(report.UnmatchedMetricsMembers)
+            .IsEquivalentTo(["void A.M(int x)", "void A.M(string x)"]);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task ZeroBodyOverload_DoesNotMakeExecutableMatchAmbiguous(bool exclude)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
+            .AddClass("src/A.g.cs", "App.A", c => c.Method("M", "(System.String)", "1", m => m.Line(2, 1)))
+            .ToBytes());
+        var coverage = CoberturaParser.ParseMethods(input);
+        if (exclude) coverage = coverage.Exclude([".g.cs"], []);
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Method("void A.M(int x)", 1, 0).Method("void A.M(string x)", 9, 1));
+
+        var report = CrapAnalysis.Analyze(coverage, metrics);
+
+        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        await Assert.That(report.Methods.Count).IsEqualTo(exclude ? 1 : 2);
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
+    public async Task Cli_MeasuredSameArityOverload_CannotPassWithAnUninstrumentedSibling()
+    {
+        using var ws = TempWorkspace.Create("dotcov-crap-measured-overload-");
+        var coverage = ws.Write("coverage.cobertura.xml", Cobertura.NewDoc()
+            .AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, 1)))
+            .ToBytes());
+        var metrics = ws.Write("metrics.xml", CodeMetricsReportBuilder.Create().Namespace("App", t => t
+            .Type("A", m => m.Method("void A.M(int x)", 1, 1).Method("void A.M(string x)", 9, 1))).ToBytes());
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var exit = await DotCovCli.RunAsync(
+            ["crap", coverage, "--metrics", metrics, "--format", "json"], stdout, stderr);
+
+        await Assert.That(exit).IsEqualTo(DotCovCli.NoDataExitCode);
+        using var json = JsonDocument.Parse(stdout.ToString());
+        await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
+        await Assert.That(stderr.ToString()).Contains("2 metrics members without coverage data");
+    }
+
+    [Test]
     [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(string x)", 2)]
     [Arguments("", "void A.M(int x)", "void A.M(string x)", 2)]
     [Arguments("(System.Int32)", "void A.M(int x)", "void A.M(int x, int y)", 1)]
