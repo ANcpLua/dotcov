@@ -38,7 +38,8 @@ public enum CodeMetricsMemberKind
 /// <c>Name</c> attribute so it can match Cobertura method names directly.
 /// </param>
 /// <param name="Kind">Member kind — accessors and methods are gate-matchable; aggregates are fallbacks.</param>
-/// <param name="Arity">Parameter count when the display string carries a parameter list, else <c>null</c>.</param>
+/// <param name="Arity">Parameter count from a method or indexer display, including the value
+/// parameter for indexer setters; otherwise <c>null</c>.</param>
 /// <param name="CyclomaticComplexity">Roslyn's cyclomatic complexity for the member.</param>
 /// <param name="DisplayName">The raw <c>Name</c> attribute, kept verbatim for unmatched-member listings.</param>
 public readonly record struct CodeMetricsMember(
@@ -308,8 +309,8 @@ public static class CodeMetricsReader
         string head, int? arity, string enclosingSimpleName)
     {
         var segment = LastDotSegment(head);
-        if (TryAccessorName(head, segment, arity, out var accessor))
-            return (accessor, null, CodeMetricsMemberKind.Accessor);
+        if (TryAccessorName(head, segment, arity, out var accessor, out var accessorArity))
+            return (accessor, accessorArity, CodeMetricsMemberKind.Accessor);
 
         if (TryOperatorName(head, arity, out var op))
             return (op, arity, CodeMetricsMemberKind.Method);
@@ -341,14 +342,22 @@ public static class CodeMetricsReader
     /// Accessor displays are paren-less and end in <c>.get</c> / <c>.set</c> / <c>.init</c> /
     /// <c>.add</c> / <c>.remove</c> — normalized to the coverage spelling (<c>get_Value</c>).
     /// </summary>
-    private static bool TryAccessorName(string head, string segment, int? arity, out string name)
+    private static bool TryAccessorName(string head, string segment, int? arity,
+        out string name, out int? accessorArity)
     {
         name = "";
+        accessorArity = null;
         if (arity is not null || !AccessorPrefixes.TryGetValue(segment, out var prefix))
             return false;
 
         var owner = LastDotSegment(head[..(head.Length - segment.Length - 1)]);
-        if (owner.StartsWith("this[", StringComparison.Ordinal)) owner = "Item";
+        if (owner.StartsWith("this[", StringComparison.Ordinal))
+        {
+            if (owner.EndsWith(']'))
+                accessorArity = BalancedText.CountTopLevelItems(owner.AsSpan(5, owner.Length - 6)) +
+                    (prefix == "set_" ? 1 : 0);
+            owner = "Item";
+        }
         name = prefix + owner;
         return true;
     }

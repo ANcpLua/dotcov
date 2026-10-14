@@ -253,6 +253,21 @@ public sealed class CodeMetricsReaderEdgeTests
     }
 
     [Test]
+    [Arguments("int A.this[int i].get", 1)]
+    [Arguments("void A.this[int i].set", 2)]
+    [Arguments("void A.this[int i].init", 2)]
+    [Arguments("int A.this[int i, int j].get", 2)]
+    [Arguments("void A.this[Dictionary<string, int> map, (int, int) pair, int[,] grid].set", 4)]
+    [Arguments("int A.this[int i]invalid.get", null)]
+    public async Task IndexerAccessorArity_IncludesIndicesAndSetterValue(string display, int? expected)
+    {
+        var member = await One(ParseMethod(display, type: "A"));
+
+        await Assert.That(member.Kind).IsEqualTo(CodeMetricsMemberKind.Accessor);
+        await Assert.That(member.Arity).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task ArrayReturnOperator_BracketsBeforeTheOperatorMarkerStayBalanced()
     {
         var m = await One(ParseMethod("int[] GlobalThing.operator +(GlobalThing a, int[,] b)"));

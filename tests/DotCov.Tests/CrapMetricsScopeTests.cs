@@ -8,6 +8,36 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsScopeTests
 {
     [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task OverloadedIndexers_UseAccessorParameterCountsForCompleteness(bool missingSetter)
+    {
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c =>
+        {
+            c.Method("get_Item", "(System.Int32)", null, m => m.Line(1, 1));
+            c.Method("set_Item", "(System.Int32,System.String)", null, m => m.Line(2, 1));
+            c.Method("get_Item", "(System.Int32,System.Int32)", null, m => m.Line(3, 1));
+            if (!missingSetter)
+                c.Method("set_Item", "(System.Int32,System.Int32,System.String)", null, m => m.Line(4, 1));
+        }).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
+            .Property("string A.this[int x]", 2, a => a
+                .Method("string A.this[int x].get", 1, 1)
+                .Method("void A.this[int x].set", 1, 1))
+            .Property("string A.this[int x, int y]", 2, a => a
+                .Method("string A.this[int x, int y].get", 1, 1)
+                .Method("void A.this[int x, int y].set", 1, 1)));
+
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
+
+        await Assert.That(report.Methods.Count).IsEqualTo(missingSetter ? 3 : 4);
+        await Assert.That(report.Unscored).IsEmpty();
+        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(missingSetter
+            ? ["void A.this[int x, int y].set"] : Array.Empty<string>());
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(missingSetter ? GateOutcome.NoData : GateOutcome.Pass);
+    }
+
+    [Test]
     [Arguments(0, 0, GateOutcome.Pass)]
     [Arguments(0, 1, GateOutcome.Pass)]
     [Arguments(1, 0, GateOutcome.Pass)]
