@@ -206,8 +206,9 @@ public static class CrapAnalysis
     public static CrapReport Analyze(MethodCoverageReport report, IReadOnlyList<CodeMetricsMember>? metricsMembers = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var (selectedMetrics, exclusion) = report.SelectMetrics(metricsMembers);
-        var analysis = AnalyzeCore(report.Methods, selectedMetrics, report.ExcludedMethods, report.SourceRoots);
+        var normalizedMetrics = metricsMembers?.Select(m => m with { File = MetricsFile(m.File, report.SourceRoots) }).ToArray();
+        var (selectedMetrics, exclusion) = report.SelectMetrics(normalizedMetrics);
+        var analysis = AnalyzeCore(report.Methods, selectedMetrics, report.ExcludedMethods);
         return new CrapReport(analysis.Methods, analysis.Unscored, analysis.UnmatchedMetricsMembers)
         {
             AmbiguousFiles = report.AmbiguousFiles,
@@ -230,25 +231,25 @@ public static class CrapAnalysis
     public static CrapReport Analyze(
         IReadOnlyList<MethodCoverage> methods,
         IReadOnlyList<CodeMetricsMember>? metricsMembers = null) =>
-        AnalyzeCore(methods, metricsMembers, [], []);
+        AnalyzeCore(methods, metricsMembers, []);
 
     private static CrapReport AnalyzeCore(
         IReadOnlyList<MethodCoverage> methods,
         IReadOnlyList<CodeMetricsMember>? metricsMembers,
-        IReadOnlyList<MethodCoverage> excludedMethods, IReadOnlyList<string> sourceRoots)
+        IReadOnlyList<MethodCoverage> excludedMethods)
     {
         var order = FoldRawEntries(methods);            // 1. raw coverage → logical source methods
         FoldSyntheticGroups(order);                     // 2. state machines/lambdas → their origin
 
         var excluded = FoldRawEntries(excludedMethods);
         FoldSyntheticGroups(excluded);
-        metricsMembers = PrepareMetrics(metricsMembers, order.Concat(excluded), sourceRoots);
+        metricsMembers = PrepareMetrics(metricsMembers, order.Concat(excluded));
         var metricSignatures = metricsMembers?.Select(static m => MethodSignatures.Metrics(m.DisplayName)).ToArray() ?? [];
-        var qualifications = MethodSignatures.GenericQualifications(order.Concat(excluded).Select(static m => m.Signature),
+        var qualifications = MethodSignatures.TypeQualifications(order.Concat(excluded).Select(static m => m.Signature),
             metricSignatures);
         foreach (var logical in order.Concat(excluded))
-            logical.Signature = MethodSignatures.QualifyGenerics(logical.Signature, qualifications);
-        var signatures = metricSignatures.Select(s => MethodSignatures.QualifyGenerics(s, qualifications, fromMetrics: true)).ToArray();
+            logical.Signature = MethodSignatures.QualifyTypes(logical.Signature, qualifications);
+        var signatures = metricSignatures.Select(s => MethodSignatures.QualifyTypes(s, qualifications, fromMetrics: true)).ToArray();
         var consumed = new HashSet<int>();
         // Exclusions remove methods from the measurement scope, not from the metrics file.
         // Match their identities without scoring them, even when they have no line data.
@@ -312,8 +313,7 @@ public static class CrapAnalysis
     }
 
     private static IReadOnlyList<CodeMetricsMember>? PrepareMetrics(
-        IReadOnlyList<CodeMetricsMember>? members, IEnumerable<LogicalMethod> methods,
-        IReadOnlyList<string> roots)
+        IReadOnlyList<CodeMetricsMember>? members, IEnumerable<LogicalMethod> methods)
     {
         if (members is null) return null;
         // Legacy callers supplied the generic-stripped TypeName. Recover arity only when
@@ -324,7 +324,7 @@ public static class CrapAnalysis
         {
             TypeIdentity = m.TypeIdentity ?? (types.TryGetValue(m.TypeName, out var identities) &&
                 identities.Length == 1 ? identities[0] : null),
-            File = MetricsFile(m.File, roots)
+            File = MetricsFile(m.File, [])
         }).ToArray();
     }
 

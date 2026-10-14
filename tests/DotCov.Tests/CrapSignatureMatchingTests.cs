@@ -15,13 +15,14 @@ public sealed class CrapSignatureMatchingTests
     [Arguments("char x = ','", "System.Char")]
     [Arguments("string x = \"a,(b)=c\"", "System.String")]
     [Arguments("List<int> x", "System.Collections.Generic.List`1<System.Int32>")]
-    [Arguments("(int,string) x", "(System.Int32,System.String)")]
+    [Arguments("(int,string) x", "System.ValueTuple`2<System.Int32,System.String>")]
     [Arguments("int[,] x", "System.Int32[,]")]
     [Arguments("params int[] x", "System.Int32[]")]
     [Arguments("ref int x", "System.Int32&")]
     [Arguments("out int x", "System.Int32&")]
     [Arguments("in int x", "System.Int32&")]
     [Arguments("global::App.Widget x", "App.Widget")]
+    [Arguments("Widget x", "App.Widget")]
     public async Task CompleteSameArityOverloads_MatchTypesAndKeepTheirOwnComplexity(
         string parameter, string ilType)
     {

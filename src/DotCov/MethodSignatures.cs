@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text;
 
 namespace DotCov;
 
@@ -25,10 +26,13 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
     private static partial Regex ConstructedArity();
 
-    [GeneratedRegex(@"[\p{L}_][\w.]*(?=<)", RegexOptions.CultureInvariant)]
-    private static partial Regex GenericNames();
+    private const int MaxSignatureLength = 16_384;
+    // Tokenize with the linear engine; no delimiter lookahead can force retries
+    // over every suffix of a long, untrusted identifier.
+    private static readonly Regex TypeNamePattern = new(@"[\p{L}_][\w.]*",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
-    internal static Dictionary<string, string?> GenericQualifications(IEnumerable<string?> coverage,
+    internal static Dictionary<string, string?> TypeQualifications(IEnumerable<string?> coverage,
         IEnumerable<string?> metrics)
     {
         var names = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -39,7 +43,7 @@ internal static partial class MethodSignatures
         void AddNames(string? signature, bool includeUnqualified)
         {
             if (signature is null) return;
-            foreach (Match match in GenericNames().Matches(signature))
+            foreach (Match match in TypeNamePattern.Matches(signature))
             {
                 var name = match.Value;
                 if (!includeUnqualified && !name.Contains('.')) continue;
@@ -50,23 +54,27 @@ internal static partial class MethodSignatures
         }
     }
 
-    internal static string? QualifyGenerics(string? signature, Dictionary<string, string?> names,
+    internal static string? QualifyTypes(string? signature, Dictionary<string, string?> names,
         bool fromMetrics = false)
     {
         if (signature is null) return null;
-        if (fromMetrics && GenericNames().Matches(signature).Any(match =>
+        if (fromMetrics && TypeNamePattern.Matches(signature).Any(match =>
                 names.TryGetValue(match.Value, out var name) && name is null)) return null;
-        return GenericNames().Replace(signature, match => names.GetValueOrDefault(match.Value) ?? match.Value);
+        return TypeNamePattern.Replace(signature, match => (names.GetValueOrDefault(match.Value) ?? match.Value));
     }
 
     internal static string? Coverage(string signature)
     {
+        if (signature.Length > MaxSignatureLength)
+            throw new InvalidDataException("Coverage signature exceeds 16384 characters.");
         if (signature.Length < 2 || signature[0] is not '(' || signature[^1] is not ')') return null;
         return string.Join(",", BalancedText.SplitTopLevel(signature[1..^1]).Select(NormalizeType));
     }
 
     internal static string? Metrics(string display)
     {
+        if (display.Length > MaxSignatureLength)
+            throw new InvalidDataException("Metrics member display exceeds 16384 characters.");
         string parameters;
         string? valueType = null;
         if (display.EndsWith(')'))
@@ -104,6 +112,99 @@ internal static partial class MethodSignatures
         return string.Join(",", types);
     }
 
+    private sealed class TupleFrame(int angle, int array, int start, bool nullable)
+    {
+        public readonly int Angle = angle;
+        public readonly int Array = array;
+        public readonly bool Nullable = nullable;
+        public int ElementStart = start;
+        public int Items = 1;
+        public int RestDepth;
+    }
+
+    private static string LowerTuples(string type)
+    {
+        var closes = new Dictionary<int, int>();
+        var opens = new Stack<int>();
+        for (var i = 0; i < type.Length; i++)
+        {
+            if (type[i] == '(')
+            {
+                if (opens.Count == 64) throw new InvalidDataException("Tuple nesting exceeds 64 levels.");
+                opens.Push(i);
+            }
+            else if (type[i] == ')')
+            {
+                if (!opens.TryPop(out var open)) throw new InvalidDataException("Unbalanced tuple type.");
+                closes.Add(open, i);
+            }
+        }
+        if (opens.Count != 0) throw new InvalidDataException("Unbalanced tuple type.");
+        var output = new StringBuilder(type.Length);
+        var frames = new Stack<TupleFrame>();
+        var angle = 0;
+        var array = 0;
+        for (var i = 0; i < type.Length; i++)
+        {
+            var c = type[i];
+            if (c == '(')
+            {
+                var close = closes[i];
+                var nullable = close + 1 < type.Length && type[close + 1] == '?';
+                if (nullable) output.Append("System.Nullable<");
+                output.Append("System.ValueTuple<");
+                frames.Push(new TupleFrame(angle, array, output.Length, nullable));
+            }
+            else if (c == ')')
+            {
+                var frame = frames.Pop();
+                TrimTupleName(output, frame.ElementStart);
+                output.Append('>', frame.RestDepth + 1);
+                if (frame.Nullable)
+                {
+                    output.Append('>');
+                    i++;
+                }
+            }
+            else if (c == ',' && frames.TryPeek(out var frame) && frame.Angle == angle && frame.Array == array)
+            {
+                TrimTupleName(output, frame.ElementStart);
+                output.Append(',');
+                if (frame.Items++ % 7 == 0)
+                {
+                    output.Append("System.ValueTuple<");
+                    frame.RestDepth++;
+                }
+                frame.ElementStart = output.Length;
+            }
+            else
+            {
+                output.Append(c);
+                switch (c)
+                {
+                    case '<': angle++; break;
+                    case '>': angle--; break;
+                    case '[': array++; break;
+                    case ']': array--; break;
+                }
+            }
+        }
+        return output.ToString();
+    }
+
+    private static void TrimTupleName(StringBuilder output, int start)
+    {
+        var end = output.Length;
+        while (end > start && char.IsWhiteSpace(output[end - 1])) end--;
+        if (end == start) throw new InvalidDataException("Tuple element is empty.");
+        var word = end;
+        while (word > start && (char.IsLetterOrDigit(output[word - 1]) || output[word - 1] is '_' or '@')) word--;
+        if (word == end || word == start || !char.IsWhiteSpace(output[word - 1])) return;
+        var prefix = word;
+        while (prefix > start && char.IsWhiteSpace(output[prefix - 1])) prefix--;
+        if (prefix > start) output.Length = prefix;
+    }
+
     private static string NormalizeType(string type)
     {
         type = type.Trim().Replace("global::", "", StringComparison.Ordinal);
@@ -112,8 +213,9 @@ internal static partial class MethodSignatures
                     type.StartsWith("out ", StringComparison.Ordinal) ||
                     type.StartsWith("in ", StringComparison.Ordinal);
         if (byRef) type = type[(type.IndexOf(' ') + 1)..];
+        type = LowerTuples(type);
         type = TypeWords().Replace(type, static word => Aliases.GetValueOrDefault(word.Value, word.Value));
-        type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value[..^1]}>");
+        type = NullableValueTypes().Replace(type, static match => $"System.Nullable`1<{match.Value}>");
         return ConstructedArity().Replace(type.Replace(" ", "", StringComparison.Ordinal), "") + (byRef ? "&" : "");
     }
 }

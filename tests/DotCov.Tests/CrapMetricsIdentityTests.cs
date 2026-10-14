@@ -5,6 +5,35 @@ namespace DotCov.Tests;
 public sealed class CrapMetricsIdentityTests
 {
     [Test]
+    public async Task LongNonGenericIdentifier_StaysWithinLinearSignatureProcessing()
+    {
+        var identifier = new string('A', 16_000);
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", $"({identifier})", "1", m => m.Line(1, 1))).ToBytes());
+        var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input));
+        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task OversizedSignature_IsRejectedThroughCli(bool metricsTooLong)
+    {
+        using var ws = TempWorkspace.Create("dotcov-signature-limit-");
+        var identifier = new string('A', 16_385);
+        var coverage = ws.Write("coverage.xml", Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
+            .Method("M", metricsTooLong ? "()" : $"({identifier})", "1", m => m.Line(1, 1))).ToBytes());
+        var metrics = ws.Write("metrics.xml", CodeMetricsReportBuilder.Create()
+            .Namespace("App", t => t.Type("A", m => m.Method($"void A.M({identifier} value)", 2, 1))).ToBytes());
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        string[] args = metricsTooLong ? ["crap", coverage, "--metrics", metrics] : ["crap", coverage];
+        var exitCode = await DotCovCli.RunAsync(args, stdout, stderr);
+        await Assert.That(exitCode).IsEqualTo(2);
+        await Assert.That(stderr.ToString()).Contains("exceeds 16384 characters");
+    }
+
+    [Test]
     [Arguments("App.A/<M>d__0", "MoveNext", "()", true)]
     [Arguments("App.A", "M", "()", false)]
     [Arguments("App.A", "M", "unknown", true)]
