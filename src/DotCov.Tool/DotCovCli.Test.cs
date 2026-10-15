@@ -35,10 +35,18 @@ public static partial class DotCovCli
         // test log goes to a file in the run directory (never into memory: a verbose suite can
         // log a lot) and reaches stderr only when the run fails.
         var logFile = output.Format is "table" ? null : Path.Combine(results, "dotnet-test.log");
+        // The Microsoft static tracker buffers hits privately on Unix. Its timer and normal
+        // ProcessExit flush do not finalize a fast unhandled child exception. Ship a managed
+        // startup hook with this run so the real counters are published before termination.
+        var hook = Path.Combine(results, "DotCov.CoverageHook.dll");
+        await using (var resource = typeof(DotCovCli).Assembly.GetManifestResourceStream("DotCov.CoverageHook.dll")!)
+        await using (var destination = File.Create(hook))
+            await resource.CopyToAsync(destination);
+
         int exitCode;
         await using (var file = logFile is null ? null : new StreamWriter(logFile))
             exitCode = await RunDotNet(TestArguments(opts.GetValueOrDefault("file"), results, forwarded),
-                file ?? stdout, opts.ContainsKey("no-color"));
+                file ?? stdout, opts.ContainsKey("no-color"), hook);
 
         // Coverage from a failed run measures tests that did not pass; it is not evaluated. Its
         // own exit code keeps a failing test apart from a report dotcov could not read.
@@ -141,7 +149,7 @@ public static partial class DotCovCli
     /// runs, selects the same dotnet; otherwise dotnet comes from PATH. --no-color reaches it as
     /// NO_COLOR=1, so its output is as plain as dotcov's.
     /// </summary>
-    static async Task<int> RunDotNet(List<string> arguments, TextWriter log, bool noColor)
+    static async Task<int> RunDotNet(List<string> arguments, TextWriter log, bool noColor, string hook)
     {
         var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : "dotnet";
         await log.WriteLineAsync($"> {string.Join(' ', arguments.Prepend(dotnet).Select(Quote))}");
@@ -155,6 +163,10 @@ public static partial class DotCovCli
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
         if (noColor) start.Environment["NO_COLOR"] = "1";
+        start.Environment.TryGetValue("DOTNET_STARTUP_HOOKS", out var existingHooks);
+        start.Environment["DOTNET_STARTUP_HOOKS"] = string.IsNullOrEmpty(existingHooks)
+            ? hook
+            : existingHooks + Path.PathSeparator + hook;
 
         using var process = new Process();
         process.StartInfo = start;

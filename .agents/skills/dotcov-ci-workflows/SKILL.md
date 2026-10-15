@@ -32,11 +32,15 @@ description: >-
      `github.ref_type == 'tag'`, including a dispatch against a tag; a branch
      dispatch publishes packages only. Preserve public-feed/source verification:
      upload acceptance is not download availability.
+   - `build` runs `.github/tests/startup_coverage.py` against the built tool;
+     `verify-published` repeats it through the public native tool. Preserve original
+     child failures, existing startup hooks and exact raw branch counts.
 
 3. Preserve the measurement contract in the [test guide](../../../tests/AGENTS.md)
    and [build wrapper](../../../build/Build.cs): native MTP with coverlet.MTP,
    enabled by `-p:Coverage=true`, and 100% line and branch thresholds with every
-   `src` project measured. Missing reports or projects cannot produce a pass.
+   `src` project, including `DotCov.CoverageHook`, measured. Missing reports or
+   projects cannot produce a pass.
    Locally, use `fallout Coverage` for fresh coverage or supply one concrete run
    directory with `--reports`. CI's `--reports TestResults --badge-directory badge`
    is valid because its checkout is fresh. The CI coverage gate runs only on Ubuntu;

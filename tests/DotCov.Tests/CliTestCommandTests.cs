@@ -13,6 +13,7 @@ namespace DotCov.Tests;
 /// </summary>
 [TestClass]
 [TestCategory("Integration")]
+[ResourceLock(ProcessState.Environment)]
 public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
 {
     private const string TestingPlatformCoverage = "--coverage --coverage-output-format cobertura";
@@ -93,6 +94,19 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
         var run = await Dotcov(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["DOTNET_TEST_RUNNER"] = runner }, "test", "missing.csproj", "--min-line", "80");
         Assert.Contains(coverage, run.StdOut);
         AssertNotEvaluated(run);
+    }
+
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task ExistingStartupHook_IsRetainedAndCanCoexistWithTheEmbeddedHook()
+    {
+        var hook = Path.Combine(AppContext.BaseDirectory, "DotCov.CoverageHook.dll");
+        var run = await Dotcov(testContext.CancellationToken, _ws.Root,
+            new Dictionary<string, string?> { ["DOTNET_STARTUP_HOOKS"] = hook },
+            "test", "missing.csproj", "--min-line", "80");
+        AssertNotEvaluated(run);
+        Assert.Contains("does not exist", run.StdOut);
+        Assert.DoesNotContain("startup hook", run.StdOut.ToLowerInvariant());
     }
 
     // ── What reaches dotnet test ──

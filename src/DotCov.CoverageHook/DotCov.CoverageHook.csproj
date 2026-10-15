@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Loaded by the measured .NET process, including targets older than the tool. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Description>Flushes Microsoft static coverage counters before unhandled managed termination.</Description>
+  </PropertyGroup>
+</Project>

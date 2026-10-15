@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.6.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.7.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.6.0 prevents the tool pointer from becoming available before its runtime packages can be downloaded.
-The release workflow verifies public package indexes, registration, downloads and source commits before publishing the pointer, then installs and exercises the public native tool before creating the GitHub Release.
-Keeps bounded availability waits, retained diagnostics, all existing test and coverage gates, and the 4.5.0 branch ownership fix. CLI commands, JSON and exit codes are unchanged.
+DotCov 4.7.0 preserves pending Microsoft static coverage hits when a managed child terminates with an unhandled exception.
+The test command adds an embedded startup hook that flushes the active collector's real counters before termination, while preserving existing startup hooks, the original exception and process exit.
+Includes real MSTest startup coverage checks for the built tool and public native package. No source rewrites, exclusions, count adjustments or CLI exit-code changes.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

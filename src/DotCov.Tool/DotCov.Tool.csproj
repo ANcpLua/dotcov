@@ -23,6 +23,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DotCov\DotCov.csproj" />
+    <!-- Embed the managed hook; it must not become an AOT input or runtime dependency. -->
+    <ProjectReference Include="..\DotCov.CoverageHook\DotCov.CoverageHook.csproj"
+                      ReferenceOutputAssembly="false" PrivateAssets="all"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;PublishAot;SelfContained;PublishTrimmed;PublishSingleFile" />
+    <EmbeddedResource Include="..\DotCov.CoverageHook\bin\$(Configuration)\netstandard2.0\DotCov.CoverageHook.dll"
+                      LogicalName="DotCov.CoverageHook.dll" />
   </ItemGroup>
 
 </Project>

@@ -68,7 +68,9 @@ description: >-
 6. Require `verify-published` to verify all seven public packages and install the
    exact native tool from nuget.org. Its smoke check compares the native binary
    with its public package and exercises the version, captured report and both
-   gate outcomes. `release` depends on this job. Retain the verification artifacts;
+   gate outcomes. It also runs the real MSTest startup fixture through the public
+   native tool, preserving crashing-child diagnostics, existing startup hooks and
+   exact raw branches. `release` depends on this job. Retain the verification artifacts;
    a green upload step alone does not establish a usable release.
    Inspect the actual run's job and step conclusions, then verify every expected
    package ID/version in the destination feed. A green run with skipped publishing

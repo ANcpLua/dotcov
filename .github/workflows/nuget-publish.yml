@@ -77,6 +77,15 @@ jobs:
       - run: dotnet build DotCov.slnx -c Release -p:Version=${{ needs.version.outputs.version }}
         env:
           CI: true
+      - name: Verify startup-error coverage with the built tool
+        run: python3 -B .github/tests/startup_coverage.py --tool src/DotCov.Tool/bin/Release/net10.0/DotCov.Tool.dll --output artifacts/startup-coverage
+      - name: Retain startup-error coverage evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: startup-coverage
+          path: artifacts/startup-coverage/
+          if-no-files-found: error
 
   test:
     needs: version
@@ -654,6 +663,8 @@ jobs:
           python3 .github/scripts/verify_publication.py smoke \
             --version "$VERSION" --commit "$GITHUB_SHA" --runtime linux-x64 \
             --output artifacts/public-release --tool "$RUNNER_TEMP/published-dotcov/dotcov"
+      - name: Verify startup-error coverage with the public native tool
+        run: python3 -B .github/tests/startup_coverage.py --tool "$RUNNER_TEMP/published-dotcov/dotcov" --output artifacts/public-release/startup
       - name: Retain public package and installed-tool evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

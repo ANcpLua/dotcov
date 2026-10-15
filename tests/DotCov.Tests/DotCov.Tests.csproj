@@ -12,12 +12,13 @@
        The explicit exclude is required: without one, coverlet.MTP excludes every assembly
        already loaded in the test process, which silently drops DotCov.dll from the report. -->
   <PropertyGroup Condition="'$(Coverage)' == 'true'">
-    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --coverlet --coverlet-output-format cobertura --coverlet-file-prefix dotcov --coverlet-include [DotCov]* --coverlet-include [DotCov.Tool]* --coverlet-include [DotCov.Fallout]* --coverlet-exclude [DotCov.Fallout.TestBuild]* --coverlet-exclude-by-attribute System.Runtime.CompilerServices.CompilerGeneratedAttribute --coverlet-exclude-by-attribute System.CodeDom.Compiler.GeneratedCodeAttribute --coverlet-exclude-by-file **/obj/**/*.cs</TestingPlatformCommandLineArguments>
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --coverlet --coverlet-output-format cobertura --coverlet-file-prefix dotcov --coverlet-include [DotCov]* --coverlet-include [DotCov.Tool]* --coverlet-include [DotCov.Fallout]* --coverlet-include [DotCov.CoverageHook]* --coverlet-exclude [DotCov.Fallout.TestBuild]* --coverlet-exclude-by-attribute System.Runtime.CompilerServices.CompilerGeneratedAttribute --coverlet-exclude-by-attribute System.CodeDom.Compiler.GeneratedCodeAttribute --coverlet-exclude-by-file **/obj/**/*.cs</TestingPlatformCommandLineArguments>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\build\DotCov.Build.csproj" />
     <ProjectReference Include="..\..\src\DotCov\DotCov.csproj" />
+    <ProjectReference Include="..\..\src\DotCov.CoverageHook\DotCov.CoverageHook.csproj" />
     <ProjectReference Include="..\..\src\DotCov.Tool\DotCov.Tool.csproj" />
     <ProjectReference Include="..\..\src\DotCov.Fallout\DotCov.Fallout.csproj" />
     <ProjectReference Include="..\DotCov.Fallout.TestBuild\DotCov.Fallout.TestBuild.csproj" />

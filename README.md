@@ -86,6 +86,10 @@ dotcov is built to be driven by a coding agent:
 
 A directory is searched for `**/*cobertura*.xml` and every match is merged, so a sharded test
 matrix needs no merge step. Other file names need `--pattern` (`--pattern "**/coverage.xml"`).
+
+With Microsoft coverage, `dotcov test` also flushes pending counters when a managed child
+terminates with an unhandled exception. Existing startup hooks, the exception and its
+process exit are preserved.
 `dotcov --help` lists every option.
 
 ## Exit codes
@@ -185,7 +189,7 @@ permissions:
 
 steps:
   # … checkout, setup-dotnet, and a test run writing Cobertura to TestResults/
-  - uses: ANcpLua/dotcov/.github/actions/badge@v4.6.0
+  - uses: ANcpLua/dotcov/.github/actions/badge@v4.7.0
     with:
       reports: TestResults
       min-line: 80
@@ -220,4 +224,4 @@ fallout Test                                # the tests
 fallout Coverage                            # the tests plus the 100% coverage gate
 ```
 
-[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.6.0.md) · [MIT](LICENSE)
+[Issues](https://github.com/ANcpLua/dotcov/issues) · [Release notes](docs/releases/4.7.0.md) · [MIT](LICENSE)

@@ -22,7 +22,7 @@ Prefer a repository-pinned `DotCov.Tool`: restore its tool manifest and invoke i
 use the repository's preferred scope and version; the global installation command
 is `dotnet tool install --global DotCov.Tool`. Record the actual version, and inspect
 `dotcov <command> --help` for the installed contract. The guidance here was checked
-against DotCov 4.6.0.
+against DotCov 4.7.0.
 
 ## Collect, inspect, and gate
 
@@ -93,10 +93,13 @@ owners, not just source-line numbers. Distinct methods or generated classes can
 share a line and reuse condition numbers. DotCov 4.5.0 preserves those owners;
 older versions can undercount them. A collector can also omit executed outcomes:
 compare the resolved coverage extension as well as the test SDK, with the same
-tests and settings. MSTest SDK 4.5.1 selects Microsoft coverage 18.12.0, which fixes
-the observed 18.11.0 child-process discrepancy. Keep malformed-input warnings and
-uncovered outcomes visible; source rewrites and new exclusions do not establish a
-measurement fix.
+tests and settings. Microsoft static coverage 18.11.0 and 18.12.0 can lose the last
+hits of a fast unhandled child failure. DotCov 4.7.0's `test` command adds a managed
+startup hook that flushes the active tracker's real counters before termination,
+while preserving existing hooks, the exception and exit. An SDK upgrade alone is
+not proof of a fix: repeat collection and inspect the specific raw branch outcome.
+Keep malformed-input warnings and uncovered outcomes visible; source rewrites and
+new exclusions do not establish a measurement fix.
 
 For .NET risk analysis, `crap` needs complexity for every method: Coverlet can embed
 it, or `--metrics` can supply matching .NET metrics. Vitest/c8/Jest and coverage.py

@@ -31,6 +31,12 @@ DotCov creates `TestResults/<run>` itself and gates only that run. Stderr names 
 report directory. Pass additional `dotnet test` arguments after `--`; DotCov adapts
 the positional project/solution to the SDK runner's syntax.
 
+DotCov 4.7.0 adds a managed startup hook for Microsoft's static tracker so pending
+hits are flushed before unhandled managed child termination. Existing startup hooks
+remain in the environment. Keep the test-run directory: it contains the extracted
+hook, raw reports and, for JSON/markdown output, `dotnet-test.log`. Direct producer
+commands do not acquire this finalization by later running `dotcov report`.
+
 - Native Microsoft.Testing.Platform requires
   `Microsoft.Testing.Extensions.CodeCoverage`. DotCov supplies `--coverage` and
   `--coverage-output-format cobertura`.
