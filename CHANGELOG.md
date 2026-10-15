@@ -1,6 +1,13 @@
 # Changelog
 
-Rolling task-session log, oldest → newest, capped at 20 entries.
+Release entries are newest first; historical task entries retain their original order.
+
+## 4.3.1 — 2026-10-15
+
+- Add the repository-hosted `dotcov` skill for coverage collection and result interpretation in consuming repositories.
+- Refresh CI and release skills for the current workflows, release notes, package set, and published-tool verification.
+- Update ANcpLua.Analyzers from 2.1.3 to 2.1.5; CLI behavior and coverage contracts are unchanged.
+- Full notes: [4.3.1](docs/releases/4.3.1.md).
 
 ## Task 6 — 2026-05-15 — `TryGetLineStatus` sibling (additive)
 

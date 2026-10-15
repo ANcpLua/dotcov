@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.1</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.3.0 makes the TypeScript path and the crap scope explicit.
-README: Vitest (accurate source branches) and c8 (zero-config wrapper around node --test) produce Cobertura for check; Jest still works.
-crap is for .NET: a report in which no method has complexity (Istanbul: Vitest, c8, Jest; coverage.py) now gets a NODATA reason that says so instead of pointing at dotnet msbuild.
+DotCov 4.3.1 adds a repository-hosted skill for collecting and interpreting coverage in consuming projects.
+Repository CI and release skills now cover current event matrices, release notes, complete package publication, and installed-tool verification.
+Updates ANcpLua.Analyzers to 2.1.5. CLI behavior, coverage gates, and JSON output contracts are unchanged.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>
