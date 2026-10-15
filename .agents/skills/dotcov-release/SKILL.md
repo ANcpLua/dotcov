@@ -11,8 +11,17 @@ description: >-
 1. Use the requested version, source commit/ref, and destination. Read that ref's
    [release workflow](../../../.github/workflows/nuget-publish.yml): the selected
    ref determines the workflow and checked-out source. Check existing tags and
-   package versions before choosing a release trigger; never move a release tag
-   or treat `--skip-duplicate` as proof that a package came from this commit.
+   package versions before choosing a release trigger. Never move a tag once any
+   package for that version or its GitHub Release exists. Do not treat
+   `--skip-duplicate` as proof that a package came from this commit.
+
+   A failed, wholly unpublished release can reuse the requested version. Confirm
+   that publishing never ran, every expected package ID/version is absent from
+   the feed, and no GitHub Release exists. Fix the failure and keep every required
+   check. Existing authorization to release that version covers moving its
+   unpublished tag to the corrected commit; push with `--force-with-lease` pinned
+   to the verified old tag SHA. If publication started or its state is uncertain,
+   stop this recovery path and establish what shipped before choosing a retry.
 2. Prepare the versioned files together:
 
    - [Directory.Build.props](../../../Directory.Build.props): `VersionPrefix` and
