@@ -44,6 +44,12 @@ public sealed class TempWorkspace : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+        if (!Directory.Exists(Root)) return;
+
+        // Git object files are read-only on Windows. They still belong to this workspace.
+        foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+            File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly);
+
+        Directory.Delete(Root, recursive: true);
     }
 }

@@ -33,6 +33,23 @@ public sealed class TempWorkspaceTests
     }
 
     [TestMethod]
+    public void Dispose_RemovesReadOnlyNestedFilesAndDirectory()
+    {
+        var file = _workspace.Write("objects/ab/readonly-object", "object");
+        File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+        try
+        {
+            _workspace.Dispose();
+            Assert.IsFalse(Directory.Exists(_workspace.Root));
+        }
+        finally
+        {
+            // Let independent test cleanup remove the fixture even if disposal regresses.
+            if (File.Exists(file)) File.SetAttributes(file, FileAttributes.Normal);
+        }
+    }
+
+    [TestMethod]
     public void Dispose_CalledTwice_DoesNotThrow()
     {
         _workspace.Dispose();

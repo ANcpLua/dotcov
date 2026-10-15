@@ -5,7 +5,7 @@ Release entries are newest first; historical task entries retain their original 
 ## 4.4.0 — 2026-10-15
 
 - Migrate the full test suite to MSTest 4.5.1 on native Microsoft.Testing.Platform.
-- Preserve all 1,999 existing test cases and add two scenario-provider contract tests.
+- Preserve all 1,999 existing test cases and add two scenario-provider contract tests plus a Windows workspace-cleanup regression.
 - Use native assertions, data rows, combinations, resource locks, cooperative cancellation, and per-test upload fixtures.
 - Remove the previous framework completely and update repository commands and guidance; retain the same Coverlet coverage scope and 100% gates.
 - Full notes: [4.4.0](docs/releases/4.4.0.md).

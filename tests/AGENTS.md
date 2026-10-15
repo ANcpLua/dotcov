@@ -18,7 +18,8 @@ dotnet test --project tests/DotCov.Tests --list-tests
 
 The Fallout `--filter` parameter forwards the native MSTest test-case expression.
 Discover new cases before executing them. The migration preserves all 1,999
-existing cases and adds two scenario-provider contract tests (2,001 total).
+existing cases and adds two scenario-provider contract tests plus a read-only
+workspace cleanup regression (2,002 total).
 Use `--report-trx` for structured execution results; resolve additional options
 from the actual runner's `--help` rather than assuming another runner's flags.
 
