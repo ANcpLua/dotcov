@@ -2,6 +2,15 @@
 
 Release entries are newest first; historical task entries retain their original order.
 
+## 4.5.0 — 2026-10-15
+
+- Preserve package, class, method and signature ownership for branch observations through parsing and merging.
+- Count distinct owners sharing a source line independently, while deduplicating repeated class summaries and repeated reports.
+- Fix the captured async/lambda false pass: 4/6 branch outcomes now remain 4/6, instead of collapsing to 3/4.
+- Expose scoped branch observations through `FileCoverage.BranchesByOrigin`; retain same-owner mismatch warnings and conservative merge state.
+- Preserve the existing measurement scope, exclusions, 100% gates, CLI exit codes and JSON fields.
+- Full notes: [4.5.0](docs/releases/4.5.0.md).
+
 ## 4.4.0 — 2026-10-15
 
 - Migrate the full test suite to MSTest 4.5.1 on native Microsoft.Testing.Platform.

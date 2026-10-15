@@ -21,6 +21,7 @@ public sealed class CoreApiHardeningTests
         Assert.IsEmpty(f.LineHits);
         Assert.IsEmpty(f.BranchesByLine);
         Assert.IsEmpty(f.ConditionsByLine);
+        Assert.IsEmpty(f.BranchesByOrigin);
         Assert.IsEmpty(f.UncoveredLines);
         Assert.IsEmpty(f.PartialBranches);
         Assert.AreEqual(LineStatus.Miss, f.GetLineStatus(1));

@@ -172,6 +172,7 @@ public static partial class CoberturaParser
     /// </summary>
     private sealed class DocumentContext(IdentityScope scope, string? sourceName)
     {
+        public string PackageName = "";
         public readonly List<string> SourceRoots = [];
         public readonly List<CoverageWarning> Warnings = [];
         public readonly List<AmbiguousFile> AmbiguousFiles = [];
@@ -208,10 +209,15 @@ public static partial class CoberturaParser
     /// </summary>
     private static void Visit(XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods)
     {
+        if (reader.NodeType is XmlNodeType.EndElement && reader.LocalName is "package")
+            document.PackageName = "";
         if (reader.NodeType is not XmlNodeType.Element) return;
 
         switch (reader.LocalName)
         {
+            case "package":
+                document.PackageName = reader.IsEmptyElement ? "" : reader.GetAttribute("name") ?? "";
+                break;
             case "source":
                 ConsumeSource(reader, document);
                 break;
@@ -224,10 +230,15 @@ public static partial class CoberturaParser
     private static async ValueTask VisitAsync(
         XmlReader reader, DocumentContext document, FileCollector files, CancellationToken ct)
     {
+        if (reader.NodeType is XmlNodeType.EndElement && reader.LocalName is "package")
+            document.PackageName = "";
         if (reader.NodeType is not XmlNodeType.Element) return;
 
         switch (reader.LocalName)
         {
+            case "package":
+                document.PackageName = reader.IsEmptyElement ? "" : reader.GetAttribute("name") ?? "";
+                break;
             case "source":
                 if (reader.IsEmptyElement) return;
                 var sourceDepth = reader.Depth;
@@ -325,32 +336,48 @@ public static partial class CoberturaParser
     private static ClassContext? CreateClassContext(
         XmlReader reader, DocumentContext document, FileCollector? files, MethodCollector? methods) =>
         DecodeFileName(reader, document) is { } file
-            ? new ClassContext(file, reader.GetAttribute("name") ?? "", document, files?.For(file), methods)
+            ? new ClassContext(file, document.PackageName, reader.GetAttribute("name") ?? "", document, files, methods)
             : null;
 
     private sealed class ClassContext(
-        string file, string className, DocumentContext document, LineAccumulator? fileAcc, MethodCollector? methods)
+        string file, string package, string className, DocumentContext document, FileCollector? files, MethodCollector? methods)
     {
         private MethodCollector.Entry? _methodAcc;
-        // Method lines wait for the class end: istanbul lists each function's declaration line
-        // there, which is not a line of its own line coverage, so a class-level summary wins.
-        private readonly LineAccumulator? _methodLines = fileAcc is null ? null : new LineAccumulator(file, document);
+        private readonly LineAccumulator? _classLines = files is null ? null : new LineAccumulator(file, document);
+        private readonly Dictionary<BranchOrigin, LineAccumulator> _methodLines = new();
+        private LineAccumulator? _methodLineAcc;
         private bool _inMethod;
-        // The class-level <lines> ELEMENT, not a line under it: an empty summary (<lines/>) is
-        // still the class's own statement that it has no lines.
+        // An empty class summary still says that no source lines were measured (istanbul).
         private bool _hasClassLines;
+        private LineAccumulator? LineTarget => _inMethod ? _methodLineAcc : _classLines;
 
-        private LineAccumulator? LineTarget => _inMethod ? _methodLines : fileAcc;
-
-        /// <summary>
-        /// The one finalisation of a class, shared by the sync and async walks: pending condition
-        /// detail is validated, and method lines stand in for a class without a class-level summary.
-        /// </summary>
         public void Complete()
         {
-            _methodLines?.Flush();
-            fileAcc?.Flush();
-            if (!_hasClassLines) fileAcc?.AddFrom(_methodLines!);
+            if (files is null) return;
+            _classLines!.Flush();
+            var hits = new Dictionary<int, int>();
+            var origins = new Dictionary<BranchOrigin, BranchCoverage>();
+            if (_hasClassLines)
+            {
+                foreach (var (line, count) in _classLines.LineHits) hits[line] = count;
+                AddOrigin(new BranchOrigin(package, className, null, ""), _classLines);
+            }
+            foreach (var (origin, lines) in _methodLines)
+            {
+                lines.Flush();
+                if (!_hasClassLines)
+                    foreach (var (line, count) in lines.LineHits)
+                        hits[line] = hits.TryGetValue(line, out var prior) ? Math.Max(prior, count) : count;
+                AddOrigin(origin, lines);
+            }
+            files.Add(FileCoverage.FromOrigins(file, hits, origins));
+            return;
+
+            void AddOrigin(BranchOrigin origin, LineAccumulator lines)
+            {
+                var data = lines.Materialize(file, _hasClassLines ? _classLines.LineHits : null);
+                if (data.BranchesByLine.Count > 0) origins[origin] = new BranchCoverage(data);
+            }
         }
 
         public void Visit(XmlReader sub)
@@ -360,40 +387,35 @@ public static partial class CoberturaParser
                 if (sub.LocalName is "method") EndMethod();
                 return;
             }
-
             if (sub.NodeType is not XmlNodeType.Element) return;
-
             switch (sub.LocalName)
             {
-                case "method":
-                    BeginMethod(sub);
-                    break;
-                case "lines":
-                    _hasClassLines |= !_inMethod;
-                    break;
-                case "line":
-                    AddLine(sub);
-                    break;
-                case "condition":
-                    LineTarget?.AddCondition(sub);
-                    break;
+                case "method": BeginMethod(sub); break;
+                case "lines": _hasClassLines |= !_inMethod; break;
+                case "line": AddLine(sub); break;
+                case "condition": LineTarget?.AddCondition(sub); break;
             }
         }
 
         private void BeginMethod(XmlReader sub)
         {
+            var name = sub.GetAttribute("name") ?? "";
+            var signature = sub.GetAttribute("signature") ?? "";
             if (methods is not null)
-                MethodSignatures.ValidateLength(sub.GetAttribute("signature") ?? "",
-                    $"Coverage signature for {className}.{sub.GetAttribute("name")} in {file}");
-            _methodAcc = methods?.For(
-                new MethodKey(file, className, sub.GetAttribute("name") ?? "", sub.GetAttribute("signature") ?? ""),
-                DecodeComplexity(sub.GetAttribute("complexity")));
+                MethodSignatures.ValidateLength(signature, $"Coverage signature for {className}.{name} in {file}");
+            _methodAcc = methods?.For(new MethodKey(file, className, name, signature), DecodeComplexity(sub.GetAttribute("complexity")));
             _inMethod = !sub.IsEmptyElement;
-            if (sub.IsEmptyElement) _methodAcc = null;
+            if (!_inMethod) { _methodAcc = null; return; }
+            if (files is null) return;
+            var origin = new BranchOrigin(package, className, name, signature);
+            if (!_methodLines.TryGetValue(origin, out _methodLineAcc))
+                _methodLines[origin] = _methodLineAcc = new LineAccumulator(file, document);
         }
 
         private void EndMethod()
         {
+            _methodLineAcc?.Flush();
+            _methodLineAcc = null;
             _methodAcc = null;
             _inMethod = false;
         }
@@ -402,8 +424,6 @@ public static partial class CoberturaParser
         {
             if (!TryDecodeLine(sub, file, document, out var line))
             {
-                // A skipped line takes its nested <condition>s with it; they must not
-                // attach to the previous branched line.
                 LineTarget?.SkipLine();
                 return;
             }
@@ -577,48 +597,30 @@ public static partial class CoberturaParser
 
     // ── File aggregation ──────────────────────────────────────────────────────
     //
-    // Cobertura emits one `<class>` block per IL type. A single source file routinely
-    // produces several: the source class itself, each compiler-synthesized state-machine
-    // class for async methods, each nested record's Equals/GetHashCode shim, and so on.
-    // Within one block, every `<method><lines>` and the class-level summary `<lines>`
-    // repeat the same line numbers with the same or different hit counts. Hit counts and
-    // branch (Covered, Total) pairs are reconciled with Math.Max; per-condition detail
-    // unions only between equal condition-number sets, exactly as FileCoverage.MergeWith
-    // does across documents.
-
+    // Lines deduplicate by source location; branches retain their package/type/method
+    // owner. Repeated class blocks and separate reports use the same scoped merge.
     private sealed class FileCollector(DocumentContext document)
     {
-        // Ordinal, not OrdinalIgnoreCase: case-differing filenames are genuinely distinct
-        // files on the Linux filesystems the format's native emitters run on. Windows
-        // cross-report stability comes from normalizing the key itself in ResolveFileKey.
-        private readonly Dictionary<string, LineAccumulator> _files = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, FileCoverage> _files = new(StringComparer.Ordinal);
 
-        public LineAccumulator For(string file)
+        public void Add(FileCoverage file)
         {
-            if (!_files.TryGetValue(file, out var acc))
-                _files[file] = acc = new LineAccumulator(file, document);
-            return acc;
-        }
-
-        public CoverageReport Materialize()
-        {
-            var result = new List<FileCoverage>(_files.Count);
-            foreach (var (filename, acc) in _files)
-                result.Add(acc.Materialize(filename));
-
-            return new CoverageReport(result)
+            if (_files.TryGetValue(file.Path, out var prior))
             {
-                Warnings = document.Warnings,
-                Inputs = document.SourceName is { } input ? [input] : [],
-                // A report whose ONLY declared root is the no-op sentinel exposes no roots at
-                // all — lone <source>.</source> adds no identity information. Mixed declarations
-                // keep the sentinel so Merge can tell ('.', '/real') apart from ('/real').
-                SourceRoots = document.SourceRoots.Count is 1 && document.SourceRoots[0].Length is 0
-                    ? []
-                    : document.SourceRoots,
-                AmbiguousFiles = document.AmbiguousFiles
-            };
+                var (merged, warnings) = prior.MergeWith(file);
+                _files[file.Path] = merged;
+                foreach (var warning in warnings) document.Warn(warning);
+            }
+            else _files[file.Path] = file;
         }
+
+        public CoverageReport Materialize() => new(_files.Values.ToArray())
+        {
+            Warnings = document.Warnings,
+            Inputs = document.SourceName is { } input ? [input] : [],
+            SourceRoots = document.SourceRoots.Count is 1 && document.SourceRoots[0].Length is 0 ? [] : document.SourceRoots,
+            AmbiguousFiles = document.AmbiguousFiles
+        };
     }
 
     /// <summary>
@@ -733,13 +735,7 @@ public static partial class CoberturaParser
             MergeConditionSet(pending.Line, pending.Conditions);
         }
 
-        /// <summary>Fold another accumulator's lines, branches and conditions into this one.</summary>
-        public void AddFrom(LineAccumulator other)
-        {
-            foreach (var (line, hits) in other._lineHits) MergeHits(line, hits);
-            foreach (var (line, (covered, total)) in other._branchesByLine) MergeBranches(line, covered, total);
-            foreach (var (line, conds) in other._conditionsByLine) MergeConditionSet(line, conds);
-        }
+        public IReadOnlyDictionary<int, int> LineHits => _lineHits;
 
         private void MergeHits(int line, int hits) =>
             _lineHits[line] = _lineHits.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
@@ -762,8 +758,8 @@ public static partial class CoberturaParser
                 return;
             }
 
-            // Either side already poisoned (it warned then): absorbing, no second warning.
-            if (existing.Count is 0 || incoming.Count is 0)
+            // Earlier observations poisoned this owner; Flush only passes nonempty detail.
+            if (existing.Count is 0)
             {
                 existing.Clear();
                 return;
@@ -785,7 +781,7 @@ public static partial class CoberturaParser
         private void Warn(CoverageWarningKind kind, int line, string detail) =>
             document.Warn(new CoverageWarning(kind, file, line, detail));
 
-        public FileCoverage Materialize(string filename)
+        public FileCoverage Materialize(string filename, IReadOnlyDictionary<int, int>? retainedLines = null)
         {
             // Keep per-condition detail where it reconstructs the line aggregate as 2-outcome
             // jumps, and keep the poison sentinel. Detail can still fall short of a line whose
@@ -799,7 +795,15 @@ public static partial class CoberturaParser
                 if (conds.Count is 0 || conds.Count * 2 == _branchesByLine[line].Total)
                     conditionsByLine[line] = new Dictionary<int, int>(conds);
 
-            return FileCoverage.FromLineData(filename, _lineHits, _branchesByLine, conditionsByLine);
+            var hits = _lineHits;
+            var branches = _branchesByLine;
+            if (retainedLines is not null)
+            {
+                hits = hits.Where(pair => retainedLines.ContainsKey(pair.Key)).ToDictionary();
+                branches = branches.Where(pair => retainedLines.ContainsKey(pair.Key)).ToDictionary();
+                conditionsByLine = conditionsByLine.Where(pair => retainedLines.ContainsKey(pair.Key)).ToDictionary();
+            }
+            return FileCoverage.FromLineData(filename, hits, branches, conditionsByLine);
         }
     }
 

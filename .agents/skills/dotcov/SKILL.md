@@ -22,7 +22,7 @@ Prefer a repository-pinned `DotCov.Tool`: restore its tool manifest and invoke i
 use the repository's preferred scope and version; the global installation command
 is `dotnet tool install --global DotCov.Tool`. Record the actual version, and inspect
 `dotcov <command> --help` for the installed contract. The guidance here was checked
-against DotCov 4.3.0.
+against DotCov 4.5.0.
 
 ## Collect, inspect, and gate
 
@@ -87,6 +87,16 @@ warnings even when the gate passes. Apply exclusions only when they match the
 repository's policy: `--exclude-generated` also removes `Program.cs` and migrations;
 `--exclude-external` removes dependency SourceLink paths. `--keep` exempts matching
 paths from exclusions. Changing these changes the measured scope.
+
+When counts disagree with the producer, retain its original XML and compare branch
+owners, not just source-line numbers. Distinct methods or generated classes can
+share a line and reuse condition numbers. DotCov 4.5.0 preserves those owners;
+older versions can undercount them. A collector can also omit executed outcomes:
+compare the resolved coverage extension as well as the test SDK, with the same
+tests and settings. MSTest SDK 4.5.1 selects Microsoft coverage 18.12.0, which fixes
+the observed 18.11.0 child-process discrepancy. Keep malformed-input warnings and
+uncovered outcomes visible; source rewrites and new exclusions do not establish a
+measurement fix.
 
 For .NET risk analysis, `crap` needs complexity for every method: Coverlet can embed
 it, or `--metrics` can supply matching .NET metrics. Vitest/c8/Jest and coverage.py

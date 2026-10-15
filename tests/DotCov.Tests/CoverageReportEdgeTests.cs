@@ -196,7 +196,7 @@ public sealed class CoverageReportEdgeTests
         // per-condition union, and a poisoned line keeps only its raw aggregate, even though
         // one side's own count (2 covered, from the condition union of its two class blocks)
         // is higher.
-        var a = Cobertura.NewDoc().AddClass("src/W.cs", c => c.Line(1, 3).Line(2, 0).BranchWithConditions(5, "25% (1/4)", (1, "50%"), (2, "0%")).Branch(9, "50% (1/2)")).AddClass("src/W.cs", "W/<Run>d__0", c => c.BranchWithConditions(5, "25% (1/4)", (1, "0%"), (2, "50%"))).Parse();
+        var a = Cobertura.NewDoc().AddClass("src/W.cs", c => c.Line(1, 3).Line(2, 0).BranchWithConditions(5, "25% (1/4)", (1, "50%"), (2, "0%")).Branch(9, "50% (1/2)")).AddClass("src/W.cs", "src.W.cs", c => c.BranchWithConditions(5, "25% (1/4)", (1, "0%"), (2, "50%"))).Parse();
         var b = Cobertura.NewDoc().AddClass("src/W.cs", c => c.Line(2, 1).Line(3, 0).BranchWithConditions(5, "25% (1/4)", (1, "0%"), (3, "50%")).Branch(9, "100% (2/2)")).Parse();
         var merged = CoverageReport.Merge(a, b);
         var file = merged.Files.Single();

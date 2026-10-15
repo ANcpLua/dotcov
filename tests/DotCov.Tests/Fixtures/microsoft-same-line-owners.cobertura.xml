@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='utf-8'?>
+<coverage branches-covered="4" branches-valid="6" branch-rate="0.6666666666666666">
+  <packages>
+    <package name="Architecture.Testing">
+      <classes>
+        <class line-rate="1" branch-rate="0.5" complexity="2" name="Architecture.Testing.RunningSystem.&lt;&gt;c" filename="src/RunningSystem.cs">
+          <methods>
+            <method line-rate="1" branch-rate="0.5" complexity="2" name="&lt;StartAsync&gt;b__23_0" signature="(Architecture.Testing.BrickAttribute)">
+              <lines>
+                <line number="107" hits="1" branch="True" condition-coverage="50% (1/2)">
+                  <conditions>
+                    <condition number="0" type="jump" coverage="50%" />
+                  </conditions>
+                </line>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="107" hits="1" branch="True" condition-coverage="50% (1/2)">
+              <conditions>
+                <condition number="0" type="jump" coverage="50%" />
+              </conditions>
+            </line>
+          </lines>
+        </class>
+        <class line-rate="0.8461538461538461" branch-rate="0.7272727272727273" complexity="22" name="Architecture.Testing.RunningSystem.&lt;StartAsync&gt;d__23" filename="src/RunningSystem.cs">
+          <methods>
+            <method line-rate="0.8461538461538461" branch-rate="0.7272727272727273" complexity="22" name="MoveNext" signature="()">
+              <lines>
+                <line number="107" hits="1" branch="True" condition-coverage="75% (3/4)">
+                  <conditions>
+                    <condition number="0" type="jump" coverage="100%" />
+                    <condition number="1" type="jump" coverage="50%" />
+                  </conditions>
+                </line>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="107" hits="1" branch="True" condition-coverage="75% (3/4)">
+              <conditions>
+                <condition number="0" type="jump" coverage="100%" />
+                <condition number="1" type="jump" coverage="50%" />
+              </conditions>
+            </line>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

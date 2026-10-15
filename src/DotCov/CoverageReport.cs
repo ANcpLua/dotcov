@@ -5,6 +5,22 @@ namespace DotCov;
 public readonly record struct BranchDetail(int Line, int Covered, int Total);
 
 /// <summary>
+/// Identity of a Cobertura branch owner within a file. Condition numbers are local to
+/// an IL method, not to a source line. A null Method denotes the class summary;
+/// summaries repeat method measurements and are reconciled rather than added to them.
+/// </summary>
+public readonly record struct BranchOrigin(string Package, string Class, string? Method, string Signature);
+
+/// <summary>Branch measurements and condition identities belonging to exactly one owner.</summary>
+public sealed class BranchCoverage
+{
+    internal BranchCoverage(FileCoverage data) => Data = data;
+    internal FileCoverage Data { get; }
+    public IReadOnlyDictionary<int, (int Covered, int Total)> BranchesByLine => Data.BranchesByLine;
+    public IReadOnlyDictionary<int, IReadOnlyDictionary<int, int>> ConditionsByLine => Data.ConditionsByLine;
+}
+
+/// <summary>
 /// Codecov-style three-state line classification. A line that was executed but whose
 /// conditional branches were not all exercised is <see cref="Partial"/> — distinct from
 /// <see cref="Hit"/> (fully exercised) and <see cref="Miss"/> (not executed at all).
@@ -43,7 +59,7 @@ public enum CoverageWarningKind
 
     /// <summary>
     /// Per-condition detail for the same source line arrived with different condition
-    /// <c>number</c> sets — from two reports, or from two <c>&lt;class&gt;</c> blocks of one
+    /// <c>number</c> sets — for the same branch owner, from two reports or repeated blocks of one
     /// document. Coverlet's condition numbers are IL branch offsets, stable only within one
     /// IL method of one build, so unioning mismatched sets would invent branch totals no
     /// emitter reported. The parser and <see cref="FileCoverage.MergeWith"/> apply the same
@@ -217,9 +233,9 @@ public readonly record struct FileCoverage(
     /// order reports are folded in. A poisoned line contributes only its raw line-level
     /// aggregate. Detail present on only one side is carried forward unchanged so a later
     /// merge can still union it; the line aggregate never regresses below what the
-    /// line-level union observed. The parser applies the same rule to the
-    /// <c>&lt;class&gt;</c> blocks of one document, so one document with two blocks and two
-    /// merged documents give the same numbers and the same warnings.
+    /// line-level union observed. The parser applies the same rule to repeated observations of the same
+    /// owner. Distinct owners have independent condition-number spaces; their branch
+    /// counts add. See <see cref="BranchesByOrigin"/> for those scoped observations.
     /// </para>
     /// <para>
     /// Two different checks guard the derived aggregate. Within one document, a
@@ -237,6 +253,21 @@ public readonly record struct FileCoverage(
         get => field ?? NoConditions;
         init;
     } = NoConditions;
+
+    /// <summary>
+    /// Branch observations keyed by package, class, method name and signature. Distinct
+    /// methods/classes contribute separate outcomes even on the same source line. A class
+    /// summary repeats its methods; it is a per-line floor, never an additional method.
+    /// This map retains condition numbers in their original scope through report merges.
+    /// For a line with several owners, use this map instead of ConditionsByLine, whose
+    /// integer keys alone cannot represent several independent condition-number spaces.
+    /// Empty for records constructed without origin information.
+    /// </summary>
+    public IReadOnlyDictionary<BranchOrigin, BranchCoverage> BranchesByOrigin
+    {
+        get => field ?? ReadOnlyDictionary<BranchOrigin, BranchCoverage>.Empty;
+        private init;
+    } = ReadOnlyDictionary<BranchOrigin, BranchCoverage>.Empty;
 
     /// <summary>
     /// Codecov-style three-state classification for a single source line. Returns
@@ -374,12 +405,102 @@ public readonly record struct FileCoverage(
             mergedHits[line] = mergedHits.TryGetValue(line, out var existing) ? Math.Max(existing, hits) : hits;
 
         var warnings = new List<CoverageWarning>();
+        if (BranchesByOrigin.Count > 0 || other.BranchesByOrigin.Count > 0)
+            return (MergeOrigins(other, mergedHits, warnings), warnings);
+
         var mergedBranches = MergeBranches(other, warnings);
         var mergedConditions = MergeConditions(other, warnings);
 
         return (FromLineData(Path, mergedHits, mergedBranches, mergedConditions,
             MaxCounts(LineCountFloor, other.LineCountFloor),
             MaxCounts(BranchCountFloor, other.BranchCountFloor)), warnings);
+    }
+
+    // An old, hand-built FileCoverage has no owner metadata. Keep its observations as
+    // a file-level floor, rather than guessing that they describe an additional IL method.
+    private static readonly BranchOrigin Unattributed = new("", "", null, "");
+
+    private FileCoverage MergeOrigins(FileCoverage other, Dictionary<int, int> hits, List<CoverageWarning> warnings)
+    {
+        var origins = OriginData();
+        foreach (var (origin, incoming) in other.OriginData())
+        {
+            if (origins.TryGetValue(origin, out var existing))
+            {
+                var (merged, anomalies) = existing.Data.MergeWith(incoming.Data);
+                origins[origin] = new BranchCoverage(merged);
+                warnings.AddRange(anomalies);
+            }
+            else origins[origin] = incoming;
+        }
+        return FromOrigins(Path, hits, origins,
+            MaxCounts(LineCountFloor, other.LineCountFloor),
+            MaxCounts(BranchCountFloor, other.BranchCountFloor));
+    }
+
+    private Dictionary<BranchOrigin, BranchCoverage> OriginData() => BranchesByOrigin.Count > 0
+        ? new Dictionary<BranchOrigin, BranchCoverage>(BranchesByOrigin)
+        : BranchesByLine.Count > 0
+            ? new Dictionary<BranchOrigin, BranchCoverage> { [Unattributed] = new(this) }
+            : new Dictionary<BranchOrigin, BranchCoverage>();
+
+    internal static FileCoverage FromOrigins(
+        string path, Dictionary<int, int> hits, Dictionary<BranchOrigin, BranchCoverage> origins,
+        (int Hit, int Total) lineCountFloor = default, (int Hit, int Total) branchCountFloor = default)
+    {
+        var branches = new Dictionary<int, (int Covered, int Total)>();
+        var conditions = new Dictionary<int, IReadOnlyDictionary<int, int>>();
+        var owners = new Dictionary<int, int>();
+        foreach (var group in origins.Where(static pair => pair.Key != Unattributed)
+                     .GroupBy(static pair => (pair.Key.Package, pair.Key.Class)))
+        {
+            var methods = new Dictionary<int, (int Covered, int Total)>();
+            var summary = new Dictionary<int, (int Covered, int Total)>();
+            foreach (var (origin, data) in group)
+            {
+                foreach (var (line, b) in data.BranchesByLine)
+                {
+                    var target = origin.Method is null ? summary : methods;
+                    var observation = origin.Method is null && group.Any(pair => pair.Key.Method is not null && pair.Value.BranchesByLine.ContainsKey(line))
+                        ? data.Data.RawBranchesByLine[line] : b;
+                    var prior = target.GetValueOrDefault(line);
+                    target[line] = (prior.Covered + observation.Covered, prior.Total + observation.Total);
+                    // A summary's condition numbers cannot identify a particular method when
+                    // several methods share the line. Flatten only a single effective owner.
+                    if (origin.Method is null && group.Any(pair => pair.Key.Method is not null && pair.Value.BranchesByLine.ContainsKey(line)))
+                        continue;
+                    owners[line] = owners.GetValueOrDefault(line) + 1;
+                    if (data.ConditionsByLine.TryGetValue(line, out var detail)) conditions[line] = detail;
+                }
+            }
+            foreach (var (line, b) in summary)
+            {
+                var method = methods.GetValueOrDefault(line);
+                methods[line] = (Math.Max(method.Covered, b.Covered), Math.Max(method.Total, b.Total));
+            }
+            foreach (var (line, b) in methods)
+            {
+                var prior = branches.GetValueOrDefault(line);
+                branches[line] = (prior.Covered + b.Covered, prior.Total + b.Total);
+            }
+        }
+        if (origins.TryGetValue(Unattributed, out var fallback))
+        {
+            foreach (var (line, b) in fallback.BranchesByLine)
+            {
+                var prior = branches.GetValueOrDefault(line);
+                branches[line] = (Math.Max(prior.Covered, b.Covered), Math.Max(prior.Total, b.Total));
+                owners[line] = owners.GetValueOrDefault(line) + 1;
+                if (fallback.ConditionsByLine.TryGetValue(line, out var detail)) conditions[line] = detail;
+            }
+        }
+        foreach (var line in conditions.Keys.ToArray())
+            if (owners[line] > 1 || (conditions[line].Count > 0 && conditions[line].Count * 2 != branches[line].Total))
+                conditions.Remove(line);
+        return FromLineData(path, hits, branches, conditions, lineCountFloor, branchCountFloor) with
+        {
+            BranchesByOrigin = new ReadOnlyDictionary<BranchOrigin, BranchCoverage>(origins)
+        };
     }
 
     /// <summary>

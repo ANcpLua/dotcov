@@ -29,10 +29,10 @@ public sealed class ParserIntegrityTests : IDisposable
     public void ConditionIdentity_OneDocumentWithTwoBlocks_EqualsTwoMergedDocuments()
     {
         // The same measurements, packaged once as two <class> blocks of one document and once
-        // as two documents. Different condition numbers on line 10 do not identify the same
+        // as two documents. Different condition numbers for the same owner on line 10 do not identify the same
         // branches, so neither packaging may union them into a (2/4) the emitter never reported.
-        var oneDocument = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).AddClass("src/X.cs", "Ns.X/<Run>d__0", BlockWithCondition9).Parse();
-        var twoDocuments = CoverageReport.Merge(Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).Parse(), Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X/<Run>d__0", BlockWithCondition9).Parse());
+        var oneDocument = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).AddClass("src/X.cs", "Ns.X", BlockWithCondition9).Parse();
+        var twoDocuments = CoverageReport.Merge(Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).Parse(), Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition9).Parse());
         foreach (var report in new[]
         {
             oneDocument,
@@ -61,8 +61,8 @@ public sealed class ParserIntegrityTests : IDisposable
         // each other, exactly as two merged documents do.
         static void First(Cobertura.ClassBuilder c) => c.BranchWithConditions(10, "25% (1/4)", (5, "50%"), (7, "0%"));
         static void Second(Cobertura.ClassBuilder c) => c.BranchWithConditions(10, "25% (1/4)", (5, "0%"), (7, "50%"));
-        var oneDocument = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).AddClass("src/X.cs", "Ns.X/<>c", Second).Parse();
-        var twoDocuments = CoverageReport.Merge(Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).Parse(), Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X/<>c", Second).Parse());
+        var oneDocument = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).AddClass("src/X.cs", "Ns.X", Second).Parse();
+        var twoDocuments = CoverageReport.Merge(Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).Parse(), Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", Second).Parse());
         Assert.AreEqual((2, 4), oneDocument.Files.Single().BranchesByLine[10]);
         Assert.AreEqual((2, 4), twoDocuments.Files.Single().BranchesByLine[10]);
         Assert.IsEmpty(oneDocument.Warnings);
@@ -73,7 +73,7 @@ public sealed class ParserIntegrityTests : IDisposable
     {
         // A third block that agrees with the first cannot resurrect the detail: the poison is
         // absorbing, so the result does not depend on block order.
-        var report = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).AddClass("src/X.cs", "Ns.X/<A>d__0", BlockWithCondition9).AddClass("src/X.cs", "Ns.X/<B>d__1", c => c.BranchWithConditions(10, "100% (2/2)", (5, "100%"))).Parse();
+        var report = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).AddClass("src/X.cs", "Ns.X", BlockWithCondition9).AddClass("src/X.cs", "Ns.X", c => c.BranchWithConditions(10, "100% (2/2)", (5, "100%"))).Parse();
         var file = report.Files.Single();
         Assert.AreEqual((2, 2), file.BranchesByLine[10]); // raw Math.Max aggregate
         Assert.IsEmpty(file.ConditionsByLine[10]);
@@ -81,13 +81,14 @@ public sealed class ParserIntegrityTests : IDisposable
     }
 
     [TestMethod]
-    public void ConditionDetail_OnlyFromABlockWithASmallerTotal_FallsBackToTheAggregate()
+    public void ConditionDetail_DistinctOwnersWithDifferentTotals_ContributeBothAggregates()
     {
-        // Line 10's larger total came from a block without detail; one condition cannot stand for
-        // four outcomes, so the detail is left out — silently, nothing is malformed.
+        // The two classes own independent branches. Their counts add; integer condition
+        // numbers alone cannot represent both owners in ConditionsByLine.
         var report = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", c => c.BranchWithConditions(10, "50% (1/2)", (5, "50%"))).AddClass("src/X.cs", "Ns.X/<>c", c => c.Branch(10, "50% (2/4)")).Parse();
         var file = report.Files.Single();
-        Assert.AreEqual((2, 4), file.BranchesByLine[10]);
+        Assert.AreEqual((3, 6), file.BranchesByLine[10]);
+        Assert.AreEqual(2, file.BranchesByOrigin.Count);
         Assert.IsFalse(file.ConditionsByLine.ContainsKey(10));
         Assert.IsEmpty(report.Warnings);
     }
@@ -119,10 +120,10 @@ public sealed class ParserIntegrityTests : IDisposable
     }
 
     [TestMethod]
-    public void ConditionIdentity_MethodOnlyClasses_ApplyTheRuleWhenMethodLinesStandIn()
+    public void ConditionIdentity_MethodOnlyClasses_KeepIndependentBranchOwners()
     {
-        // Without class-level lines, method lines stand in for the file: two method-only blocks
-        // with different condition numbers on one line poison it, like class-level lines do.
+        // Without class-level lines, method lines stand in for the file. Different classes
+        // still own independent branches, even when their source line is identical.
         const string xml = """
             <coverage><packages><package><classes>
               <class name="Ns.X" filename="src/X.cs"><methods><method name="M" signature="()"><lines>
@@ -138,8 +139,8 @@ public sealed class ParserIntegrityTests : IDisposable
             </classes></package></packages></coverage>
             """;
         var report = ParseXml(xml);
-        Assert.AreEqual((1, 2), report.Files.Single().BranchesByLine[10]);
-        Assert.AreEqual(CoverageWarningKind.ConditionIdentityMismatch, report.Warnings.Single().Kind);
+        Assert.AreEqual((2, 4), report.Files.Single().BranchesByLine[10]);
+        Assert.IsEmpty(report.Warnings);
     }
 
     // ── A5: branch data that contradicts itself warns and never passes ────────
