@@ -1,0 +1,3 @@
+interface:
+  display_name: "DotCov"
+  short_description: "Run coverage and explain DotCov results in any repo"
