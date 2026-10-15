@@ -4,14 +4,14 @@
     <!-- Pin Fallout's transitive cryptography dependencies to the patched versions.
          NuGet also promotes these constraints when packing DotCov.Fallout. -->
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-    <TUnitVersion>1.75.0</TUnitVersion>
+    <MSTestVersion>4.5.1</MSTestVersion>
     <CoverletMtpVersion>10.1.0</CoverletMtpVersion>
     <FalloutVersion>10.4.0</FalloutVersion>
     <ANcpLuaAnalyzersVersion>2.1.5</ANcpLuaAnalyzersVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageVersion Include="TUnit" Version="$(TUnitVersion)" />
+    <PackageVersion Include="MSTest" Version="$(MSTestVersion)" />
     <PackageVersion Include="coverlet.MTP" Version="$(CoverletMtpVersion)" />
     <PackageVersion Include="Fallout.Common" Version="$(FalloutVersion)" />
     <PackageVersion Include="Fallout.Components" Version="$(FalloutVersion)" />

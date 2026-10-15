@@ -2,22 +2,18 @@ using System.Text;
 using System.Xml;
 
 namespace DotCov.Tests;
-
 /// <summary>
-/// <see cref="CodeMetricsReader"/> against the display strings Roslyn really writes. Every
+/// <see cref = "CodeMetricsReader"/> against the display strings Roslyn really writes. Every
 /// display below was produced by <c>MetricsOutputWriter</c>'s exact naming calls (namespace
 /// <c>ToDisplayString()</c>, member <c>MinimallyQualifiedFormat</c>) over real C# source, so
 /// the expected member names are the coverage spellings the IL carries for the same symbols.
 /// Plus the malformed and unusual document shapes the streaming reader must survive.
 /// </summary>
+[TestClass]
 public sealed class CodeMetricsReaderEdgeTests
 {
-    private static async Task<CodeMetricsMember> One(IReadOnlyList<CodeMetricsMember> members) =>
-        await Assert.That(members).HasSingleItem();
-
-    private static IReadOnlyList<CodeMetricsMember> ParseMethod(string display, string type = "GlobalThing", string ns = "MyApp") =>
-        CodeMetricsReportBuilder.ParseType(ns, type, m => m.Method(display, 3));
-
+    private static CodeMetricsMember One(IReadOnlyList<CodeMetricsMember> members) => Assert.ContainsSingle(members);
+    private static IReadOnlyList<CodeMetricsMember> ParseMethod(string display, string type = "GlobalThing", string ns = "MyApp") => CodeMetricsReportBuilder.ParseType(ns, type, m => m.Method(display, 3));
     private static IReadOnlyList<CodeMetricsMember> ParseRaw(string namespacesXml)
     {
         var xml = $"""
@@ -39,300 +35,236 @@ public sealed class CodeMetricsReaderEdgeTests
     }
 
     private const string Metric3 = """<Metrics><Metric Name="CyclomaticComplexity" Value="3" /></Metrics>""";
-
     // ── Real Roslyn shapes ────────────────────────────────────────────────────
-
-    [Test]
-    public async Task GlobalNamespace_DisplayName_ContributesNoTypePrefix()
+    [TestMethod]
+    public void GlobalNamespace_DisplayName_ContributesNoTypePrefix()
     {
         // Namespace names come from ToDisplayString(), which spells the global namespace
         // "<global namespace>". IL (and so every coverage report) names those types bare.
-        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "GlobalThing",
-            m => m.Method("void GlobalThing.Run()", 4));
-
-        var m = await One(members);
-        await Assert.That(m.TypeName).IsEqualTo("GlobalThing");
-        await Assert.That(m.MemberName).IsEqualTo("Run");
+        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "GlobalThing", m => m.Method("void GlobalThing.Run()", 4));
+        var m = One(members);
+        Assert.AreEqual("GlobalThing", m.TypeName);
+        Assert.AreEqual("Run", m.MemberName);
     }
 
-    [Test]
-    public async Task TopLevelStatements_RealEntryPointDisplay_NormalizesToProgramMain()
+    [TestMethod]
+    public void TopLevelStatements_RealEntryPointDisplay_NormalizesToProgramMain()
     {
         // MinimallyQualifiedFormat displays the synthesized entry point as
         // "<top-level-statements-entry-point>" (no type prefix, no parameter list), under
         // <NamedType Name="Program"> in the global namespace. Coverage names it Program/<Main>$,
         // which MethodIdentity folds to Program.Main.
-        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "Program",
-            m => m.Method("<top-level-statements-entry-point>", 5));
-
-        var m = await One(members);
-        await Assert.That(m.TypeName).IsEqualTo("Program");
-        await Assert.That(m.MemberName).IsEqualTo("Main");
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
-        await Assert.That(m.CyclomaticComplexity).IsEqualTo(5);
+        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "Program", m => m.Method("<top-level-statements-entry-point>", 5));
+        var m = One(members);
+        Assert.AreEqual("Program", m.TypeName);
+        Assert.AreEqual("Main", m.MemberName);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
+        Assert.AreEqual(5, m.CyclomaticComplexity);
     }
 
-    [Test]
-    [Arguments("(int A, string B) GlobalThing.Split(string s, char c)", "Split", 2)]
-    [Arguments("(int, (string, int)) GlobalThing.Nest()", "Nest", 0)]
-    [Arguments("(int, int)[] GlobalThing.Pairs(int count)", "Pairs", 1)]
-    [Arguments("ref (int, int) GlobalThing.Slot(int index)", "Slot", 1)]
-    [Arguments("Task<(int, int)> GlobalThing.LoadAsync(string a, string b)", "LoadAsync", 2)]
-    public async Task TupleReturnType_NameAndArityComeFromTheParameterList(string display, string name, int arity)
+    [TestMethod]
+    [DataRow("(int A, string B) GlobalThing.Split(string s, char c)", "Split", 2)]
+    [DataRow("(int, (string, int)) GlobalThing.Nest()", "Nest", 0)]
+    [DataRow("(int, int)[] GlobalThing.Pairs(int count)", "Pairs", 1)]
+    [DataRow("ref (int, int) GlobalThing.Slot(int index)", "Slot", 1)]
+    [DataRow("Task<(int, int)> GlobalThing.LoadAsync(string a, string b)", "LoadAsync", 2)]
+    public void TupleReturnType_NameAndArityComeFromTheParameterList(string display, string name, int arity)
     {
         // A tuple return type opens the display with a top-level '(' that is a TYPE, not the
         // parameter list; taking it as the list would leave an empty member name.
-        var m = await One(ParseMethod(display));
-
-        await Assert.That(m.MemberName).IsEqualTo(name);
-        await Assert.That(m.Arity).IsEqualTo(arity);
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
+        var m = One(ParseMethod(display));
+        Assert.AreEqual(name, m.MemberName);
+        Assert.AreEqual(arity, m.Arity);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
     }
 
-    [Test]
-    public async Task TupleTypedProperty_AggregateAndAccessorsKeepTheirNames()
+    [TestMethod]
+    public void TupleTypedProperty_AggregateAndAccessorsKeepTheirNames()
     {
-        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m
-            .Property("(int, int) GlobalThing.Pair", 2, a => a
-                .Method("(int, int) GlobalThing.Pair.get", 1)
-                .Method("void GlobalThing.Pair.set", 1)));
-
-        await Assert.That(members.Select(m => (m.MemberName, m.Kind, m.Arity))).IsEquivalentTo(
-        [
-            ("get_Pair", CodeMetricsMemberKind.Accessor, null),
-            ("set_Pair", CodeMetricsMemberKind.Accessor, null),
-            ("Pair", CodeMetricsMemberKind.Property, (int?)null),
-        ]);
+        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m.Property("(int, int) GlobalThing.Pair", 2, a => a.Method("(int, int) GlobalThing.Pair.get", 1).Method("void GlobalThing.Pair.set", 1)));
+        Assert.AreSequenceEqual([("get_Pair", CodeMetricsMemberKind.Accessor, null), ("set_Pair", CodeMetricsMemberKind.Accessor, null), ("Pair", CodeMetricsMemberKind.Property, (int? )null), ], members.Select(m => (m.MemberName, m.Kind, m.Arity)), SequenceOrder.InAnyOrder);
     }
 
-    [Test]
-    public async Task ConversionToTuple_ArityCountsOnlyTheParameterList()
+    [TestMethod]
+    public void ConversionToTuple_ArityCountsOnlyTheParameterList()
     {
-        var m = await One(ParseMethod("GlobalThing.implicit operator (int, int)(GlobalThing g)"));
-
-        await Assert.That(m.MemberName).IsEqualTo("op_Implicit");
-        await Assert.That(m.Arity).IsEqualTo(1);
+        var m = One(ParseMethod("GlobalThing.implicit operator (int, int)(GlobalThing g)"));
+        Assert.AreEqual("op_Implicit", m.MemberName);
+        Assert.AreEqual(1, m.Arity);
     }
 
-    [Test]
-    [Arguments("string GlobalThing.Join(IEnumerable<string> items, string sep = \", \")", 2)]
-    [Arguments("(int A, string B) GlobalThing.Split(string s = \", \", char c = '<')", 2)]
-    [Arguments("string GlobalThing.Quote(string q = \"a\\\"(,\", char c = '\\'')", 2)]
-    [Arguments("void GlobalThing.Wrap(char open = '(', char close = ')', int depth = 0)", 3)]
-    [Arguments("void GlobalThing.Angle(char open = '<', int depth = 0)", 2)]
-    [Arguments("void GlobalThing.Close(string tail = \")(\", int depth = 0)", 2)]
-    [Arguments("void GlobalThing.Path(string sep = \"\\\\\", int depth = 0)", 2)]
-    public async Task DefaultValueLiterals_NeverChangeTheArity(string display, int arity)
+    [TestMethod]
+    [DataRow("string GlobalThing.Join(IEnumerable<string> items, string sep = \", \")", 2)]
+    [DataRow("(int A, string B) GlobalThing.Split(string s = \", \", char c = '<')", 2)]
+    [DataRow("string GlobalThing.Quote(string q = \"a\\\"(,\", char c = '\\'')", 2)]
+    [DataRow("void GlobalThing.Wrap(char open = '(', char close = ')', int depth = 0)", 3)]
+    [DataRow("void GlobalThing.Angle(char open = '<', int depth = 0)", 2)]
+    [DataRow("void GlobalThing.Close(string tail = \")(\", int depth = 0)", 2)]
+    [DataRow("void GlobalThing.Path(string sep = \"\\\\\", int depth = 0)", 2)]
+    public void DefaultValueLiterals_NeverChangeTheArity(string display, int arity)
     {
         // MinimallyQualifiedFormat includes default values; string and char literals may hold
         // commas and brackets that are text, not parameter-list structure.
-        var m = await One(ParseMethod(display));
-
-        await Assert.That(m.Arity).IsEqualTo(arity);
+        var m = One(ParseMethod(display));
+        Assert.AreEqual(arity, m.Arity);
     }
 
-    [Test]
-    public async Task Destructor_NormalizesToFinalize()
+    [TestMethod]
+    public void Destructor_NormalizesToFinalize()
     {
         // `~T()` compiles to a method named Finalize — the coverage spelling.
         var members = CodeMetricsReportBuilder.ParseType("MyApp", "Stack<T>", m => m.Method("Stack<T>.~Stack()", 2));
-
-        var m = await One(members);
-        await Assert.That(m.MemberName).IsEqualTo("Finalize");
-        await Assert.That(m.Arity).IsEqualTo(0);
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
+        var m = One(members);
+        Assert.AreEqual("Finalize", m.MemberName);
+        Assert.AreEqual(0, m.Arity);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
     }
 
-    [Test]
-    public async Task CheckedExplicitConversion_NormalizesToOpCheckedExplicit()
+    [TestMethod]
+    public void CheckedExplicitConversion_NormalizesToOpCheckedExplicit()
     {
         // `explicit operator checked int` compiles to op_CheckedExplicit; mapping it to
         // op_Explicit would silently merge it with the unchecked conversion of the same arity.
-        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m
-            .Method("GlobalThing.explicit operator int(GlobalThing b)", 1)
-            .Method("GlobalThing.explicit operator checked int(GlobalThing b)", 4));
-
-        await Assert.That(members.Select(m => (m.MemberName, m.CyclomaticComplexity))).IsEquivalentTo(
-        [
-            ("op_Explicit", 1),
-            ("op_CheckedExplicit", 4),
-        ]);
+        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m.Method("GlobalThing.explicit operator int(GlobalThing b)", 1).Method("GlobalThing.explicit operator checked int(GlobalThing b)", 4));
+        Assert.AreSequenceEqual([("op_Explicit", 1), ("op_CheckedExplicit", 4), ], members.Select(m => (m.MemberName, m.CyclomaticComplexity)), SequenceOrder.InAnyOrder);
     }
 
     /// <summary>
     /// C# 11 checked operators and C# 14 compound-assignment / instance increment operators:
     /// displays as Roslyn 5 writes them, expected names as reflection reads them from the IL.
     /// </summary>
-    [Test]
-    [Arguments("Op Op.operator checked +(Op a, Op b)", "op_CheckedAddition")]
-    [Arguments("Op Op.operator checked -(Op a, Op b)", "op_CheckedSubtraction")]
-    [Arguments("Op Op.operator checked *(Op a, Op b)", "op_CheckedMultiply")]
-    [Arguments("Op Op.operator checked /(Op a, Op b)", "op_CheckedDivision")]
-    [Arguments("Op Op.operator checked -(Op a)", "op_CheckedUnaryNegation")]
-    [Arguments("Op Op.operator checked ++(Op a)", "op_CheckedIncrement")]
-    [Arguments("Op Op.operator checked --(Op a)", "op_CheckedDecrement")]
-    [Arguments("Op Op.operator ++(Op a)", "op_Increment")]
-    [Arguments("void Op.operator ++()", "op_IncrementAssignment")]
-    [Arguments("void Op.operator --()", "op_DecrementAssignment")]
-    [Arguments("void Op.operator checked ++()", "op_CheckedIncrementAssignment")]
-    [Arguments("void Op.operator checked --()", "op_CheckedDecrementAssignment")]
-    [Arguments("void Op.operator +=(Op o)", "op_AdditionAssignment")]
-    [Arguments("void Op.operator -=(Op o)", "op_SubtractionAssignment")]
-    [Arguments("void Op.operator *=(Op o)", "op_MultiplicationAssignment")]
-    [Arguments("void Op.operator /=(Op o)", "op_DivisionAssignment")]
-    [Arguments("void Op.operator %=(Op o)", "op_ModulusAssignment")]
-    [Arguments("void Op.operator &=(Op o)", "op_BitwiseAndAssignment")]
-    [Arguments("void Op.operator |=(Op o)", "op_BitwiseOrAssignment")]
-    [Arguments("void Op.operator ^=(Op o)", "op_ExclusiveOrAssignment")]
-    [Arguments("void Op.operator <<=(int o)", "op_LeftShiftAssignment")]
-    [Arguments("void Op.operator >>=(int o)", "op_RightShiftAssignment")]
-    [Arguments("void Op.operator >>>=(int o)", "op_UnsignedRightShiftAssignment")]
-    [Arguments("void Op.operator checked +=(Op o)", "op_CheckedAdditionAssignment")]
-    [Arguments("void Op.operator checked -=(Op o)", "op_CheckedSubtractionAssignment")]
-    [Arguments("void Op.operator checked *=(Op o)", "op_CheckedMultiplicationAssignment")]
-    [Arguments("void Op.operator checked /=(Op o)", "op_CheckedDivisionAssignment")]
-    public async Task CheckedAndCompoundOperators_NormalizeToTheirIlNames(string display, string expected)
+    [TestMethod]
+    [DataRow("Op Op.operator checked +(Op a, Op b)", "op_CheckedAddition")]
+    [DataRow("Op Op.operator checked -(Op a, Op b)", "op_CheckedSubtraction")]
+    [DataRow("Op Op.operator checked *(Op a, Op b)", "op_CheckedMultiply")]
+    [DataRow("Op Op.operator checked /(Op a, Op b)", "op_CheckedDivision")]
+    [DataRow("Op Op.operator checked -(Op a)", "op_CheckedUnaryNegation")]
+    [DataRow("Op Op.operator checked ++(Op a)", "op_CheckedIncrement")]
+    [DataRow("Op Op.operator checked --(Op a)", "op_CheckedDecrement")]
+    [DataRow("Op Op.operator ++(Op a)", "op_Increment")]
+    [DataRow("void Op.operator ++()", "op_IncrementAssignment")]
+    [DataRow("void Op.operator --()", "op_DecrementAssignment")]
+    [DataRow("void Op.operator checked ++()", "op_CheckedIncrementAssignment")]
+    [DataRow("void Op.operator checked --()", "op_CheckedDecrementAssignment")]
+    [DataRow("void Op.operator +=(Op o)", "op_AdditionAssignment")]
+    [DataRow("void Op.operator -=(Op o)", "op_SubtractionAssignment")]
+    [DataRow("void Op.operator *=(Op o)", "op_MultiplicationAssignment")]
+    [DataRow("void Op.operator /=(Op o)", "op_DivisionAssignment")]
+    [DataRow("void Op.operator %=(Op o)", "op_ModulusAssignment")]
+    [DataRow("void Op.operator &=(Op o)", "op_BitwiseAndAssignment")]
+    [DataRow("void Op.operator |=(Op o)", "op_BitwiseOrAssignment")]
+    [DataRow("void Op.operator ^=(Op o)", "op_ExclusiveOrAssignment")]
+    [DataRow("void Op.operator <<=(int o)", "op_LeftShiftAssignment")]
+    [DataRow("void Op.operator >>=(int o)", "op_RightShiftAssignment")]
+    [DataRow("void Op.operator >>>=(int o)", "op_UnsignedRightShiftAssignment")]
+    [DataRow("void Op.operator checked +=(Op o)", "op_CheckedAdditionAssignment")]
+    [DataRow("void Op.operator checked -=(Op o)", "op_CheckedSubtractionAssignment")]
+    [DataRow("void Op.operator checked *=(Op o)", "op_CheckedMultiplicationAssignment")]
+    [DataRow("void Op.operator checked /=(Op o)", "op_CheckedDivisionAssignment")]
+    public void CheckedAndCompoundOperators_NormalizeToTheirIlNames(string display, string expected)
     {
-        var m = await One(ParseMethod(display, type: "Op"));
-
-        await Assert.That(m.MemberName).IsEqualTo(expected);
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
+        var m = One(ParseMethod(display, type: "Op"));
+        Assert.AreEqual(expected, m.MemberName);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
     }
 
-    [Test]
-    [Arguments("Op Op.operator @(Op a)", "operator @")]
-    [Arguments("Op Op.operator checked @(Op a)", "operator checked @")]
-    public async Task UnknownOperatorToken_KeepsItsRawSpelling(string display, string expected)
+    [TestMethod]
+    [DataRow("Op Op.operator @(Op a)", "operator @")]
+    [DataRow("Op Op.operator checked @(Op a)", "operator checked @")]
+    public void UnknownOperatorToken_KeepsItsRawSpelling(string display, string expected)
     {
         // A token outside the table (a future language version) must land in the unmatched
         // list under its own spelling, never collide with a known operator.
-        await Assert.That((await One(ParseMethod(display, type: "Op"))).MemberName).IsEqualTo(expected);
+        Assert.AreEqual(expected, (One(ParseMethod(display, type: "Op"))).MemberName);
     }
 
-    [Test]
-    public async Task ExtensionBlockMembers_BelongToTheEnclosingStaticClass()
+    [TestMethod]
+    public void ExtensionBlockMembers_BelongToTheEnclosingStaticClass()
     {
         // C# 14 `extension(string s) { ... }` displays as a nested `Ext.extension(string)` type,
         // but its members compile to static methods of Ext itself (Ext.Twice(string),
         // Ext.get_IsBig(string), Ext.Make()).
-        var members = CodeMetricsReportBuilder.Create().Namespace("P", t => t
-                .Type("Ext.extension(string)", m => m
-                    .Method("int extension(string).Twice()", 2)
-                    .Property("bool extension(string).IsBig", 1, a => a.Method("bool extension(string).IsBig.get", 1))
-                    .Method("string extension(string).Make()", 1))
-                .Type("Ext.extension<T>(List<T>)", m => m.Method("T? extension<T>(List<T>).FirstOrNone(int skip = 0)", 2))
-                .Type("Ext.extension(Inner)", m => m
-                    .Property("int extension(Inner).Depth", 1, a => a.Method("int extension(Inner).Depth.get", 1))))
-            .Parse();
-
-        await Assert.That(members.Select(m => (m.TypeName, m.MemberName, m.Kind))).IsEquivalentTo(
-        [
-            ("P.Ext", "Twice", CodeMetricsMemberKind.Method),
-            ("P.Ext", "get_IsBig", CodeMetricsMemberKind.Accessor),
-            ("P.Ext", "IsBig", CodeMetricsMemberKind.Property),
-            ("P.Ext", "Make", CodeMetricsMemberKind.Method),
-            ("P.Ext", "FirstOrNone", CodeMetricsMemberKind.Method),
-            ("P.Ext", "get_Depth", CodeMetricsMemberKind.Accessor),
-            ("P.Ext", "Depth", CodeMetricsMemberKind.Property),
-        ]);
+        var members = CodeMetricsReportBuilder.Create().Namespace("P", t => t.Type("Ext.extension(string)", m => m.Method("int extension(string).Twice()", 2).Property("bool extension(string).IsBig", 1, a => a.Method("bool extension(string).IsBig.get", 1)).Method("string extension(string).Make()", 1)).Type("Ext.extension<T>(List<T>)", m => m.Method("T? extension<T>(List<T>).FirstOrNone(int skip = 0)", 2)).Type("Ext.extension(Inner)", m => m.Property("int extension(Inner).Depth", 1, a => a.Method("int extension(Inner).Depth.get", 1)))).Parse();
+        Assert.AreSequenceEqual([("P.Ext", "Twice", CodeMetricsMemberKind.Method), ("P.Ext", "get_IsBig", CodeMetricsMemberKind.Accessor), ("P.Ext", "IsBig", CodeMetricsMemberKind.Property), ("P.Ext", "Make", CodeMetricsMemberKind.Method), ("P.Ext", "FirstOrNone", CodeMetricsMemberKind.Method), ("P.Ext", "get_Depth", CodeMetricsMemberKind.Accessor), ("P.Ext", "Depth", CodeMetricsMemberKind.Property), ], members.Select(m => (m.TypeName, m.MemberName, m.Kind)), SequenceOrder.InAnyOrder);
     }
 
-    [Test]
-    public async Task IndexerAccessors_NormalizeToItemAccessors()
+    [TestMethod]
+    public void IndexerAccessors_NormalizeToItemAccessors()
     {
-        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m
-            .Property("int GlobalThing.this[int i]", 2, a => a
-                .Method("int GlobalThing.this[int i].get", 1)
-                .Method("void GlobalThing.this[int i].set", 1)));
-
-        await Assert.That(members.Select(m => (m.MemberName, m.Kind))).IsEquivalentTo(
-        [
-            ("get_Item", CodeMetricsMemberKind.Accessor),
-            ("set_Item", CodeMetricsMemberKind.Accessor),
-            ("Item", CodeMetricsMemberKind.Property),
-        ]);
+        var members = CodeMetricsReportBuilder.ParseType("MyApp", "GlobalThing", m => m.Property("int GlobalThing.this[int i]", 2, a => a.Method("int GlobalThing.this[int i].get", 1).Method("void GlobalThing.this[int i].set", 1)));
+        Assert.AreSequenceEqual([("get_Item", CodeMetricsMemberKind.Accessor), ("set_Item", CodeMetricsMemberKind.Accessor), ("Item", CodeMetricsMemberKind.Property), ], members.Select(m => (m.MemberName, m.Kind)), SequenceOrder.InAnyOrder);
     }
 
-    [Test]
-    [Arguments("int A.this[int i].get", 1)]
-    [Arguments("void A.this[int i].set", 2)]
-    [Arguments("void A.this[int i].init", 2)]
-    [Arguments("int A.this[int i, int j].get", 2)]
-    [Arguments("void A.this[Dictionary<string, int> map, (int, int) pair, int[,] grid].set", 4)]
-    [Arguments("int A.this[int i]invalid.get", null)]
-    public async Task IndexerAccessorArity_IncludesIndicesAndSetterValue(string display, int? expected)
+    [TestMethod]
+    [DataRow("int A.this[int i].get", 1)]
+    [DataRow("void A.this[int i].set", 2)]
+    [DataRow("void A.this[int i].init", 2)]
+    [DataRow("int A.this[int i, int j].get", 2)]
+    [DataRow("void A.this[Dictionary<string, int> map, (int, int) pair, int[,] grid].set", 4)]
+    [DataRow("int A.this[int i]invalid.get", null)]
+    public void IndexerAccessorArity_IncludesIndicesAndSetterValue(string display, int? expected)
     {
-        var member = await One(ParseMethod(display, type: "A"));
-
-        await Assert.That(member.Kind).IsEqualTo(CodeMetricsMemberKind.Accessor);
-        await Assert.That(member.Arity).IsEqualTo(expected);
+        var member = One(ParseMethod(display, type: "A"));
+        Assert.AreEqual(CodeMetricsMemberKind.Accessor, member.Kind);
+        Assert.AreEqual(expected, member.Arity);
     }
 
-    [Test]
-    public async Task ArrayReturnOperator_BracketsBeforeTheOperatorMarkerStayBalanced()
+    [TestMethod]
+    public void ArrayReturnOperator_BracketsBeforeTheOperatorMarkerStayBalanced()
     {
-        var m = await One(ParseMethod("int[] GlobalThing.operator +(GlobalThing a, int[,] b)"));
-
-        await Assert.That(m.MemberName).IsEqualTo("op_Addition");
-        await Assert.That(m.Arity).IsEqualTo(2);
+        var m = One(ParseMethod("int[] GlobalThing.operator +(GlobalThing a, int[,] b)"));
+        Assert.AreEqual("op_Addition", m.MemberName);
+        Assert.AreEqual(2, m.Arity);
     }
 
-    [Test]
-    public async Task NestedTypeInGlobalNamespace_DottedNameKeepsContainingTypes()
+    [TestMethod]
+    public void NestedTypeInGlobalNamespace_DottedNameKeepsContainingTypes()
     {
-        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "GlobalThing.Nested<T>.Deeper",
-            m => m.Method("void Deeper.D()", 1));
-
-        await Assert.That((await One(members)).TypeName).IsEqualTo("GlobalThing.Nested.Deeper");
+        var members = CodeMetricsReportBuilder.ParseType("<global namespace>", "GlobalThing.Nested<T>.Deeper", m => m.Method("void Deeper.D()", 1));
+        Assert.AreEqual("GlobalThing.Nested.Deeper", (One(members)).TypeName);
     }
 
-    [Test]
-    public async Task VeryLongGenericTypeName_StripsLikeAShortOne()
+    [TestMethod]
+    public void VeryLongGenericTypeName_StripsLikeAShortOne()
     {
         // Names over 256 characters take the heap buffer instead of stackalloc.
         var args = string.Join(", ", Enumerable.Range(0, 60).Select(i => $"T{i}"));
         var type = $"Wide<{args}>";
-        await Assert.That(type.Length).IsGreaterThan(256);
-
+        Assert.IsGreaterThan(256, type.Length);
         var members = CodeMetricsReportBuilder.ParseType("MyApp", type, m => m.Method($"void {type}.Run()", 1));
-
-        await Assert.That((await One(members)).TypeName).IsEqualTo("MyApp.Wide");
+        Assert.AreEqual("MyApp.Wide", (One(members)).TypeName);
     }
 
-    [Test]
-    public async Task UnclosedParameterList_CountsWhatIsThere()
+    [TestMethod]
+    public void UnclosedParameterList_CountsWhatIsThere()
     {
-        var m = await One(ParseMethod("void GlobalThing.Cut(int a, int b"));
-
-        await Assert.That(m.MemberName).IsEqualTo("Cut");
-        await Assert.That(m.Arity).IsEqualTo(2);
+        var m = One(ParseMethod("void GlobalThing.Cut(int a, int b"));
+        Assert.AreEqual("Cut", m.MemberName);
+        Assert.AreEqual(2, m.Arity);
     }
 
-    [Test]
-    public async Task UnterminatedDefaultLiteral_SwallowsTheRestOfTheList()
+    [TestMethod]
+    public void UnterminatedDefaultLiteral_SwallowsTheRestOfTheList()
     {
-        var m = await One(ParseMethod("void GlobalThing.Cut(int a, string s = \"x, int b)"));
-
-        await Assert.That(m.MemberName).IsEqualTo("Cut");
-        await Assert.That(m.Arity).IsEqualTo(2);
+        var m = One(ParseMethod("void GlobalThing.Cut(int a, string s = \"x, int b)"));
+        Assert.AreEqual("Cut", m.MemberName);
+        Assert.AreEqual(2, m.Arity);
     }
 
     // ── Unusual document shapes ───────────────────────────────────────────────
-
-    [Test]
-    public async Task NamespaceWithoutName_TypeNameHasNoPrefix()
+    [TestMethod]
+    public void NamespaceWithoutName_TypeNameHasNoPrefix()
     {
         var members = ParseRaw($"""
             <Namespace><Types><NamedType Name="Calc"><Members>
               <Method Name="void Calc.M()">{Metric3}</Method>
             </Members></NamedType></Types></Namespace>
             """);
-
-        await Assert.That((await One(members)).TypeName).IsEqualTo("Calc");
+        Assert.AreEqual("Calc", (One(members)).TypeName);
     }
 
-    [Test]
-    public async Task EmptyNamedTypeElement_DoesNotNestTheNextType()
+    [TestMethod]
+    public void EmptyNamedTypeElement_DoesNotNestTheNextType()
     {
         // An empty element raises no EndElement, so it must not push a type segment.
         var members = ParseRaw($"""
@@ -341,27 +273,25 @@ public sealed class CodeMetricsReaderEdgeTests
               <NamedType Name="Calc"><Members><Method Name="void Calc.M()">{Metric3}</Method></Members></NamedType>
             </Types></Namespace>
             """);
-
-        await Assert.That((await One(members)).TypeName).IsEqualTo("MyApp.Calc");
+        Assert.AreEqual("MyApp.Calc", (One(members)).TypeName);
     }
 
-    [Test]
-    public async Task NamedTypeWithoutName_MemberStillRecordedUnderAnEmptySegment()
+    [TestMethod]
+    public void NamedTypeWithoutName_MemberStillRecordedUnderAnEmptySegment()
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp"><Types><NamedType><Members>
               <Method Name="void Calc.M()">{Metric3}</Method>
             </Members></NamedType></Types></Namespace>
             """);
-
-        var m = await One(members);
-        await Assert.That(m.TypeName).IsEqualTo("MyApp.");
-        await Assert.That(m.MemberName).IsEqualTo("M");
-        await Assert.That(m.CyclomaticComplexity).IsEqualTo(3);
+        var m = One(members);
+        Assert.AreEqual("MyApp.", m.TypeName);
+        Assert.AreEqual("M", m.MemberName);
+        Assert.AreEqual(3, m.CyclomaticComplexity);
     }
 
-    [Test]
-    public async Task MemberOutsideAnyType_IsIgnored_AndDoesNotDisturbLaterMembers()
+    [TestMethod]
+    public void MemberOutsideAnyType_IsIgnored_AndDoesNotDisturbLaterMembers()
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp">
@@ -371,14 +301,13 @@ public sealed class CodeMetricsReaderEdgeTests
               </Members></NamedType></Types>
             </Namespace>
             """);
-
-        var m = await One(members);
-        await Assert.That(m.MemberName).IsEqualTo("Kept");
-        await Assert.That(m.CyclomaticComplexity).IsEqualTo(7);
+        var m = One(members);
+        Assert.AreEqual("Kept", m.MemberName);
+        Assert.AreEqual(7, m.CyclomaticComplexity);
     }
 
-    [Test]
-    public async Task EmptyMemberElement_RecordsNothing_AndLeavesTheStackBalanced()
+    [TestMethod]
+    public void EmptyMemberElement_RecordsNothing_AndLeavesTheStackBalanced()
     {
         // An empty Property raises no EndElement; pushing it would make the following
         // method's metric land on the property and drop the method.
@@ -388,86 +317,77 @@ public sealed class CodeMetricsReaderEdgeTests
               <Method Name="void Calc.After()">{Metric3}</Method>
             </Members></NamedType></Types></Namespace>
             """);
-
-        var m = await One(members);
-        await Assert.That(m.MemberName).IsEqualTo("After");
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
+        var m = One(members);
+        Assert.AreEqual("After", m.MemberName);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
     }
 
-    [Test]
-    public async Task MemberWithoutName_RecordedWithEmptyDisplay()
+    [TestMethod]
+    public void MemberWithoutName_RecordedWithEmptyDisplay()
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp"><Types><NamedType Name="Calc"><Members>
               <Method>{Metric3}</Method>
             </Members></NamedType></Types></Namespace>
             """);
-
-        var m = await One(members);
-        await Assert.That(m.DisplayName).IsEqualTo("");
-        await Assert.That(m.MemberName).IsEqualTo("");
-        await Assert.That(m.Arity).IsNull();
+        var m = One(members);
+        Assert.AreEqual("", m.DisplayName);
+        Assert.AreEqual("", m.MemberName);
+        Assert.IsNull(m.Arity);
     }
 
-    [Test]
-    [Arguments("n/a")]
-    [Arguments("2.5")]
-    [Arguments("99999999999")]
-    [Arguments("")]
-    public async Task NonIntegerComplexity_IsKeptAsNoMeasurement(string value)
+    [TestMethod]
+    [DataRow("n/a")]
+    [DataRow("2.5")]
+    [DataRow("99999999999")]
+    [DataRow("")]
+    public void NonIntegerComplexity_IsKeptAsNoMeasurement(string value)
     {
         var members = ParseRaw($"""
             <Namespace Name="MyApp"><Types><NamedType Name="Calc"><Members>
               <Method Name="void Calc.M()"><Metrics><Metric Name="CyclomaticComplexity" Value="{value}" /></Metrics></Method>
             </Members></NamedType></Types></Namespace>
             """);
-
-        var member = await Assert.That(members).HasSingleItem();
-        await Assert.That(member.CyclomaticComplexity).IsEqualTo(0);
+        var member = Assert.ContainsSingle(members);
+        Assert.AreEqual(0, member.CyclomaticComplexity);
     }
 
-    [Test]
-    public async Task Parse_LeavesTheCallersStreamOpen()
+    [TestMethod]
+    public void Parse_LeavesTheCallersStreamOpen()
     {
-        var bytes = CodeMetricsReportBuilder.Create()
-            .Namespace("MyApp", t => t.Type("Calc", m => m.Method("void Calc.M()", 2)))
-            .ToBytes();
+        var bytes = CodeMetricsReportBuilder.Create().Namespace("MyApp", t => t.Type("Calc", m => m.Method("void Calc.M()", 2))).ToBytes();
         using var stream = new MemoryStream(bytes);
-
         var members = CodeMetricsReader.Parse(stream);
-
-        await Assert.That(members.Count).IsEqualTo(1);
-        await Assert.That(stream.CanRead).IsTrue();
+        Assert.AreEqual(1, members.Count);
+        Assert.IsTrue(stream.CanRead);
     }
-    [Test]
-    public async Task DeepTypeScope_WithManyMembers_PreservesNamesWhenReturningToParent()
+
+    [TestMethod]
+    public void DeepTypeScope_WithManyMembers_PreservesNamesWhenReturningToParent()
     {
         const int depth = 256;
         const int count = 1000;
         var xml = new StringBuilder("<Namespace Name=\"App\">");
-        for (var i = 0; i < depth; i++) xml.Append("<NamedType Name=\"A&lt;T&gt;\">");
-        for (var i = 0; i < count; i++) xml.Append($"<Method Name=\"void A.M{i}()\">{Metric3}</Method>");
-        for (var i = 1; i < depth; i++) xml.Append("</NamedType>");
+        for (var i = 0; i < depth; i++)
+            xml.Append("<NamedType Name=\"A&lt;T&gt;\">");
+        for (var i = 0; i < count; i++)
+            xml.Append($"<Method Name=\"void A.M{i}()\">{Metric3}</Method>");
+        for (var i = 1; i < depth; i++)
+            xml.Append("</NamedType>");
         xml.Append($"<Method Name=\"void A.Parent()\">{Metric3}</Method></NamedType></Namespace>");
-
         var members = ParseRaw(xml.ToString());
-
-        await Assert.That(members.Count).IsEqualTo(count + 1);
-        await Assert.That(members.Take(count).Select(m => m.TypeName).Distinct())
-            .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A", depth))]);
-        await Assert.That(members.Take(count).Select(m => m.TypeIdentity!).Distinct())
-            .IsEquivalentTo(["App." + string.Join(".", Enumerable.Repeat("A`1", depth))]);
-        await Assert.That(members[^1].TypeIdentity).IsEqualTo("App.A`1");
-        await Assert.That(members[^1].MemberName).IsEqualTo("Parent");
+        Assert.AreEqual(count + 1, members.Count);
+        Assert.AreSequenceEqual(["App." + string.Join(".", Enumerable.Repeat("A", depth))], members.Take(count).Select(m => m.TypeName).Distinct(), SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["App." + string.Join(".", Enumerable.Repeat("A`1", depth))], members.Take(count).Select(m => m.TypeIdentity!).Distinct(), SequenceOrder.InAnyOrder);
+        Assert.AreEqual("App.A`1", members[^1].TypeIdentity);
+        Assert.AreEqual("Parent", members[^1].MemberName);
     }
 
-    [Test]
-    public async Task ExcessiveNamedTypeNesting_IsRejectedBeforeIdentityExpansion()
+    [TestMethod]
+    public void ExcessiveNamedTypeNesting_IsRejectedBeforeIdentityExpansion()
     {
-        var xml = string.Concat(Enumerable.Repeat("<NamedType Name=\"A\">", 257)) +
-                  string.Concat(Enumerable.Repeat("</NamedType>", 257));
+        var xml = string.Concat(Enumerable.Repeat("<NamedType Name=\"A\">", 257)) + string.Concat(Enumerable.Repeat("</NamedType>", 257));
         var error = Assert.ThrowsExactly<XmlException>(() => ParseRaw(xml));
-        await Assert.That(error.Message).Contains("256 levels");
+        Assert.Contains("256 levels", error.Message);
     }
-
 }

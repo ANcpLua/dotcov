@@ -1,45 +1,41 @@
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
-[Category("Integration")]
+[TestClass]
+[TestCategory("Integration")]
 public sealed class TempWorkspaceTests
 {
     private readonly TempWorkspace _workspace = TempWorkspace.Create();
-
-    [After(Test)]
+    [TestCleanup]
     public void CleanupDirectory()
     {
         // Cleanup must still work if the Dispose implementation under test is broken.
-        if (Directory.Exists(_workspace.Root)) Directory.Delete(_workspace.Root, recursive: true);
+        if (Directory.Exists(_workspace.Root))
+            Directory.Delete(_workspace.Root, recursive: true);
     }
 
-    [Test]
-    public async Task PrepareFile_CreatesParentsWithoutCreatingTheFile()
+    [TestMethod]
+    public void PrepareFile_CreatesParentsWithoutCreatingTheFile()
     {
         var path = _workspace.PrepareFile("nested/reports/coverage.xml");
-
-        await Assert.That(path).IsEqualTo(Path.GetFullPath(Path.Combine(_workspace.Root, "nested/reports/coverage.xml")));
-        await Assert.That(Directory.Exists(Path.GetDirectoryName(path))).IsTrue();
-        await Assert.That(File.Exists(path)).IsFalse();
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(_workspace.Root, "nested/reports/coverage.xml")), path);
+        Assert.IsTrue(Directory.Exists(Path.GetDirectoryName(path)));
+        Assert.IsFalse(File.Exists(path));
     }
 
-    [Test]
-    public async Task Dispose_RemovesNestedFilesAndDirectory()
+    [TestMethod]
+    public void Dispose_RemovesNestedFilesAndDirectory()
     {
         var root = _workspace.Root;
         _workspace.Write("nested/report.xml", "report");
-
         _workspace.Dispose();
-
-        await Assert.That(Directory.Exists(root)).IsFalse();
+        Assert.IsFalse(Directory.Exists(root));
     }
 
-    [Test]
+    [TestMethod]
     public void Dispose_CalledTwice_DoesNotThrow()
     {
         _workspace.Dispose();
-
         _workspace.Dispose();
     }
 }

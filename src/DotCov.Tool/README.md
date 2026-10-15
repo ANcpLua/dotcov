@@ -63,7 +63,7 @@ warning naming the `.xml` files it holds.
 
 `dotcov test` passes the coverage options of the runner `dotnet test` uses here
 (`DOTNET_TEST_RUNNER`, else `test.runner` in `global.json`, else VSTest). Microsoft.Testing.Platform
-projects need `Microsoft.Testing.Extensions.CodeCoverage` (TUnit includes it); VSTest projects get
+projects need `Microsoft.Testing.Extensions.CodeCoverage` (included by the MSTest package); VSTest projects get
 the collector from `Microsoft.NET.Test.Sdk`.
 
 ## Exit codes

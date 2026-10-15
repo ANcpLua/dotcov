@@ -956,7 +956,7 @@ public static class ExclusionRules
 
     public static readonly IReadOnlyList<string> TestCode =
     [
-        ".Tests/",        // xUnit/NUnit/MSTest projects, forward-slash paths
+        ".Tests/",        // test projects, forward-slash paths
         ".Tests\\",       // ...and Windows-emitted paths
         "TestSupport/",   // shared fixtures — NOT matched by a ".Tests" rule
         "TestSupport\\",

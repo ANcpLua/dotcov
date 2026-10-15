@@ -1,338 +1,279 @@
-using TUnit.Assertions.Enums;
 using System.Collections.ObjectModel;
 
 namespace DotCov.Tests;
-
 /// <summary>
 /// Pins the CRAP formula, the at-threshold-passes gate boundary, and the compiler-mangling
 /// normalization table (async state machines, lambdas, local functions, generics, accessors,
 /// constructors) — plus the two honesty channels: unscored methods and unmatched metrics
 /// members are listed, never silently dropped.
 /// </summary>
+[TestClass]
 public sealed class CrapAnalysisTests
 {
     // ── Formula: hand-computed values ─────────────────────────────────────────
-    [Test]
-    [Arguments(5, 0.0, 30.0)]    // 5²·1³ + 5      = 30 (comp², not comp³ — 5³+5 would be 130)
-    [Arguments(5, 1.0, 5.0)]     // 5²·0³ + 5      = 5: full coverage always scores comp
-    [Arguments(1, 0.0, 2.0)]     // 1²·1³ + 1      = 2: the floor for uncovered code
-    [Arguments(2, 0.0, 6.0)]     // 2²·1³ + 2      = 6: exactly the stricter --max-crap 6
-    [Arguments(10, 0.5, 22.5)]   // 100·0.125 + 10 = 22.5
-    [Arguments(1, 1.0, 1.0)]     // the global minimum
-    public async Task Score_MatchesHandComputedValues(int comp, double cov, double expected)
+    [TestMethod]
+    [DataRow(5, 0.0, 30.0)] // 5²·1³ + 5      = 30 (comp², not comp³ — 5³+5 would be 130)
+    [DataRow(5, 1.0, 5.0)] // 5²·0³ + 5      = 5: full coverage always scores comp
+    [DataRow(1, 0.0, 2.0)] // 1²·1³ + 1      = 2: the floor for uncovered code
+    [DataRow(2, 0.0, 6.0)] // 2²·1³ + 2      = 6: exactly the stricter --max-crap 6
+    [DataRow(10, 0.5, 22.5)] // 100·0.125 + 10 = 22.5
+    [DataRow(1, 1.0, 1.0)] // the global minimum
+    public void Score_MatchesHandComputedValues(int comp, double cov, double expected)
     {
-        await Assert.That(CrapAnalysis.Score(comp, cov)).IsEqualTo(expected).Within(1e-12);
+        Assert.AreEqual(expected, CrapAnalysis.Score(comp, cov), 1e-12);
     }
 
     // ── Gate boundary: at-threshold PASSES, strictly-above fails ──────────────
-
-    [Test]
-    public async Task Evaluate_ScoreExactlyAtThreshold_Passes()
+    [TestMethod]
+    public void Evaluate_ScoreExactlyAtThreshold_Passes()
     {
         // comp 2, cov 0 → exactly 6.0 against --max-crap 6: the gate fires only strictly
         // above the threshold, consistent with check's at-threshold-passes semantics.
         var report = CrapAnalysis.Analyze([Uncovered("MyApp.A", "M", complexity: 2)]);
-
         var gate = report.Evaluate(6);
-
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Pass);
-        await Assert.That(gate.IsPass).IsTrue();
-        await Assert.That(gate.WorstScore).IsEqualTo(6.0);
-        await Assert.That(gate.ToString()).StartsWith("PASS:");
+        Assert.AreEqual(GateOutcome.Pass, gate.Outcome);
+        Assert.IsTrue(gate.IsPass);
+        Assert.AreEqual(6.0, gate.WorstScore);
+        Assert.StartsWith("PASS:", gate.ToString());
     }
 
-    [Test]
-    public async Task Evaluate_ScoreStrictlyAboveThreshold_Fails()
+    [TestMethod]
+    public void Evaluate_ScoreStrictlyAboveThreshold_Fails()
     {
         // comp 3, cov 0 → 12 against --max-crap 6.
         var report = CrapAnalysis.Analyze([Uncovered("MyApp.A", "M", complexity: 3)]);
-
         var gate = report.Evaluate(6);
-
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Fail);
-        await Assert.That(gate.AboveThreshold).IsEqualTo(1);
-        await Assert.That(gate.WorstScore).IsEqualTo(12.0);
-        await Assert.That(gate.ToString()).StartsWith("FAIL:");
+        Assert.AreEqual(GateOutcome.Fail, gate.Outcome);
+        Assert.AreEqual(1, gate.AboveThreshold);
+        Assert.AreEqual(12.0, gate.WorstScore);
+        Assert.StartsWith("FAIL:", gate.ToString());
     }
 
-    [Test]
-    public async Task Evaluate_ThresholdEqualToComputedScore_AbsorbsFloatNoise()
+    [TestMethod]
+    public void Evaluate_ThresholdEqualToComputedScore_AbsorbsFloatNoise()
     {
         // A threshold set to the mathematically-equal value of a score must pass even when the
         // binary double landed a ulp off — same epsilon policy as GateResult.MeetsThreshold
         // (GateResult.RateEpsilon owns it).
-        var mc = Method("MyApp.A", "M", "(System.Int32)", complexity: 3,
-            lines: [(1, 1), (2, 0), (3, 0)]);   // cov = 1/3
+        var mc = Method("MyApp.A", "M", "(System.Int32)", complexity: 3, lines: [(1, 1), (2, 0), (3, 0)]); // cov = 1/3
         var report = CrapAnalysis.Analyze([mc]);
         var score = CrapAnalysis.Score(3, 1.0 / 3);
-
-        await Assert.That(report.Evaluate(score).Outcome).IsEqualTo(GateOutcome.Pass);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(score).Outcome);
     }
 
-    [Test]
-    public async Task Evaluate_JustBelowScore_StillFails()
+    [TestMethod]
+    public void Evaluate_JustBelowScore_StillFails()
     {
         // The epsilon absorbs float noise, not real differences.
-        var report = CrapAnalysis.Analyze([Uncovered("MyApp.A", "M", complexity: 3)]);   // 12.0
-
-        await Assert.That(report.Evaluate(11.999).Outcome).IsEqualTo(GateOutcome.Fail);
+        var report = CrapAnalysis.Analyze([Uncovered("MyApp.A", "M", complexity: 3)]); // 12.0
+        Assert.AreEqual(GateOutcome.Fail, report.Evaluate(11.999).Outcome);
     }
 
-    [Test]
-    public async Task Evaluate_NoMethodData_IsNoDataNotPass()
+    [TestMethod]
+    public void Evaluate_NoMethodData_IsNoDataNotPass()
     {
         var gate = CrapAnalysis.Analyze([]).Evaluate(6);
-
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
-        await Assert.That(gate.IsPass).IsFalse();
-        await Assert.That(gate.ToString()).StartsWith("NODATA:");
+        Assert.AreEqual(GateOutcome.NoData, gate.Outcome);
+        Assert.IsFalse(gate.IsPass);
+        Assert.StartsWith("NODATA:", gate.ToString());
     }
 
-    [Test]
-    public async Task Evaluate_MethodsButNoComplexity_IsNoDataMentioningMetrics()
+    [TestMethod]
+    public void Evaluate_MethodsButNoComplexity_IsNoDataMentioningMetrics()
     {
-        var gate = CrapAnalysis.Analyze([Method("MyApp.A", "M", "()", complexity: null, lines: [(1, 1)])])
-            .Evaluate(6);
-
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
-        await Assert.That(gate.Reason).Contains("--metrics");
+        var gate = CrapAnalysis.Analyze([Method("MyApp.A", "M", "()", complexity: null, lines: [(1, 1)])]).Evaluate(6);
+        Assert.AreEqual(GateOutcome.NoData, gate.Outcome);
+        Assert.Contains("--metrics", gate.Reason);
     }
 
     // ── Normalization table ───────────────────────────────────────────────────
-
-    [Test]
-    public async Task AsyncStateMachine_MoveNext_FoldsToOriginMethod()
+    [TestMethod]
+    public void AsyncStateMachine_MoveNext_FoldsToOriginMethod()
     {
-        var mc = Method("MyApp.Calculator/<AddAsync>d__3", "MoveNext", "()", complexity: 4,
-            lines: [(10, 1), (11, 0)]);
-
+        var mc = Method("MyApp.Calculator/<AddAsync>d__3", "MoveNext", "()", complexity: 4, lines: [(10, 1), (11, 0)]);
         var report = CrapAnalysis.Analyze([mc]);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("MyApp.Calculator.AddAsync");
-        await Assert.That(m.Complexity).IsEqualTo(4);
-        await Assert.That(m.Coverage).IsEqualTo(0.5);
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual("MyApp.Calculator.AddAsync", m.Method);
+        Assert.AreEqual(4, m.Complexity);
+        Assert.AreEqual(0.5, m.Coverage);
     }
 
-    [Test]
-    public async Task StateMachineInfrastructure_SetStateMachineAndCtor_AreDropped()
+    [TestMethod]
+    public void StateMachineInfrastructure_SetStateMachineAndCtor_AreDropped()
     {
-        var report = CrapAnalysis.Analyze([
-            Method("MyApp.C/<M>d__0", "SetStateMachine", "(System.Runtime.CompilerServices.IAsyncStateMachine)",
-                complexity: 1, lines: [(1, 1)]),
-            Method("MyApp.C/<M>d__0", ".ctor", "()", complexity: 1, lines: [(1, 1)]),
-        ]);
-
-        await Assert.That(report.Methods).IsEmpty();
-        await Assert.That(report.Unscored).IsEmpty();   // infrastructure, not an unscored source method
+        var report = CrapAnalysis.Analyze([Method("MyApp.C/<M>d__0", "SetStateMachine", "(System.Runtime.CompilerServices.IAsyncStateMachine)", complexity: 1, lines: [(1, 1)]), Method("MyApp.C/<M>d__0", ".ctor", "()", complexity: 1, lines: [(1, 1)]), ]);
+        Assert.IsEmpty(report.Methods);
+        Assert.IsEmpty(report.Unscored); // infrastructure, not an unscored source method
     }
 
-    [Test]
-    public async Task LambdaInDisplayClass_FoldsAndMergesIntoOriginMethod()
+    [TestMethod]
+    public void LambdaInDisplayClass_FoldsAndMergesIntoOriginMethod()
     {
         // The origin method and its captured lambda: folding merges the lambda's lines into
         // UseLambda so cov spans the same code Roslyn's complexity would count.
         var origin = Method("MyApp.C", "UseLambda", "(System.Int32)", complexity: 1, lines: [(5, 1)]);
-        var lambda = Method("MyApp.C/<>c__DisplayClass0_0", "<UseLambda>b__0", "(System.Int32)",
-            complexity: 2, lines: [(6, 0)]);
-
+        var lambda = Method("MyApp.C/<>c__DisplayClass0_0", "<UseLambda>b__0", "(System.Int32)", complexity: 2, lines: [(6, 0)]);
         var report = CrapAnalysis.Analyze([origin, lambda]);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("MyApp.C.UseLambda");
-        await Assert.That(m.Coverage).IsEqualTo(0.5);           // (5:hit + 6:miss) / 2
-        await Assert.That(m.Complexity).IsEqualTo(2);           // Math.Max of the folded IL methods
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual("MyApp.C.UseLambda", m.Method);
+        Assert.AreEqual(0.5, m.Coverage); // (5:hit + 6:miss) / 2
+        Assert.AreEqual(2, m.Complexity); // Math.Max of the folded IL methods
     }
 
-    [Test]
-    public async Task LocalFunction_MangledName_FoldsToOriginMethod()
+    [TestMethod]
+    public void LocalFunction_MangledName_FoldsToOriginMethod()
     {
         var origin = Method("MyApp.C", "UseLocal", "(System.Int32)", complexity: 1, lines: [(8, 1)]);
         var local = Method("MyApp.C", "<UseLocal>g__Local|0_0", "(System.Int32)", complexity: 3, lines: [(9, 1)]);
-
         var report = CrapAnalysis.Analyze([origin, local]);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("MyApp.C.UseLocal");
-        await Assert.That(m.Complexity).IsEqualTo(3);
-        await Assert.That(m.Coverage).IsEqualTo(1.0);
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual("MyApp.C.UseLocal", m.Method);
+        Assert.AreEqual(3, m.Complexity);
+        Assert.AreEqual(1.0, m.Coverage);
     }
 
-    [Test]
-    public async Task GenericType_AritySuffixStripped()
+    [TestMethod]
+    public void GenericType_AritySuffixStripped()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.Stack`1", "Push", "(T)", complexity: 1, lines: [(1, 1)])]);
-
-        await Assert.That(report.Methods.Single().Method).IsEqualTo("MyApp.Stack.Push");
+        Assert.AreEqual("MyApp.Stack.Push", report.Methods.Single().Method);
     }
 
-    [Test]
-    public async Task NestedType_SlashBecomesDot()
+    [TestMethod]
+    public void NestedType_SlashBecomesDot()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.Outer/Inner", "M", "()", complexity: 1, lines: [(1, 1)])]);
-
-        await Assert.That(report.Methods.Single().Method).IsEqualTo("MyApp.Outer.Inner.M");
+        Assert.AreEqual("MyApp.Outer.Inner.M", report.Methods.Single().Method);
     }
 
     // ── Nested mangled names: async lambdas, top-level statements, local fns ──
-
-    [Test]
-    public async Task AsyncLambdaStateMachine_InsideDisplayClass_FoldsAndMergesIntoOriginMethod()
+    [TestMethod]
+    public void AsyncLambdaStateMachine_InsideDisplayClass_FoldsAndMergesIntoOriginMethod()
     {
         // Real coverlet shape for `async () => …` inside RunAsync: the lambda's state machine
         // nests INSIDE the display class — Ns.Type/<>c/<<RunAsync>b__0_0>d + MoveNext.
         // First-'>' bracket parsing would drop this entry entirely (it would appear in neither
         // Methods nor Unscored), turning the gate falsely green.
         var origin = Method("Probe.Lib", "RunAsync", "()", complexity: 1, lines: [(5, 1)]);
-        var lambda = Method("Probe.Lib/<>c/<<RunAsync>b__0_0>d", "MoveNext", "()", complexity: 6,
-            lines: [(10, 0), (11, 0), (12, 0)]);
-
+        var lambda = Method("Probe.Lib/<>c/<<RunAsync>b__0_0>d", "MoveNext", "()", complexity: 6, lines: [(10, 0), (11, 0), (12, 0)]);
         var report = CrapAnalysis.Analyze([origin, lambda]);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("Probe.Lib.RunAsync");
-        await Assert.That(m.Complexity).IsEqualTo(6);          // Math.Max of origin and folded state machine
-        await Assert.That(m.Coverage).IsEqualTo(0.25);         // line 5 hit; 10–12 missed
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual("Probe.Lib.RunAsync", m.Method);
+        Assert.AreEqual(6, m.Complexity); // Math.Max of origin and folded state machine
+        Assert.AreEqual(0.25, m.Coverage); // line 5 hit; 10–12 missed
     }
 
-    [Test]
-    public async Task AsyncLambdaStateMachine_WithoutOriginEntry_StandsAsItsOwnRow_AndFailsGate()
+    [TestMethod]
+    public void AsyncLambdaStateMachine_WithoutOriginEntry_StandsAsItsOwnRow_AndFailsGate()
     {
-        var lambda = Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "MoveNext", "()", complexity: 9,
-            lines: [(20, 0), (21, 0), (22, 0)]);
-
+        var lambda = Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "MoveNext", "()", complexity: 9, lines: [(20, 0), (21, 0), (22, 0)]);
         var report = CrapAnalysis.Analyze([lambda]);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("MyApp.Svc.Run");
-        await Assert.That(m.Score).IsEqualTo(90.0);            // 9²·1³ + 9
-        await Assert.That(report.Evaluate(6).Outcome).IsEqualTo(GateOutcome.Fail);
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual("MyApp.Svc.Run", m.Method);
+        Assert.AreEqual(90.0, m.Score); // 9²·1³ + 9
+        Assert.AreEqual(GateOutcome.Fail, report.Evaluate(6).Outcome);
     }
 
-    [Test]
-    public async Task AsyncLambdaStateMachine_InsideCapturingDisplayClass_FoldsToOriginMethod()
+    [TestMethod]
+    public void AsyncLambdaStateMachine_InsideCapturingDisplayClass_FoldsToOriginMethod()
     {
         // A capturing async lambda nests its state machine inside <>c__DisplayClass…, not <>c.
-        var sm = Method("MyApp.C/<>c__DisplayClass3_0/<<M>b__0>d", "MoveNext", "()",
-            complexity: 2, lines: [(7, 1)]);
-
-        await Assert.That(CrapAnalysis.Analyze([sm]).Methods.Single().Method).IsEqualTo("MyApp.C.M");
+        var sm = Method("MyApp.C/<>c__DisplayClass3_0/<<M>b__0>d", "MoveNext", "()", complexity: 2, lines: [(7, 1)]);
+        Assert.AreEqual("MyApp.C.M", CrapAnalysis.Analyze([sm]).Methods.Single().Method);
     }
 
-    [Test]
-    public async Task AsyncLambdaStateMachine_Infrastructure_IsDropped()
+    [TestMethod]
+    public void AsyncLambdaStateMachine_Infrastructure_IsDropped()
     {
-        var report = CrapAnalysis.Analyze([
-            Method("MyApp.Svc/<>c/<<Run>b__2_0>d", ".ctor", "()", complexity: 1, lines: [(1, 1)]),
-            Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "SetStateMachine",
-                "(System.Runtime.CompilerServices.IAsyncStateMachine)", complexity: 1, lines: [(1, 1)]),
-        ]);
-
-        await Assert.That(report.Methods).IsEmpty();
-        await Assert.That(report.Unscored).IsEmpty();
+        var report = CrapAnalysis.Analyze([Method("MyApp.Svc/<>c/<<Run>b__2_0>d", ".ctor", "()", complexity: 1, lines: [(1, 1)]), Method("MyApp.Svc/<>c/<<Run>b__2_0>d", "SetStateMachine", "(System.Runtime.CompilerServices.IAsyncStateMachine)", complexity: 1, lines: [(1, 1)]), ]);
+        Assert.IsEmpty(report.Methods);
+        Assert.IsEmpty(report.Unscored);
     }
 
-    [Test]
-    public async Task TopLevelStatements_AsyncEntryPoint_NormalizesToProgramMain()
+    [TestMethod]
+    public void TopLevelStatements_AsyncEntryPoint_NormalizesToProgramMain()
     {
         // Program/<<Main>$>d__0 + MoveNext: the '$' suffix and the nested brackets both parse.
-        var sm = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: 3,
-            lines: [(1, 1), (2, 0)]);
-
-        var m = await Assert.That(CrapAnalysis.Analyze([sm]).Methods).HasSingleItem();
-        await Assert.That(m.Method).IsEqualTo("Program.Main");
-        await Assert.That(m.Complexity).IsEqualTo(3);
+        var sm = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: 3, lines: [(1, 1), (2, 0)]);
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([sm]).Methods);
+        Assert.AreEqual("Program.Main", m.Method);
+        Assert.AreEqual(3, m.Complexity);
     }
 
-    [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task TopLevelStatements_EntryAndStateMachine_ShareOneMeasuredRow(bool bodyFirst)
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void TopLevelStatements_EntryAndStateMachine_ShareOneMeasuredRow(bool bodyFirst)
     {
-        var entry = Method("Program", "<Main>$", "(System.String[])", complexity: null,
-            lines: [(1, 1)]);
-        var body = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: null,
-            lines: [(2, 0)]);
-        var metrics = CodeMetricsReportBuilder.ParseType("<global namespace>", "Program",
-            m => m.Method("<top-level-statements-entry-point>", 8));
-
+        var entry = Method("Program", "<Main>$", "(System.String[])", complexity: null, lines: [(1, 1)]);
+        var body = Method("Program/<<Main>$>d__0", "MoveNext", "()", complexity: null, lines: [(2, 0)]);
+        var metrics = CodeMetricsReportBuilder.ParseType("<global namespace>", "Program", m => m.Method("<top-level-statements-entry-point>", 8));
         var report = CrapAnalysis.Analyze(bodyFirst ? [body, entry] : [entry, body], metrics);
-
-        var measured = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(measured.Score).IsEqualTo(16.0);
-        await Assert.That(report.Unscored).IsEmpty();
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+        var measured = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual(16.0, measured.Score);
+        Assert.IsEmpty(report.Unscored);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    public async Task TopLevelStatements_SyncEntryPoint_NormalizesToProgramMain()
+    [TestMethod]
+    public void TopLevelStatements_SyncEntryPoint_NormalizesToProgramMain()
     {
         var mc = Method("Program", "<Main>$", "(System.String[])", complexity: 1, lines: [(1, 1)]);
-
-        await Assert.That(CrapAnalysis.Analyze([mc]).Methods.Single().Method).IsEqualTo("Program.Main");
+        Assert.AreEqual("Program.Main", CrapAnalysis.Analyze([mc]).Methods.Single().Method);
     }
 
-    [Test]
-    public async Task AsyncLocalFunction_StateMachine_FoldsToContainingMethod()
+    [TestMethod]
+    public void AsyncLocalFunction_StateMachine_FoldsToContainingMethod()
     {
         var sm = Method("MyApp.C/<<M>g__Local|0_0>d", "MoveNext", "()", complexity: 2, lines: [(3, 1)]);
-
-        await Assert.That(CrapAnalysis.Analyze([sm]).Methods.Single().Method).IsEqualTo("MyApp.C.M");
+        Assert.AreEqual("MyApp.C.M", CrapAnalysis.Analyze([sm]).Methods.Single().Method);
     }
 
     // ── Same-arity overloads stay distinct ────────────────────────────────────
-
-    [Test]
-    public async Task SameArityOverloads_StayDistinct_UncoveredOverloadStillFailsGate()
+    [TestMethod]
+    public void SameArityOverloads_StayDistinct_UncoveredOverloadStillFailsGate()
     {
         // Keying logical methods by ARITY would merge Frob(Int32) into Frob(String), diluting
         // the uncovered comp-20 overload's CRAP 420 to a passing 23.2.
-        var risky = Method("MyApp.Svc", "Frob", "(System.Int32)", complexity: 20,
-            lines: [(10, 0), (11, 0), (12, 0), (13, 0), (14, 0)]);
-        var covered = Method("MyApp.Svc", "Frob", "(System.String)", complexity: 1,
-            lines: [.. Enumerable.Range(30, 20).Select(l => (l, 1))]);
-
+        var risky = Method("MyApp.Svc", "Frob", "(System.Int32)", complexity: 20, lines: [(10, 0), (11, 0), (12, 0), (13, 0), (14, 0)]);
+        var covered = Method("MyApp.Svc", "Frob", "(System.String)", complexity: 1, lines: [..Enumerable.Range(30, 20).Select(l => (l, 1))]);
         var report = CrapAnalysis.Analyze([risky, covered]);
-
-        await Assert.That(report.Methods.Count).IsEqualTo(2);
-        await Assert.That(report.Methods).Contains(m => m is { Complexity: 20, Score: 420.0 });
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Fail);
+        Assert.AreEqual(2, report.Methods.Count);
+        Assert.Contains(m => m is { Complexity: 20, Score: 420.0 }, report.Methods);
+        Assert.AreEqual(GateOutcome.Fail, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    public async Task FoldedStateMachine_AmbiguousAmongSameArityOverloads_StandsAsItsOwnRow()
+    [TestMethod]
+    public void FoldedStateMachine_AmbiguousAmongSameArityOverloads_StandsAsItsOwnRow()
     {
         // Two same-arity Run overloads: the folded <Run>d__2 group has no unambiguous origin,
         // so it must not merge into either — it stands as its own row (and can fail the gate).
         var a = Method("MyApp.Calc", "Run", "(System.Int32)", complexity: 1, lines: [(10, 1)]);
         var b = Method("MyApp.Calc", "Run", "(System.String)", complexity: 1, lines: [(20, 1)]);
-        var sm = Method("MyApp.Calc/<Run>d__2", "MoveNext", "()", complexity: 5,
-            lines: [(30, 0), (31, 0)]);
-
+        var sm = Method("MyApp.Calc/<Run>d__2", "MoveNext", "()", complexity: 5, lines: [(30, 0), (31, 0)]);
         var report = CrapAnalysis.Analyze([a, b, sm]);
-
-        await Assert.That(report.Methods.Count).IsEqualTo(3);
-        await Assert.That(report.Methods).Contains(m => m is { Complexity: 5, Coverage: 0.0, Score: 30.0 });
-        await Assert.That(report.Evaluate(6).Outcome).IsEqualTo(GateOutcome.Fail);
+        Assert.AreEqual(3, report.Methods.Count);
+        Assert.Contains(m => m is { Complexity: 5, Coverage: 0.0, Score: 30.0 }, report.Methods);
+        Assert.AreEqual(GateOutcome.Fail, report.Evaluate(6).Outcome);
     }
 
     // ── Complexity resolution ─────────────────────────────────────────────────
-
-    [Test]
-    public async Task EmbeddedComplexity_WinsOverMetricsFile()
+    [TestMethod]
+    public void EmbeddedComplexity_WinsOverMetricsFile()
     {
         var mc = Method("MyApp.A", "M", "(System.Int32)", complexity: 2, lines: [(1, 1)]);
-        var metrics = new[] { Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 1, complexity: 9) };
-
-        var m = await Assert.That(CrapAnalysis.Analyze([mc], metrics).Methods).HasSingleItem();
-
-        await Assert.That(m.Complexity).IsEqualTo(2);
-        await Assert.That(m.ComplexitySource).IsEqualTo(CrapComplexitySource.CoverageReport);
+        var metrics = new[]
+        {
+            Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 1, complexity: 9)
+        };
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([mc], metrics).Methods);
+        Assert.AreEqual(2, m.Complexity);
+        Assert.AreEqual(CrapComplexitySource.CoverageReport, m.ComplexitySource);
     }
 
-    [Test]
-    public async Task EmbeddedComplexity_WinsOverMetrics_ButTheMatchingMemberStillCountsAsMatched()
+    [TestMethod]
+    public void EmbeddedComplexity_WinsOverMetrics_ButTheMatchingMemberStillCountsAsMatched()
     {
         // Two separate questions: which complexity scores the method (embedded, always) and
         // whether the metrics member has a coverage counterpart (yes). "unmatched" must mean
@@ -341,62 +282,59 @@ public sealed class CrapAnalysisTests
         var metrics = new[]
         {
             Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 0, complexity: 7),
-            Member("MyApp.A", "Ghost", CodeMetricsMemberKind.Method, arity: 0, complexity: 3,
-                display: "void A.Ghost()"),
+            Member("MyApp.A", "Ghost", CodeMetricsMemberKind.Method, arity: 0, complexity: 3, display: "void A.Ghost()"),
         };
-
         var report = CrapAnalysis.Analyze([mc], metrics);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Complexity).IsEqualTo(3);
-        await Assert.That(m.ComplexitySource).IsEqualTo(CrapComplexitySource.CoverageReport);
-        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Ghost()"], CollectionOrdering.Matching);
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual(3, m.Complexity);
+        Assert.AreEqual(CrapComplexitySource.CoverageReport, m.ComplexitySource);
+        Assert.AreSequenceEqual(["void A.Ghost()"], report.UnmatchedMetricsMembers, SequenceOrder.InOrder);
     }
 
-    [Test]
-    public async Task MetricsFile_FillsInWhenCoverageHasNoComplexity()
+    [TestMethod]
+    public void MetricsFile_FillsInWhenCoverageHasNoComplexity()
     {
         var mc = Method("MyApp.A", "M", "(System.Int32)", complexity: null, lines: [(1, 0)]);
-        var metrics = new[] { Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 1, complexity: 5) };
-
+        var metrics = new[]
+        {
+            Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 1, complexity: 5)
+        };
         var report = CrapAnalysis.Analyze([mc], metrics);
-
-        var m = await Assert.That(report.Methods).HasSingleItem();
-        await Assert.That(m.Complexity).IsEqualTo(5);
-        await Assert.That(m.ComplexitySource).IsEqualTo(CrapComplexitySource.MetricsFile);
-        await Assert.That(m.Score).IsEqualTo(30.0);   // comp 5, cov 0
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        var m = Assert.ContainsSingle(report.Methods);
+        Assert.AreEqual(5, m.Complexity);
+        Assert.AreEqual(CrapComplexitySource.MetricsFile, m.ComplexitySource);
+        Assert.AreEqual(30.0, m.Score); // comp 5, cov 0
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
     }
 
-    [Test]
-    public async Task UnparenthesizedSignature_ArityUnknown_StillMatchesByName()
+    [TestMethod]
+    public void UnparenthesizedSignature_ArityUnknown_StillMatchesByName()
     {
         // Some emitters omit or truncate the signature attribute: arity is then "unknown",
         // never zero, and the name match still resolves against the metrics table.
         var mc = Method("MyApp.A", "M", "", complexity: null, lines: [(1, 1)]);
-        var metrics = new[] { Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 2, complexity: 4) };
-
-        var m = await Assert.That(CrapAnalysis.Analyze([mc], metrics).Methods).HasSingleItem();
-
-        await Assert.That(m.Complexity).IsEqualTo(4);
-        await Assert.That(m.ComplexitySource).IsEqualTo(CrapComplexitySource.MetricsFile);
+        var metrics = new[]
+        {
+            Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 2, complexity: 4)
+        };
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([mc], metrics).Methods);
+        Assert.AreEqual(4, m.Complexity);
+        Assert.AreEqual(CrapComplexitySource.MetricsFile, m.ComplexitySource);
     }
 
-    [Test]
-    public async Task UnbalancedMangledName_NeverMatchesAsSynthetic_StaysItsOwnRow()
+    [TestMethod]
+    public void UnbalancedMangledName_NeverMatchesAsSynthetic_StaysItsOwnRow()
     {
         // A method name that LOOKS mangled but never closes its bracket (`<Broken`) must not be
         // folded anywhere — the bracket parse requires the matching close, so the entry stands
         // under its literal name instead of corrupting some other method's coverage.
         var mc = Method("MyApp.A", "<Broken", "()", complexity: 1, lines: [(1, 1)]);
-
-        var m = await Assert.That(CrapAnalysis.Analyze([mc]).Methods).HasSingleItem();
-
-        await Assert.That(m.Method).IsEqualTo("MyApp.A.<Broken");
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([mc]).Methods);
+        Assert.AreEqual("MyApp.A.<Broken", m.Method);
     }
 
-    [Test]
-    public async Task Overloads_DisambiguatedByArity()
+    [TestMethod]
+    public void Overloads_DisambiguatedByArity()
     {
         var oneArg = Method("MyApp.A", "M", "(System.Int32)", complexity: null, lines: [(1, 1)]);
         var twoArg = Method("MyApp.A", "M", "(System.Int32,System.Int32)", complexity: null, lines: [(5, 1)]);
@@ -405,170 +343,130 @@ public sealed class CrapAnalysisTests
             Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 1, complexity: 2),
             Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 2, complexity: 7),
         };
-
         var report = CrapAnalysis.Analyze([oneArg, twoArg], metrics);
-
-        await Assert.That(report.Methods.Count).IsEqualTo(2);
-        await Assert.That(report.Methods).Contains(m => m.Complexity == 2);
-        await Assert.That(report.Methods).Contains(m => m.Complexity == 7);
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
+        Assert.AreEqual(2, report.Methods.Count);
+        Assert.Contains(m => m.Complexity == 2, report.Methods);
+        Assert.Contains(m => m.Complexity == 7, report.Methods);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
     }
 
-    [Test]
-    public async Task Accessor_GetPrefix_MatchesMetricsAccessorEntry()
+    [TestMethod]
+    public void Accessor_GetPrefix_MatchesMetricsAccessorEntry()
     {
         var mc = Method("MyApp.A", "get_Value", "()", complexity: null, lines: [(3, 1)]);
-        var metrics = new[] { Member("MyApp.A", "get_Value", CodeMetricsMemberKind.Accessor, arity: null, complexity: 1) };
-
-        var m = await Assert.That(CrapAnalysis.Analyze([mc], metrics).Methods).HasSingleItem();
-
-        await Assert.That(m.Complexity).IsEqualTo(1);
+        var metrics = new[]
+        {
+            Member("MyApp.A", "get_Value", CodeMetricsMemberKind.Accessor, arity: null, complexity: 1)
+        };
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([mc], metrics).Methods);
+        Assert.AreEqual(1, m.Complexity);
     }
 
-    [Test]
-    public async Task Accessor_FallsBackToPropertyAggregate_WhenNoAccessorEntries()
+    [TestMethod]
+    public void Accessor_FallsBackToPropertyAggregate_WhenNoAccessorEntries()
     {
         // Older Metrics versions emit no <Accessors>: the property aggregate is the coarser
         // honest fallback.
         var mc = Method("MyApp.A", "get_Value", "()", complexity: null, lines: [(3, 1)]);
-        var metrics = new[] { Member("MyApp.A", "Value", CodeMetricsMemberKind.Property, arity: null, complexity: 2) };
-
-        var m = await Assert.That(CrapAnalysis.Analyze([mc], metrics).Methods).HasSingleItem();
-
-        await Assert.That(m.Complexity).IsEqualTo(2);
+        var metrics = new[]
+        {
+            Member("MyApp.A", "Value", CodeMetricsMemberKind.Property, arity: null, complexity: 2)
+        };
+        var m = Assert.ContainsSingle(CrapAnalysis.Analyze([mc], metrics).Methods);
+        Assert.AreEqual(2, m.Complexity);
     }
 
     // ── Honesty channels ──────────────────────────────────────────────────────
-
-    [Test]
-    public async Task MissingMetricsFile_MethodWithoutComplexity_ListedAsUnscored()
+    [TestMethod]
+    public void MissingMetricsFile_MethodWithoutComplexity_ListedAsUnscored()
     {
         var scored = Method("MyApp.A", "WithComp", "()", complexity: 2, lines: [(1, 1)]);
         var unscored = Method("MyApp.A", "NoComp", "()", complexity: null, lines: [(5, 1)]);
-
         var report = CrapAnalysis.Analyze([scored, unscored]);
-
-        await Assert.That(report.Methods).HasSingleItem();
-        var u = await Assert.That(report.Unscored).HasSingleItem();
-        await Assert.That(u.Method).IsEqualTo("MyApp.A.NoComp");
-        await Assert.That(u.Reason).Contains("--metrics");
+        Assert.ContainsSingle(report.Methods);
+        var u = Assert.ContainsSingle(report.Unscored);
+        Assert.AreEqual("MyApp.A.NoComp", u.Method);
+        Assert.Contains("--metrics", u.Reason);
         // Never silently dropped, and never passed over: the verdict needs complete scoring.
         var gate = report.Evaluate(6);
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
-        await Assert.That(gate.Reason).StartsWith("1 of 2 methods could not be scored");
-        await Assert.That(gate.Reason).Contains("--metrics");
+        Assert.AreEqual(GateOutcome.NoData, gate.Outcome);
+        Assert.StartsWith("1 of 2 methods could not be scored", gate.Reason);
+        Assert.Contains("--metrics", gate.Reason);
     }
 
-    [Test]
-    public async Task MetricsMemberMatchingNothing_ListedAsUnmatched()
+    [TestMethod]
+    public void MetricsMemberMatchingNothing_ListedAsUnmatched()
     {
         var mc = Method("MyApp.A", "M", "()", complexity: 1, lines: [(1, 1)]);
         var metrics = new[]
         {
-            Member("MyApp.A", "Ghost", CodeMetricsMemberKind.Method, arity: 0, complexity: 3,
-                display: "void A.Ghost()"),
+            Member("MyApp.A", "Ghost", CodeMetricsMemberKind.Method, arity: 0, complexity: 3, display: "void A.Ghost()"),
             // Aggregates are complexity roll-ups, not matchable members — never listed.
             Member("MyApp.A", "Field", CodeMetricsMemberKind.Field, arity: null, complexity: 1),
         };
-
         var report = CrapAnalysis.Analyze([mc], metrics);
-
-        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.Ghost()"], CollectionOrdering.Matching);
+        Assert.AreSequenceEqual(["void A.Ghost()"], report.UnmatchedMetricsMembers, SequenceOrder.InOrder);
     }
 
-    [Test]
-    public async Task MethodWithNoLines_ListedAsUnscored()
+    [TestMethod]
+    public void MethodWithNoLines_ListedAsUnscored()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.A", "Empty", "()", complexity: 3, lines: [])]);
-
-        await Assert.That(report.Methods).IsEmpty();
-        await Assert.That(report.Unscored.Single().Reason).Contains("no line data");
+        Assert.IsEmpty(report.Methods);
+        Assert.Contains("no line data", report.Unscored.Single().Reason);
     }
 
-    [Test]
-    [Arguments(CodeMetricsMemberKind.Method, 1, 0)]
-    [Arguments(CodeMetricsMemberKind.Accessor, 1, 0)]
-    [Arguments(CodeMetricsMemberKind.Method, 6, 1)]
-    public async Task UnmatchedExecutableMetricsMember_IsNoData_WithMeasuredStatistics(
-        CodeMetricsMemberKind kind, int complexity, int aboveThreshold)
+    [TestMethod]
+    [DataRow(CodeMetricsMemberKind.Method, 1, 0)]
+    [DataRow(CodeMetricsMemberKind.Accessor, 1, 0)]
+    [DataRow(CodeMetricsMemberKind.Method, 6, 1)]
+    public void UnmatchedExecutableMetricsMember_IsNoData_WithMeasuredStatistics(CodeMetricsMemberKind kind, int complexity, int aboveThreshold)
     {
-        var report = CrapAnalysis.Analyze(
-            [Method("MyApp.A", "M", "()", complexity, [(1, 0)])],
-            [Member("MyApp.A", "Ghost", kind, 0, 9)]);
-
+        var report = CrapAnalysis.Analyze([Method("MyApp.A", "M", "()", complexity, [(1, 0)])], [Member("MyApp.A", "Ghost", kind, 0, 9)]);
         var gate = report.Evaluate(30);
-
-        await Assert.That(report.Unscored).IsEmpty();
-        await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.NoData);
-        await Assert.That(gate.IsPass).IsFalse();
-        await Assert.That(gate.ScoredMethods).IsEqualTo(1);
-        await Assert.That(gate.AboveThreshold).IsEqualTo(aboveThreshold);
-        await Assert.That(gate.WorstScore).IsEqualTo(CrapAnalysis.Score(complexity, 0));
-        await Assert.That(gate.Reason).Contains("1 metrics members without coverage data");
-        await Assert.That(report.Evaluate(double.PositiveInfinity).Outcome).IsEqualTo(GateOutcome.Disabled);
+        Assert.IsEmpty(report.Unscored);
+        Assert.AreEqual(GateOutcome.NoData, gate.Outcome);
+        Assert.IsFalse(gate.IsPass);
+        Assert.AreEqual(1, gate.ScoredMethods);
+        Assert.AreEqual(aboveThreshold, gate.AboveThreshold);
+        Assert.AreEqual(CrapAnalysis.Score(complexity, 0), gate.WorstScore);
+        Assert.Contains("1 metrics members without coverage data", gate.Reason);
+        Assert.AreEqual(GateOutcome.Disabled, report.Evaluate(double.PositiveInfinity).Outcome);
     }
 
-    [Test]
-    public async Task MetricsAggregatesWithoutCoverage_DoNotPreventAMeasuredPass()
+    [TestMethod]
+    public void MetricsAggregatesWithoutCoverage_DoNotPreventAMeasuredPass()
     {
-        var report = CrapAnalysis.Analyze(
-            [Method("MyApp.A", "M", "()", 1, [(1, 1)])],
-            [
-                Member("MyApp.A", "Value", CodeMetricsMemberKind.Property, null, 2),
-                Member("MyApp.A", "Field", CodeMetricsMemberKind.Field, null, 1),
-                Member("MyApp.A", "Changed", CodeMetricsMemberKind.Event, null, 1),
-            ]);
-
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+        var report = CrapAnalysis.Analyze([Method("MyApp.A", "M", "()", 1, [(1, 1)])], [Member("MyApp.A", "Value", CodeMetricsMemberKind.Property, null, 2), Member("MyApp.A", "Field", CodeMetricsMemberKind.Field, null, 1), Member("MyApp.A", "Changed", CodeMetricsMemberKind.Event, null, 1), ]);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
     // ── Exclusions ────────────────────────────────────────────────────────────
-
-    [Test]
-    public async Task Exclude_SameSemanticsAsReportExclude_AndCarriedOntoTheCrapReport()
+    [TestMethod]
+    public void Exclude_SameSemanticsAsReportExclude_AndCarriedOntoTheCrapReport()
     {
-        var methods = new MethodCoverageReport(
-        [
-            Method("MyApp.A", "M", "()", complexity: 1, lines: [(1, 1)], file: "src/A.cs"),
-            Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs"),
-            Method("MyApp.Migrations.X", "Down", "()", complexity: 1, lines: [(2, 1)], file: "src/Migrations/X.cs"),
-            Method("MyApp.Program", "Main", "()", complexity: 1, lines: [(1, 1)], file: "Program.cs"),
-        ], [], []);
-
+        var methods = new MethodCoverageReport([Method("MyApp.A", "M", "()", complexity: 1, lines: [(1, 1)], file: "src/A.cs"), Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs"), Method("MyApp.Migrations.X", "Down", "()", complexity: 1, lines: [(2, 1)], file: "src/Migrations/X.cs"), Method("MyApp.Program", "Main", "()", complexity: 1, lines: [(1, 1)], file: "Program.cs"), ], [], []);
         var filtered = methods.Exclude(ExclusionRules.WellKnown, keep: ["Program.cs"]);
         var report = CrapAnalysis.Analyze(filtered);
-
-        await Assert.That(filtered.Methods.Count).IsEqualTo(2);
-        await Assert.That(filtered.Methods).DoesNotContain(m => m.File.Contains("Migrations"));
-        await Assert.That(filtered.Methods).Contains(m => m.File == "Program.cs");   // keep wins, incl. the virtual-root anchor
-        await Assert.That(report.Exclusion.ExcludedFiles).IsEquivalentTo(["src/Migrations/X.cs"]);   // once per file
-        await Assert.That(report.Exclusion.Patterns).IsEquivalentTo(ExclusionRules.WellKnown);
-        await Assert.That(report.Exclusion.Keep).IsEquivalentTo(["Program.cs"]);
+        Assert.AreEqual(2, filtered.Methods.Count);
+        Assert.DoesNotContain(m => m.File.Contains("Migrations"), filtered.Methods);
+        Assert.Contains(m => m.File == "Program.cs", filtered.Methods); // keep wins, incl. the virtual-root anchor
+        Assert.AreSequenceEqual(["src/Migrations/X.cs"], report.Exclusion.ExcludedFiles, SequenceOrder.InAnyOrder); // once per file
+        Assert.AreSequenceEqual(ExclusionRules.WellKnown, report.Exclusion.Patterns, SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["Program.cs"], report.Exclusion.Keep, SequenceOrder.InAnyOrder);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static MethodCoverage Uncovered(string className, string methodName, int complexity) =>
-        Method(className, methodName, "()", complexity, lines: [(1, 0)]);
-
-    private static MethodCoverage Method(
-        string className, string methodName, string signature, int? complexity,
-        (int Line, int Hits)[] lines, string file = "src/A.cs")
+    private static MethodCoverage Uncovered(string className, string methodName, int complexity) => Method(className, methodName, "()", complexity, lines: [(1, 0)]);
+    private static MethodCoverage Method(string className, string methodName, string signature, int? complexity, (int Line, int Hits)[] lines, string file = "src/A.cs")
     {
         var hits = lines.ToDictionary(l => l.Line, l => l.Hits);
-        return new MethodCoverage(
-            className, methodName, signature, file,
-            lines.Length is 0 ? 0 : lines.Min(l => l.Line),
-            lines.Length is 0 ? 0 : lines.Max(l => l.Line),
-            lines.Count(l => l.Hits > 0), lines.Length, complexity)
+        return new MethodCoverage(className, methodName, signature, file, lines.Length is 0 ? 0 : lines.Min(l => l.Line), lines.Length is 0 ? 0 : lines.Max(l => l.Line), lines.Count(l => l.Hits > 0), lines.Length, complexity)
         {
             LineHits = new ReadOnlyDictionary<int, int>(hits)
         };
     }
 
-    private static CodeMetricsMember Member(
-        string typeName, string memberName, CodeMetricsMemberKind kind, int? arity, int complexity,
-        string? display = null) =>
-        new(typeName, memberName, kind, arity, complexity, display ?? $"{typeName}.{memberName}");
+    private static CodeMetricsMember Member(string typeName, string memberName, CodeMetricsMemberKind kind, int? arity, int complexity, string? display = null) => new(typeName, memberName, kind, arity, complexity, display ?? $"{typeName}.{memberName}");
 }

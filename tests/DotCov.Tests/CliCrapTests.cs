@@ -2,18 +2,16 @@ using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
 
 namespace DotCov.Tests;
-
 /// <summary>
 /// Pins the <c>dotcov crap</c> CLI contract: exit codes (0 pass, 1 fail/NODATA/bad flags —
 /// the same fail-closed policy as <c>check</c>), the at-threshold-passes default gate,
 /// --metrics/--top/--format handling, and the stderr first-token discriminator.
 /// </summary>
+[TestClass]
 public sealed class CliCrapTests : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-crap-");
-
     public void Dispose() => _ws.Dispose();
-
     private static async Task<(int Code, string StdOut, string StdErr)> Run(params string[] args)
     {
         var stdout = new StringWriter();
@@ -23,207 +21,162 @@ public sealed class CliCrapTests : IDisposable
     }
 
     /// <summary>comp 5, cov 0 → CRAP exactly 30: passes the default gate only because at-threshold passes.</summary>
-    private string AtDefaultThreshold() =>
-        _ws.Write("at.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "5", m => m.Line(1, hits: 0)))
-            .ToBytes());
-
+    private string AtDefaultThreshold() => _ws.Write("at.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "5", m => m.Line(1, hits: 0))).ToBytes());
     /// <summary>comp 6, cov 0 → CRAP 42: fails the default gate.</summary>
-    private string AboveDefaultThreshold() =>
-        _ws.Write("above.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c
-                .Method("Risky", "()", "6", m => m.Line(1, hits: 0))
-                .Method("Safe", "()", "1", m => m.Line(5, hits: 1)))
-            .ToBytes());
-
+    private string AboveDefaultThreshold() => _ws.Write("above.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("Risky", "()", "6", m => m.Line(1, hits: 0)).Method("Safe", "()", "1", m => m.Line(5, hits: 1))).ToBytes());
     /// <summary>Method detail present but no usable complexity anywhere.</summary>
-    private string NoComplexity() =>
-        _ws.Write("nocomp.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "()", null, m => m.Line(1, hits: 1)))
-            .ToBytes());
-
+    private string NoComplexity() => _ws.Write("nocomp.cobertura.xml", Cobertura.NewDoc().AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "()", null, m => m.Line(1, hits: 1))).ToBytes());
     // ── Exit-code matrix ──
-
-    [Test]
+    [TestMethod]
     public async Task Crap_AtThresholdExactly_Exits0()
     {
-        var (code, stdout, stderr) = await Run("crap", AtDefaultThreshold());
-
-        await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stderr).StartsWith("PASS: worst CRAP 30.0 (max 30)");
-        await Assert.That(stdout).DoesNotContain("PASS:");
+        var(code, stdout, stderr) = await Run("crap", AtDefaultThreshold());
+        Assert.AreEqual(0, code);
+        Assert.StartsWith("PASS: worst CRAP 30.0 (max 30)", stderr);
+        Assert.DoesNotContain("PASS:", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_AboveThreshold_Exits1_VerdictOnStderr()
     {
-        var (code, stdout, stderr) = await Run("crap", AboveDefaultThreshold());
-
-        await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).StartsWith("FAIL:");
-        await Assert.That(stderr).Contains("1 of 2 methods above threshold");
-        await Assert.That(stdout).Contains("MyApp.A.Risky");   // the worst-first table still lands on stdout
+        var(code, stdout, stderr) = await Run("crap", AboveDefaultThreshold());
+        Assert.AreEqual(1, code);
+        Assert.StartsWith("FAIL:", stderr);
+        Assert.Contains("1 of 2 methods above threshold", stderr);
+        Assert.Contains("MyApp.A.Risky", stdout); // the worst-first table still lands on stdout
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_RaisedThreshold_TurnsSameReportGreen()
     {
-        var (code, _, _) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "42");
-
-        await Assert.That(code).IsEqualTo(0);   // 42 is at-threshold for the Risky method → passes
+        var(code, _, _) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "42");
+        Assert.AreEqual(0, code); // 42 is at-threshold for the Risky method → passes
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_InfiniteThreshold_IsDisabled_Exits4()
     {
         // Nothing exceeds an infinite threshold, so the gate cannot fail and must not report a pass.
-        var (code, _, stderr) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "Infinity");
-
-        await Assert.That(code).IsEqualTo(4);
-        await Assert.That(stderr).StartsWith("DISABLED:");
+        var(code, _, stderr) = await Run("crap", AboveDefaultThreshold(), "--max-crap", "Infinity");
+        Assert.AreEqual(4, code);
+        Assert.StartsWith("DISABLED:", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_NoMethodDetail_Nodata_Exits3()
     {
-        var noMethods = _ws.Write("plain.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/C.cs", c => c.Line(1, hits: 1))
-            .ToBytes());
-
-        var (code, _, stderr) = await Run("crap", noMethods);
-
-        await Assert.That(code).IsEqualTo(3);
-        await Assert.That(stderr).StartsWith("NODATA:");
+        var noMethods = _ws.Write("plain.cobertura.xml", Cobertura.NewDoc().AddClass("src/C.cs", c => c.Line(1, hits: 1)).ToBytes());
+        var(code, _, stderr) = await Run("crap", noMethods);
+        Assert.AreEqual(3, code);
+        Assert.StartsWith("NODATA:", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_NoComplexitySource_Nodata_MentionsMetricsFlag()
     {
-        var (code, _, stderr) = await Run("crap", NoComplexity());
-
-        await Assert.That(code).IsEqualTo(3);
-        await Assert.That(stderr).StartsWith("NODATA:");
-        await Assert.That(stderr).Contains("--metrics");
+        var(code, _, stderr) = await Run("crap", NoComplexity());
+        Assert.AreEqual(3, code);
+        Assert.StartsWith("NODATA:", stderr);
+        Assert.Contains("--metrics", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_DirectoryInput_AggregatesLikeReport()
     {
         // The same directory dispatch as report/check: point crap at a TestResults-style
         // directory and the default recursive Cobertura pattern finds nested reports.
-        _ws.Write("run-1/coverage.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0)))
-            .ToBytes());
-
-        var (code, stdout, _) = await Run("crap", _ws.Root);
-
-        await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("MyApp.A.M");
+        _ws.Write("run-1/coverage.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0))).ToBytes());
+        var(code, stdout, _) = await Run("crap", _ws.Root);
+        Assert.AreEqual(0, code);
+        Assert.Contains("MyApp.A.M", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_ParserWarnings_AreWrittenToStderr_AndDoNotChangeTheVerdict()
     {
         // A malformed hits attribute inside a method degrades to 0 hits; the CRAP path must
         // say so — every warning, one line each — while the gate still decides on the data.
-        var path = _ws.Write("warn.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("1", "lots").Line(2, hits: 1)))
-            .ToBytes());
-
-        var (code, _, stderr) = await Run("crap", path);
-
-        await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stderr).StartsWith("PASS:");
-        await Assert.That(stderr).Contains("warning: src/A.cs:1: hits='lots' could not be parsed");
-        await Assert.That(stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Count(l => l.StartsWith("warning:"))).IsEqualTo(1);
+        var path = _ws.Write("warn.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("1", "lots").Line(2, hits: 1))).ToBytes());
+        var(code, _, stderr) = await Run("crap", path);
+        Assert.AreEqual(0, code);
+        Assert.StartsWith("PASS:", stderr);
+        Assert.Contains("warning: src/A.cs:1: hits='lots' could not be parsed", stderr);
+        Assert.AreEqual(1, stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Count(l => l.StartsWith("warning:")));
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_EmptyDirectory_Nodata_Exits3()
     {
         var dir = _ws.CreateDirectory("empty");
-
-        var (code, _, stderr) = await Run("crap", dir);
-
-        await Assert.That(code).IsEqualTo(3);
-        await Assert.That(stderr).StartsWith("NODATA:");
+        var(code, _, stderr) = await Run("crap", dir);
+        Assert.AreEqual(3, code);
+        Assert.StartsWith("NODATA:", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_MalformedReport_ErrorNamesTheFileOnce()
     {
         var bad = _ws.Write("bad/coverage.cobertura.xml", "<coverage><packa"u8.ToArray());
-
-        var (code, _, stderr) = await Run("crap", _ws.PathOf("bad"));
-
-        await Assert.That(code).IsEqualTo(5);
-        await Assert.That(stderr).StartsWith($"error: {bad}: ");
-        await Assert.That(stderr).DoesNotContain($"{bad}: {bad}");
+        var(code, _, stderr) = await Run("crap", _ws.PathOf("bad"));
+        Assert.AreEqual(5, code);
+        Assert.StartsWith($"error: {bad}: ", stderr);
+        Assert.DoesNotContain($"{bad}: {bad}", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_DirectoryWithUnsupportedPattern_Error_Exits5()
     {
         // The pattern gate rejection surfaces as a CliError, not a raw ArgumentException.
         AtDefaultThreshold();
-
-        var (code, _, stderr) = await Run("crap", _ws.Root, "--pattern", "sub/dir/coverage.xml");
-
-        await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).StartsWith("error:");
-        await Assert.That(stderr).Contains("Unsupported pattern");
+        var(code, _, stderr) = await Run("crap", _ws.Root, "--pattern", "sub/dir/coverage.xml");
+        Assert.AreEqual(2, code);
+        Assert.StartsWith("error:", stderr);
+        Assert.Contains("Unsupported pattern", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_MissingPath_Error_Exits5()
     {
-        var (code, _, stderr) = await Run("crap", _ws.PathOf("nope.xml"));
-
-        await Assert.That(code).IsEqualTo(5);
-        await Assert.That(stderr).StartsWith("error:");
+        var(code, _, stderr) = await Run("crap", _ws.PathOf("nope.xml"));
+        Assert.AreEqual(5, code);
+        Assert.StartsWith("error:", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_NoArgs_Usage_Exits2()
     {
-        var (code, _, stderr) = await Run("crap");
-
-        await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).StartsWith("error: missing path. Usage: dotcov crap");
+        var(code, _, stderr) = await Run("crap");
+        Assert.AreEqual(2, code);
+        Assert.StartsWith("error: missing path. Usage: dotcov crap", stderr);
     }
 
-    [Test]
-    [Arguments("--max-crap", "abc")]
-    [Arguments("--top", "0")]
-    [Arguments("--top", "-3")]
-    [Arguments("--format", "yaml")]
+    [TestMethod]
+    [DataRow("--max-crap", "abc")]
+    [DataRow("--top", "0")]
+    [DataRow("--top", "-3")]
+    [DataRow("--format", "yaml")]
     public async Task Crap_InvalidFlagValue_Exits2(string flag, string value)
     {
-        var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), flag, value);
-
-        await Assert.That(code).IsEqualTo(2);
-        await Assert.That(stderr).Contains("Invalid");
+        var(code, _, stderr) = await Run("crap", AtDefaultThreshold(), flag, value);
+        Assert.AreEqual(2, code);
+        Assert.Contains("Invalid", stderr);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_MissingMetricsFile_Error_Exits5()
     {
-        var (code, _, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", "/nonexistent/metrics.xml");
-
-        await Assert.That(code).IsEqualTo(5);
-        await Assert.That(stderr).StartsWith("error: No metrics file at");
+        var(code, _, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", "/nonexistent/metrics.xml");
+        Assert.AreEqual(5, code);
+        Assert.StartsWith("error: No metrics file at", stderr);
     }
 
     // ── --metrics path ──
-
-    [Test]
+    [TestMethod]
     public async Task Crap_MetricsFile_SuppliesComplexity_GatesOnIt()
     {
         // Coverage carries no complexity; the metrics file supplies comp 6 for the uncovered
         // method M → CRAP 42 → fail. The zero-extra-file path is preferred only when usable.
-        var coverage = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, hits: 0)))
-            .ToBytes());
+        var coverage = _ws.Write("mixed.cobertura.xml", Cobertura.NewDoc().AddClass("src/B.cs", "MyApp.B", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, hits: 0))).ToBytes());
         var metricsPath = _ws.PathOf("metrics.xml");
         await File.WriteAllTextAsync(metricsPath, """
             <?xml version="1.0" encoding="utf-8"?>
@@ -251,221 +204,175 @@ public sealed class CliCrapTests : IDisposable
               </Targets>
             </CodeMetricsReport>
             """);
-
-        var (code, stdout, stderr) = await Run("crap", coverage, "--metrics", metricsPath);
-
-        await Assert.That(code).IsEqualTo(1);
-        await Assert.That(stderr).Contains("FAIL: worst CRAP 42.0");
-        await Assert.That(stdout).Contains("MyApp.B.M");
+        var(code, stdout, stderr) = await Run("crap", coverage, "--metrics", metricsPath);
+        Assert.AreEqual(1, code);
+        Assert.Contains("FAIL: worst CRAP 42.0", stderr);
+        Assert.Contains("MyApp.B.M", stdout);
     }
 
     // ── Output formats ──
-
-    [Test]
-    [Arguments("table")]
-    [Arguments("md")]
-    [Arguments("json")]
+    [TestMethod]
+    [DataRow("table")]
+    [DataRow("md")]
+    [DataRow("json")]
     public async Task Crap_UninstrumentedMetricsMethod_WithholdsPass_Exits3(string format)
     {
-        var metrics = _ws.Write("incomplete.Metrics.xml", CodeMetricsReportBuilder.Create()
-            .Namespace("MyApp", t => t.Type("A", m => m
-                .Method("void A.M()", 5)
-                .Method("void A.NeverCovered()", 9)))
-            .ToBytes());
-
-        var (code, stdout, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", metrics, "--format", format);
-
-        await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
-        await Assert.That(stderr).StartsWith("NODATA: worst CRAP 30.0 (max 30)");
-        await Assert.That(stderr).Contains("1 metrics members without coverage data");
-        await Assert.That(stdout).DoesNotContain("PASS:");
-        await Assert.That(stdout).Contains("void A.NeverCovered()");
+        var metrics = _ws.Write("incomplete.Metrics.xml", CodeMetricsReportBuilder.Create().Namespace("MyApp", t => t.Type("A", m => m.Method("void A.M()", 5).Method("void A.NeverCovered()", 9))).ToBytes());
+        var(code, stdout, stderr) = await Run("crap", AtDefaultThreshold(), "--metrics", metrics, "--format", format);
+        Assert.AreEqual(DotCovCli.NoDataExitCode, code);
+        Assert.StartsWith("NODATA: worst CRAP 30.0 (max 30)", stderr);
+        Assert.Contains("1 metrics members without coverage data", stderr);
+        Assert.DoesNotContain("PASS:", stdout);
+        Assert.Contains("void A.NeverCovered()", stdout);
         if (format is "json")
         {
             using var json = System.Text.Json.JsonDocument.Parse(stdout);
-            await Assert.That(json.RootElement.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("nodata");
+            Assert.AreEqual("nodata", json.RootElement.GetProperty("gate").GetProperty("outcome").GetString());
         }
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_JsonFormat_EmitsGateAndMethods()
     {
-        var (code, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "json");
-
-        await Assert.That(code).IsEqualTo(1);
-        var root = System.Text.Json.JsonDocument.Parse(
-            stdout[..(stdout.LastIndexOf('}') + 1)]).RootElement;
-        await Assert.That(root.GetProperty("gate").GetProperty("outcome").GetString()).IsEqualTo("fail");
-        await Assert.That(root.GetProperty("methods")[0].GetProperty("method").GetString()).IsEqualTo("MyApp.A.Risky");
+        var(code, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "json");
+        Assert.AreEqual(1, code);
+        var root = System.Text.Json.JsonDocument.Parse(stdout[..(stdout.LastIndexOf('}') + 1)]).RootElement;
+        Assert.AreEqual("fail", root.GetProperty("gate").GetProperty("outcome").GetString());
+        Assert.AreEqual("MyApp.A.Risky", root.GetProperty("methods")[0].GetProperty("method").GetString());
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_Table_LocatesEachMethodByFileAndStartLine()
     {
-        var (_, stdout, _) = await Run("crap", AboveDefaultThreshold());
-
+        var(_, stdout, _) = await Run("crap", AboveDefaultThreshold());
         var rows = stdout.Split(Environment.NewLine);
-        await Assert.That(rows[0]).EndsWith("CRAP  Location");
-        await Assert.That(rows.Single(static r => r.StartsWith("MyApp.A.Risky", StringComparison.Ordinal))).EndsWith("  src/A.cs:1");
-        await Assert.That(rows.Single(static r => r.StartsWith("MyApp.A.Safe", StringComparison.Ordinal))).EndsWith("  src/A.cs:5");
+        Assert.EndsWith("CRAP  Location", rows[0]);
+        Assert.EndsWith("  src/A.cs:1", rows.Single(static r => r.StartsWith("MyApp.A.Risky", StringComparison.Ordinal)));
+        Assert.EndsWith("  src/A.cs:5", rows.Single(static r => r.StartsWith("MyApp.A.Safe", StringComparison.Ordinal)));
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_Markdown_LocatesEachMethodByFileAndStartLine()
     {
-        var (_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "md");
-
-        await Assert.That(stdout).Contains("| Method | Comp | Cov % | CRAP | Location |");
-        await Assert.That(stdout).Contains("| `MyApp.A.Risky` | 6 | 0.0% | 42.0 ❌ | `src/A.cs:1` |");
+        var(_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--format", "md");
+        Assert.Contains("| Method | Comp | Cov % | CRAP | Location |", stdout);
+        Assert.Contains("| `MyApp.A.Risky` | 6 | 0.0% | 42.0 ❌ | `src/A.cs:1` |", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_Json_GivesEachMethodItsLocationAndUncoveredRanges()
     {
-        var report = _ws.Write("ranges.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c
-                .Method("Partly", "()", "2", m => m.Line(10, hits: 1).Line(11, hits: 0).Line(12, hits: 0).Line(14, hits: 0))
-                .Method("Fully", "()", "1", m => m.Line(20, hits: 1))));
-
-        var (code, stdout, stderr) = await Run("crap", report, "--format", "json");
-
-        await Assert.That(code).IsEqualTo(0).Because(stderr);
+        var report = _ws.Write("ranges.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("Partly", "()", "2", m => m.Line(10, hits: 1).Line(11, hits: 0).Line(12, hits: 0).Line(14, hits: 0)).Method("Fully", "()", "1", m => m.Line(20, hits: 1))));
+        var(code, stdout, stderr) = await Run("crap", report, "--format", "json");
+        Assert.AreEqual(0, code, message: stderr);
         var root = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
         var gate = root.GetProperty("gate");
-        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(0);
-        await Assert.That(gate.GetProperty("reason").GetString()).IsEqualTo("PASS: worst CRAP 3.7 (max 30) - all 2 methods at or below threshold");
+        Assert.AreEqual(0, gate.GetProperty("exitCode").GetInt32());
+        Assert.AreEqual("PASS: worst CRAP 3.7 (max 30) - all 2 methods at or below threshold", gate.GetProperty("reason").GetString());
         var methods = root.GetProperty("methods").EnumerateArray().ToDictionary(static m => m.GetProperty("method").GetString()!);
         var partly = methods["MyApp.A.Partly"];
-        await Assert.That(partly.GetProperty("file").GetString()).IsEqualTo("src/A.cs");
-        await Assert.That(partly.GetProperty("line").GetInt32()).IsEqualTo(10);
-        await Assert.That(partly.GetProperty("uncovered").GetString()).IsEqualTo("11-12,14");
-        await Assert.That(methods["MyApp.A.Fully"].TryGetProperty("uncovered", out _)).IsFalse();
+        Assert.AreEqual("src/A.cs", partly.GetProperty("file").GetString());
+        Assert.AreEqual(10, partly.GetProperty("line").GetInt32());
+        Assert.AreEqual("11-12,14", partly.GetProperty("uncovered").GetString());
+        Assert.IsFalse(methods["MyApp.A.Fully"].TryGetProperty("uncovered", out _));
     }
 
-    [Test]
-    [Arguments("--max-crap", "6", 1, "fail")]
-    [Arguments("--max-crap", "Infinity", 4, "disabled")]
+    [TestMethod]
+    [DataRow("--max-crap", "6", 1, "fail")]
+    [DataRow("--max-crap", "Infinity", 4, "disabled")]
     public async Task Crap_Json_GateCarriesTheExitCodeAndTheVerdictLine(string flag, string value, int exitCode, string outcome)
     {
-        var (code, stdout, stderr) = await Run("crap", AboveDefaultThreshold(), "--format", "json", flag, value);
-
-        await Assert.That(code).IsEqualTo(exitCode);
+        var(code, stdout, stderr) = await Run("crap", AboveDefaultThreshold(), "--format", "json", flag, value);
+        Assert.AreEqual(exitCode, code);
         var gate = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("gate");
-        await Assert.That(gate.GetProperty("outcome").GetString()).IsEqualTo(outcome);
-        await Assert.That(gate.GetProperty("exitCode").GetInt32()).IsEqualTo(exitCode);
-        await Assert.That(gate.GetProperty("reason").GetString()).IsEqualTo(stderr.Split(Environment.NewLine)[0]);
+        Assert.AreEqual(outcome, gate.GetProperty("outcome").GetString());
+        Assert.AreEqual(exitCode, gate.GetProperty("exitCode").GetInt32());
+        Assert.AreEqual(stderr.Split(Environment.NewLine)[0], gate.GetProperty("reason").GetString());
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_MarkdownFormat_EmitsBadgeAndVerdict()
     {
-        var (code, stdout, _) = await Run("crap", AtDefaultThreshold(), "--format", "md");
-
-        await Assert.That(code).IsEqualTo(0);
-        await Assert.That(stdout).Contains("## CRAP Report ✅");
-        await Assert.That(stdout).Contains("`PASS:");
+        var(code, stdout, _) = await Run("crap", AtDefaultThreshold(), "--format", "md");
+        Assert.AreEqual(0, code);
+        Assert.Contains("## CRAP Report ✅", stdout);
+        Assert.Contains("`PASS:", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_Top_TruncatesTable()
     {
-        var (_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--top", "1");
-
-        await Assert.That(stdout).Contains("MyApp.A.Risky");
-        await Assert.That(stdout).DoesNotContain("MyApp.A.Safe");
-        await Assert.That(stdout).Contains("1 more methods below");
+        var(_, stdout, _) = await Run("crap", AboveDefaultThreshold(), "--top", "1");
+        Assert.Contains("MyApp.A.Risky", stdout);
+        Assert.DoesNotContain("MyApp.A.Safe", stdout);
+        Assert.Contains("1 more methods below", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_ExcludeGenerated_DropsExcludedFilesFromGate()
     {
         // A high-CRAP method in Program.cs (excluded by the WellKnown rules) must not fail the
         // gate once --exclude-generated is on — same rule set as report/check.
-        var mixed = _ws.Write("gen.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("Program.cs", "Program", c => c.Method("Main", "()", "9", m => m.Line(1, hits: 0)))
-            .AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)))
-            .ToBytes());
-
-        var (withoutFlag, _, _) = await Run("crap", mixed);
-        var (withFlag, stdout, _) = await Run("crap", mixed, "--exclude-generated");
-
-        await Assert.That(withoutFlag).IsEqualTo(1);
-        await Assert.That(withFlag).IsEqualTo(0);
-        await Assert.That(stdout).DoesNotContain("Program");
+        var mixed = _ws.Write("gen.cobertura.xml", Cobertura.NewDoc().AddClass("Program.cs", "Program", c => c.Method("Main", "()", "9", m => m.Line(1, hits: 0))).AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes());
+        var(withoutFlag, _, _) = await Run("crap", mixed);
+        var(withFlag, stdout, _) = await Run("crap", mixed, "--exclude-generated");
+        Assert.AreEqual(1, withoutFlag);
+        Assert.AreEqual(0, withFlag);
+        Assert.DoesNotContain("Program", stdout);
     }
 
     // ── Complete scoring: one unscored method withholds the verdict ──
-
     /// <summary>A scored method well below the gate beside one the report gives no complexity for.</summary>
-    private string PartlyScored() =>
-        _ws.Write("partly.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", "MyApp.A", c => c
-                .Method("Scored", "()", "1", m => m.Line(1, hits: 1))
-                .Method("Unscored", "()", null, m => m.Line(5, hits: 0)))
-            .ToBytes());
-
-    [Test]
-    [Arguments("table")]
-    [Arguments("md")]
-    [Arguments("json")]
+    private string PartlyScored() => _ws.Write("partly.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("Scored", "()", "1", m => m.Line(1, hits: 1)).Method("Unscored", "()", null, m => m.Line(5, hits: 0))).ToBytes());
+    [TestMethod]
+    [DataRow("table")]
+    [DataRow("md")]
+    [DataRow("json")]
     public async Task Crap_OneUnscoredMethod_IsNoData_Exits3_AndStillListsIt(string format)
     {
         // 2.x passed this report: the only scored method sits far below 30, and the method it could
         // not score was listed and ignored. That method may be the one above the limit.
-        var (code, stdout, stderr) = await Run("crap", PartlyScored(), "--format", format);
-
-        await Assert.That(code).IsEqualTo(DotCovCli.NoDataExitCode);
-        await Assert.That(stderr).StartsWith("NODATA: worst CRAP 1.0 (max 30) - 1 of 2 methods could not be scored - supply --metrics <file>");
-        await Assert.That(stdout).DoesNotContain("PASS:");
-        await Assert.That(stdout).Contains("MyApp.A.Unscored");
-        await Assert.That(stdout).Contains(format is "json" ? "\"outcome\": \"nodata\"" : "no complexity in the coverage report");
+        var(code, stdout, stderr) = await Run("crap", PartlyScored(), "--format", format);
+        Assert.AreEqual(DotCovCli.NoDataExitCode, code);
+        Assert.StartsWith("NODATA: worst CRAP 1.0 (max 30) - 1 of 2 methods could not be scored - supply --metrics <file>", stderr);
+        Assert.DoesNotContain("PASS:", stdout);
+        Assert.Contains("MyApp.A.Unscored", stdout);
+        Assert.Contains(format is "json" ? "\"outcome\": \"nodata\"" : "no complexity in the coverage report", stdout);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Crap_MetricsFileScoringTheRest_TurnsTheSameReportIntoAMeasuredPass()
     {
         // The remedy the reason names: --metrics supplies the missing complexity.
-        var metrics = _ws.Write("A.Metrics.xml", CodeMetricsReportBuilder.Create()
-            .Namespace("MyApp", t => t.Type("A", m => m.Method("void A.Unscored()", 1)))
-            .ToBytes());
-
-        var (code, _, stderr) = await Run("crap", PartlyScored(), "--metrics", metrics);
-
-        await Assert.That(code).IsEqualTo(0).Because(stderr);
-        await Assert.That(stderr).StartsWith("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold");
+        var metrics = _ws.Write("A.Metrics.xml", CodeMetricsReportBuilder.Create().Namespace("MyApp", t => t.Type("A", m => m.Method("void A.Unscored()", 1))).ToBytes());
+        var(code, _, stderr) = await Run("crap", PartlyScored(), "--metrics", metrics);
+        Assert.AreEqual(0, code, message: stderr);
+        Assert.StartsWith("PASS: worst CRAP 2.0 (max 30) - all 2 methods at or below threshold", stderr);
     }
 
     // Istanbul (Vitest, c8, Jest) and coverage.py write no complexity: --metrics, a .NET tool, cannot help.
-    [Test]
+    [TestMethod]
     public async Task Crap_ReportWithoutAnyComplexity_SaysWhichEmittersWriteNone()
     {
         using var ws = TempWorkspace.Create("dotcov-crap-istanbul-");
-        var report = ws.Write("cobertura-coverage.xml", Cobertura.NewDoc().AddClass("src/shipping.ts", "shipping.ts", c => c
-            .Method("shippingCost", "()", null, m => m.Line(1, 1))
-            .Method("label", "()", null, m => m.Line(11, 0))).ToBytes());
+        var report = ws.Write("cobertura-coverage.xml", Cobertura.NewDoc().AddClass("src/shipping.ts", "shipping.ts", c => c.Method("shippingCost", "()", null, m => m.Line(1, 1)).Method("label", "()", null, m => m.Line(11, 0))).ToBytes());
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-
         var code = await DotCovCli.RunAsync(["crap", report], stdout, stderr);
-
-        await Assert.That(code).IsEqualTo(3);
-        await Assert.That(stderr.ToString()).StartsWith(
-            "NODATA: worst CRAP n/a (max 30) - the report carries no method complexity - Istanbul (Vitest, c8, Jest), coverage.py");
-        await Assert.That(stderr.ToString()).DoesNotContain("dotnet msbuild");
+        Assert.AreEqual(3, code);
+        Assert.StartsWith("NODATA: worst CRAP n/a (max 30) - the report carries no method complexity - Istanbul (Vitest, c8, Jest), coverage.py", stderr.ToString());
+        Assert.DoesNotContain("dotnet msbuild", stderr.ToString());
     }
 
     // coverage.py writes no <methods> at all: the same answer, not "no method-level data".
-    [Test]
+    [TestMethod]
     public async Task Crap_CoveragePyReport_GetsTheSameAnswer()
     {
         var report = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Corpus", "coveragepy", "coverage.xml");
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-
         var code = await DotCovCli.RunAsync(["crap", report], stdout, stderr);
-
-        await Assert.That(code).IsEqualTo(3);
-        await Assert.That(stderr.ToString()).StartsWith("NODATA: worst CRAP n/a (max 30) - the report carries no method complexity");
+        Assert.AreEqual(3, code);
+        Assert.StartsWith("NODATA: worst CRAP n/a (max 30) - the report carries no method complexity", stderr.ToString());
     }
 }
-

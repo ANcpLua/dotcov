@@ -27,7 +27,7 @@ description: >-
    GitHub Release job after NuGet publication, so include them before tagging.
 3. Use the [Fallout verification targets](../../../src/DotCov.Fallout/AGENTS.md)
    for changed behavior. After `dotnet tool restore`, the focused version check is
-   `fallout Test --filter '/*/*/ReleaseVersionTests/*'`. Tests already compile the
+   `fallout Test --filter 'FullyQualifiedName~DotCov.Tests.ReleaseVersionTests'`. Tests already compile the
    changed code; do not add a separate build. Keep the full CI release dependencies
    intact: build, Linux/Windows tests, badge-action, consumer-coverage,
    readme-badge-coverage, pack-tool-native, and pack-rest.

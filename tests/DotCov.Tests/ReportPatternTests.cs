@@ -1,71 +1,68 @@
 namespace DotCov.Tests;
-
 /// <summary>
 /// The pattern contract: only <c>filename</c> and <c>**/filename</c>, split on the literal
 /// <c>**/</c> prefix and never on the host's directory separator. Any other directory component
 /// is rejected: discarding it would let <c>coverage/*.xml</c> match the wrong scope and reach
 /// the gate as NoData, the most invisible misconfiguration.
 /// </summary>
+[TestClass]
 public sealed class ReportPatternTests
 {
-    [Test]
-    [Arguments("coverage.cobertura.xml", "coverage.cobertura.xml", false)]
-    [Arguments("**/coverage.cobertura.xml", "coverage.cobertura.xml", true)]
-    [Arguments("coverage.xml", "coverage.xml", false)]
-    [Arguments("*.xml", "*.xml", false)]
-    [Arguments("**/*.xml", "*.xml", true)]
-    [Arguments("**coverage.xml", "**coverage.xml", false)]   // '**' inside the NAME: filename-shaped, top level only
-    [Arguments("**/**coverage.xml", "**coverage.xml", true)]
-    public async Task Parse_ValidPattern_SplitsNameAndRecursion(string pattern, string fileName, bool recursive)
+    [TestMethod]
+    [DataRow("coverage.cobertura.xml", "coverage.cobertura.xml", false)]
+    [DataRow("**/coverage.cobertura.xml", "coverage.cobertura.xml", true)]
+    [DataRow("coverage.xml", "coverage.xml", false)]
+    [DataRow("*.xml", "*.xml", false)]
+    [DataRow("**/*.xml", "*.xml", true)]
+    [DataRow("**coverage.xml", "**coverage.xml", false)] // '**' inside the NAME: filename-shaped, top level only
+    [DataRow("**/**coverage.xml", "**coverage.xml", true)]
+    public void Parse_ValidPattern_SplitsNameAndRecursion(string pattern, string fileName, bool recursive)
     {
         var parsed = ReportPattern.Parse(pattern);
-
-        await Assert.That(parsed.FileName).IsEqualTo(fileName);
-        await Assert.That(parsed.Recursive).IsEqualTo(recursive);
-        await Assert.That(parsed.ToString()).IsEqualTo(pattern);
-        await Assert.That(ReportPattern.TryParse(pattern, out var viaTry)).IsTrue();
-        await Assert.That(viaTry).IsEqualTo(parsed);
+        Assert.AreEqual(fileName, parsed.FileName);
+        Assert.AreEqual(recursive, parsed.Recursive);
+        Assert.AreEqual(pattern, parsed.ToString());
+        Assert.IsTrue(ReportPattern.TryParse(pattern, out var viaTry));
+        Assert.AreEqual(parsed, viaTry);
     }
 
-    [Test]
-    [Arguments("")]
-    [Arguments("**/")]
-    [Arguments("coverage/*.xml")]
-    [Arguments("unit/**/coverage.cobertura.xml")]
-    [Arguments("**/sub/coverage.xml")]
-    [Arguments(@"src\coverage.cobertura.xml")]
-    [Arguments(@"**\coverage.cobertura.xml")]
-    [Arguments("/coverage.xml")]
-    [Arguments("Fixtures/sample.cobertura.xml")]
-    public async Task Parse_InvalidPattern_ThrowsNamingTheParameter(string pattern)
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("**/")]
+    [DataRow("coverage/*.xml")]
+    [DataRow("unit/**/coverage.cobertura.xml")]
+    [DataRow("**/sub/coverage.xml")]
+    [DataRow(@"src\coverage.cobertura.xml")]
+    [DataRow(@"**\coverage.cobertura.xml")]
+    [DataRow("/coverage.xml")]
+    [DataRow("Fixtures/sample.cobertura.xml")]
+    public void Parse_InvalidPattern_ThrowsNamingTheParameter(string pattern)
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(() => ReportPattern.Parse(pattern));
-
-        await Assert.That(ex.ParamName).IsEqualTo("pattern");
-        await Assert.That(ex.Message).Contains($"Unsupported pattern '{pattern}'");
-        await Assert.That(ReportPattern.TryParse(pattern, out var result)).IsFalse();
-        await Assert.That(result).IsNull();
+        Assert.AreEqual("pattern", ex.ParamName);
+        Assert.Contains($"Unsupported pattern '{pattern}'", ex.Message);
+        Assert.IsFalse(ReportPattern.TryParse(pattern, out var result));
+        Assert.IsNull(result);
     }
 
-    [Test]
-    public async Task Default_IsARecursiveCoberturaPattern()
+    [TestMethod]
+    public void Default_IsARecursiveCoberturaPattern()
     {
-        await Assert.That(ReportPattern.Default.FileName).IsEqualTo("*cobertura*.xml");
-        await Assert.That(ReportPattern.Default.Recursive).IsTrue();
-        await Assert.That(ReportPattern.Default.ToString()).IsEqualTo(ReportPattern.DefaultText);
-        await Assert.That(ReportPattern.Parse(ReportPattern.DefaultText)).IsEqualTo(ReportPattern.Default);
+        Assert.AreEqual("*cobertura*.xml", ReportPattern.Default.FileName);
+        Assert.IsTrue(ReportPattern.Default.Recursive);
+        Assert.AreEqual(ReportPattern.DefaultText, ReportPattern.Default.ToString());
+        Assert.AreEqual(ReportPattern.Default, ReportPattern.Parse(ReportPattern.DefaultText));
     }
 
-    [Test]
-    public async Task Equality_IsByNameAndRecursion_Ordinal()
+    [TestMethod]
+    public void Equality_IsByNameAndRecursion_Ordinal()
     {
-        await Assert.That(ReportPattern.Parse("coverage.xml")).IsEqualTo(ReportPattern.Parse("coverage.xml"));
-        await Assert.That(ReportPattern.Parse("coverage.xml")).IsNotEqualTo(ReportPattern.Parse("**/coverage.xml"));
-        await Assert.That(ReportPattern.Parse("coverage.xml")).IsNotEqualTo(ReportPattern.Parse("Coverage.xml"));
-        await Assert.That(ReportPattern.Parse("coverage.xml").GetHashCode()).IsEqualTo(ReportPattern.Parse("coverage.xml").GetHashCode());
+        Assert.AreEqual(ReportPattern.Parse("coverage.xml"), ReportPattern.Parse("coverage.xml"));
+        Assert.AreNotEqual(ReportPattern.Parse("**/coverage.xml"), ReportPattern.Parse("coverage.xml"));
+        Assert.AreNotEqual(ReportPattern.Parse("Coverage.xml"), ReportPattern.Parse("coverage.xml"));
+        Assert.AreEqual(ReportPattern.Parse("coverage.xml").GetHashCode(), ReportPattern.Parse("coverage.xml").GetHashCode());
     }
 
-    [Test]
-    public void Parse_Null_ThrowsArgumentNull() =>
-        Assert.ThrowsExactly<ArgumentNullException>(() => ReportPattern.Parse(null!));
+    [TestMethod]
+    public void Parse_Null_ThrowsArgumentNull() => Assert.ThrowsExactly<ArgumentNullException>(() => ReportPattern.Parse(null!));
 }

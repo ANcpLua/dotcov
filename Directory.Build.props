@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.2</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.4.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.3.2 addresses repository inspection findings across the parser, formatters, CLI, build entry points, and tests.
-Reuses the upload HTTP client, disposes request and response content, and materializes nullable signature inputs once.
-Corrects XML documentation and asynchronous resource disposal while retaining published APIs, synchronous parser tests, coverage gates, and JSON contracts.
+DotCov 4.4.0 migrates the entire repository test suite to MSTest 4.5.1 on native Microsoft.Testing.Platform.
+Preserves every existing test case and the unchanged coverlet.MTP measurement contract, with native assertions, data providers, resource locks, cancellation, and per-test fixtures.
+Removes the previous test framework and updates all test commands and documentation. Published APIs, coverage gates, exit codes, and JSON contracts are unchanged.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

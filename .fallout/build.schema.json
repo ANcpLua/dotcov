@@ -125,7 +125,7 @@
         },
         "Filter": {
           "type": "string",
-          "description": "TUnit tree-node filter"
+          "description": "MSTest test-case filter"
         },
         "Format": {
           "type": "string",

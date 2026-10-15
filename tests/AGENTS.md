@@ -1,117 +1,97 @@
-# Tests, Coverage und Fallout in diesem Repo
+# Tests, coverage, and Fallout
 
-Runner ist **Microsoft.Testing.Platform** (`global.json` → `"test.runner"`), Framework TUnit 1.74.
-SDK 10: MTP-Optionen gehen direkt an `dotnet test`; ein zusätzlicher `--`-Trenner ist
-hier nicht erforderlich. Die ältere VSTest-Integration hat andere Aufrufregeln.
+The suite uses **MSTest 4.5.1** on **Microsoft.Testing.Platform**, selected by
+`global.json`. .NET SDK 10 accepts native platform options directly after
+`dotnet test`; no additional `--` separator is required.
 
-## Befehle
+## Commands
 
-Für normale Verifikation die [Fallout-Targets](../src/DotCov.Fallout/AGENTS.md) verwenden.
-Direkte Runner-Aufrufe bleiben für Discovery und gezielte Diagnosen verfügbar:
+Use the [Fallout targets](../src/DotCov.Fallout/AGENTS.md) for routine verification.
+Direct runner commands are available for discovery and focused diagnostics:
 
-```bash
-dotnet test --project tests/DotCov.Tests                                   # Suite
-dotnet test --project tests/DotCov.Tests --treenode-filter "/*/*/ReportPatternTests/*"
-dotnet test --project tests/DotCov.Tests --treenode-filter "/*/*/*/*[Category=Integration]"
-dotnet test --project tests/DotCov.Tests --list-tests                      # Discovery-Gate
+```sh
+dotnet test --project tests/DotCov.Tests
+dotnet test --project tests/DotCov.Tests --filter "FullyQualifiedName~DotCov.Tests.ReportPatternTests"
+dotnet test --project tests/DotCov.Tests --filter "TestCategory=Integration"
+dotnet test --project tests/DotCov.Tests --list-tests
 ```
 
-Treenode-Pfad: `/<Assembly>/<Namespace>/<Klasse>/<Test>`; Namespace ist `DotCov.Tests`.
+The Fallout `--filter` parameter forwards the native MSTest test-case expression.
+Discover new cases before executing them. The migration preserves all 1,999
+existing cases and adds two scenario-provider contract tests (2,001 total).
+Use `--report-trx` for structured execution results; resolve additional options
+from the actual runner's `--help` rather than assuming another runner's flags.
 
-Neue Tests zuerst mit `--list-tests` prüfen. Für TUnit `--treenode-filter` verwenden;
-das gleichnamig wirkende `--filter` am Fallout-Wrapper wird dorthin übersetzt.
-
-MTP-Exitcodes: **5** ungültige Argumente, **8** keine Tests, **9** Mindestanzahl nicht
-erreicht, **13** Abbruch am Fehlerlimit. Bei Fallout zusätzlich den Kindprozess-Exitcode
-im Log lesen; der Wrapper muss nicht denselben Zahlenwert zurückgeben.
-Siehe [MTP-Diagnose](https://learn.microsoft.com/en-us/dotnet/core/testing/microsoft-testing-platform-troubleshooting).
-
-`--info` zeigt Version und registrierte Provider, `--help` deren Optionen. Für tiefere
-Diagnose: `--diagnostic --diagnostic-verbosity Trace --diagnostic-output-directory <dir>`;
-bei Buildproblemen `-bl`. `TestingPlatformCaptureOutput` und
-`TestingPlatformShowTestsFailure` gehören zur alten VSTest-Integration und werden im
-[nativen MTP-Modus](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-with-dotnet-test#mtp-mode-of-dotnet-test)
-nicht verwendet.
+MTP exit codes include **5** for invalid arguments, **8** for no tests,
+**9** for fewer than the required tests, and **13** for reaching a failure limit.
+For Fallout, inspect the child-process exit in the log; the wrapper may return
+another failure code. See [MTP diagnostics](https://learn.microsoft.com/en-us/dotnet/core/testing/microsoft-testing-platform-troubleshooting).
 
 ## Coverage
 
-Coverage ist **coverlet.MTP** (`--coverlet`), eingeschaltet mit `-p:Coverage=true`. Die
-Coverlet-Argumente stehen nur in `tests/DotCov.Tests/DotCov.Tests.csproj`
-(`TestingPlatformCommandLineArguments`); Fallout-Wrapper und CI setzen nur die Eigenschaft.
-Ohne Aktivierung bleiben normale Testläufe uninstrumentiert.
+Coverage remains **coverlet.MTP** (`--coverlet`), enabled with `-p:Coverage=true`.
+The arguments live only in [DotCov.Tests.csproj](DotCov.Tests/DotCov.Tests.csproj),
+in `TestingPlatformCommandLineArguments`. Fallout and CI enable that property.
+Normal runs remain uninstrumented. Do not also enable the separately registered
+Microsoft provider's `--coverage` switch when measuring DotCov itself.
 
-```bash
+```sh
 dotnet tool restore
-fallout Coverage                                         # Wrapper
-dotnet test --project tests/DotCov.Tests -p:Coverage=true         # direkt
+dotnet fallout Coverage
+dotnet test --project tests/DotCov.Tests -p:Coverage=true
 ```
 
-- Der Wrapper schreibt jeden Lauf in `TestResults/<run-id>` und liest nur dieses Verzeichnis.
-  Bei `--reports` ein konkretes Laufverzeichnis wählen, nicht den gesamten alten Ergebnisbaum.
-- Die Include-/Exclude-Filter gehören zum Messvertrag: gleiche Filter für lokale und
-  CI-Läufe. Für DotCov-Zahlen `-p:Coverage=true` verwenden, nicht zusätzlich den ebenfalls
-  registrierten Microsoft-Provider `--coverage` aktivieren.
-- Das Default-Pattern `**/*cobertura*.xml` findet klassische und zeitgestempelte Cobertura-
-  Reports. Generische Namen wie `coverage.xml` brauchen weiterhin ein explizites Pattern.
+The wrapper writes each measurement into `TestResults/<run-id>` and reads only
+that directory. With `--reports`, supply a specific file or single-run directory,
+not a tree of old runs. Include/exclude filters are the measurement contract and
+must match CI. Every shipping assembly must appear, with 100% of lines and
+branches measured and covered. Add tests through public entry points for gaps;
+never remove code from measurement to pass. The default report pattern finds
+classic and timestamped Cobertura reports; `coverage.xml` needs an explicit pattern.
 
-## Fallout
+## Test contracts
 
-`build/Build.cs` bündelt Tests und DotCov-Aufrufe als lokale Fallout-Targets. CI nutzt
-weiterhin direktes `dotnet` mit demselben `-p:Coverage=true`. Davon getrennt bleiben:
+- The assembly explicitly runs tests in parallel at method scope. Tests that
+  read or write process environment state use
+  `[ResourceLock(ProcessState.Environment)]`; the key is MSTest's
+  `WellKnownResources.EnvironmentVariables`. Preserve participation of both
+  readers and writers. Use `EnvScope` / `CultureScope` for restoration.
+- Use native `[TestClass]`, `[TestMethod]`, `[DataRow]`, `[DynamicData]`, and
+  `[CombinatorialData]`. Immutable scenario descriptors use `ITestDataSource`.
+  Discovery must not open streams, start servers, or acquire mutable resources.
+- Native synchronous assertions execute immediately. Await real asynchronous
+  operations and async exception assertions. Keep tests of synchronous parser
+  contracts on the synchronous API; an async assertion or cleanup does not
+  justify changing the operation under test. Preserve exact exception types,
+  numeric tolerances, collection ordering, and diagnostic messages.
+- Get cooperative cancellation from `TestContext.CancellationToken`. Timeouts
+  use `CooperativeCancellation = true`; the test must pass the token to owned
+  operations and join those operations before cleanup.
+- Resources belong to one test invocation/data row. Use `TestInitialize` /
+  `TestCleanup` for the upload endpoint, `TempWorkspace` for temporary files,
+  and `ChildProcess` for processes. Reap children and stop/join servers before
+  disposing their workspaces. Do not share mutable fixtures or introduce fake
+  async initialization for stateless objects.
+- `BadgeActionTests` choose Git for Windows' Bash rather than WSL Bash. CI checks
+  the composite action and its default installer using locally packed candidates
+  on Linux and Windows. All badge pushes target a local bare repository.
 
-- `src/DotCov.Fallout`: die ausgelieferte Komponente `ICoverageReport` (Target
-  `ReportCoverage`, Parameter-Präfix `Coverage`, sucht in `RootDirectory/TestResults`).
-- `tests/DotCov.Fallout.TestBuild`: ein minimaler Consumer, den `FalloutBuildTests` als echten
-  Prozess startet. Modus per `DOTCOV_TESTBUILD` (`compile`, `wait`, sonst plain).
+## Fallout integration
 
-Das Komponentenverhalten wird über diesen TestBuild geprüft. `RepositoryBuildTests` prüft
-den Repository-Wrapper ebenfalls als echten Prozess: Parameter, Eingaben und Exit-Verhalten.
+`build/Build.cs` provides local verification targets. CI uses direct native
+`dotnet` commands with the same coverage property. The shipped
+`src/DotCov.Fallout` component is tested through the real consuming executable
+in `tests/DotCov.Fallout.TestBuild` (plain, compile, and cancellation modes).
+Repository-wrapper tests also use real processes. Keep report interpretation
+and gate policy in DotCov, and parameter binding/presentation in the adapter.
 
-## TUnit-Regeln für diese Suite
+## Isolation diagnostics
 
-- Tests, die Prozess-Umgebungsvariablen oder Kultur ändern, tragen
-  `[NotInParallel(ProcessState.Environment)]` und nutzen `EnvScope` / `CultureScope`
-  (`Infrastructure/`). Betroffene Leser müssen dieselbe Isolation beachten.
-- Assertions müssen ausgeführt und ihre Ergebnisse beobachtet werden, gewöhnlich mit
-  `await`. Fehlendes `await` auf derselben Zeile allein beweist keinen unwirksamen Test.
-  Exception-Assertions prüfen den zugesagten Fehlertyp; `Throws<Exception>` allein schützt
-  keinen spezifischen Fehlervertrag.
-- Geteilte Fixtures nur für bewusst gemeinsam genutzten, parallel sicheren Zustand.
-  Für einfache zustandslose Objekte keine künstliche asynchrone Initialisierung einführen.
-- Temp-Verzeichnisse über `TempWorkspace`, Kindprozesse über `ChildProcess`.
-- `BadgeActionTests` laufen auch unter Windows und wählen dort explizit Git for Windows' Bash
-  statt eines möglichen WSL-Bash auf PATH. Die `badge-action`-CI-Matrix prüft zusätzlich die
-  Composite Action mit dem lokal gepackten Kandidaten und ihrem Standard-Installer auf Linux
-  und Windows (Pull Requests nur Linux); Pushes gehen ausschließlich an ein lokales Bare-Repository.
-
-## Isolation messen
-
-Gleichen Build, Testumfang und dieselben Einstellungen vergleichen. Retries auf allen
-Ebenen ausschalten; weder `--fail-fast`, Fehlerlimits noch unterdrückte Exitcodes verwenden.
-Wiederholungen wie `[Repeat(n)]` sind zusätzliche Beobachtungen, keine Heilung eines Fehlers.
-Normale Tests behalten ihre Parallelität; Messläufe setzen ein explizites Limit.
-
-Nach einem Release-Build die Platzhalter für Klasse und Test ersetzen. Jeder Vergleich
-erhält ein frisches Ergebnisverzeichnis; Coverage bleibt für diese Zeit-/Isolationsprobe aus:
-
-```bash
-measurement_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotcov-isolation.XXXXXX")
-dotnet test --project tests/DotCov.Tests -c Release --no-build -p:Coverage=false \
-  --treenode-filter "/*/*/<Klasse>/<Test>" --maximum-parallel-tests 1 \
-  --minimum-expected-tests 1 --results-directory "$measurement_dir/solo" --report-trx
-dotnet test --project tests/DotCov.Tests -c Release --no-build -p:Coverage=false \
-  --maximum-parallel-tests 1 --minimum-expected-tests 1 \
-  --results-directory "$measurement_dir/seq" --report-trx
-dotnet test --project tests/DotCov.Tests -c Release --no-build -p:Coverage=false \
-  --maximum-parallel-tests 4 --minimum-expected-tests 1 \
-  --results-directory "$measurement_dir/par" --report-trx
-```
-
-Solo↔sequenziell liefert Hinweise auf Reihenfolge-/Umgebungsabhängigkeit;
-sequenziell↔parallel auf Nebenläufigkeit oder Ressourcenkonkurrenz. Ein Unterschied allein
-beweist keinen geteilten Zustand. Zeitzone und Kultur separat variieren, nicht gleichzeitig
-mit der Parallelität. TRX-Dauer ist keine isolierte Setup-Zeit; dafür eigene Messgrenzen setzen.
-
-Für maschinenlesbare Discovery unterstützt der aktuelle Runner `--list-tests json`;
-ermittelte UIDs nur für den zugehörigen Build verwenden. `--filter-uid` und
-`--treenode-filter` nicht kombinieren. Optionen zuerst mit `--help` prüfen.
+Compare the same build, scope, and settings; vary only one condition at a time.
+Disable retries and do not hide exits, stop at a failure limit, or use fail-fast.
+Keep normal parallelism. For an isolation investigation, pass `--settings`
+with an MSTest runsettings file selecting `Parallelize/Workers` and
+`Parallelize/Scope=MethodLevel`; compare one worker with a bounded parallel run.
+Use fresh result directories, `--report-trx`, and `--minimum-expected-tests 1`.
+A `WaitAsync` timeout only ends the observation: cancellation and joining of the
+original operation remain the test's responsibility.

@@ -2,135 +2,115 @@ using DotCov.Formatters;
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
-[NotInParallel(ProcessState.Environment)]
+[TestClass]
+[ResourceLock(ProcessState.Environment)]
 public sealed class AnsiTests
 {
-    private static readonly string[] AllVars =
-    [
-        "NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR", "TERM",
-        "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "BUILDKITE", "TF_BUILD",
-        "DRONE", "APPVEYOR", "TRAVIS", "WOODPECKER", "FORGEJO_ACTIONS", "GITEA_ACTIONS"
-    ];
-
-    [Test]
-    public async Task NoColor_OverridesEverything_ReturnsFalse()
+    private static readonly string[] AllVars = ["NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR", "TERM", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "BUILDKITE", "TF_BUILD", "DRONE", "APPVEYOR", "TRAVIS", "WOODPECKER", "FORGEJO_ACTIONS", "GITEA_ACTIONS"];
+    [TestMethod]
+    public void NoColor_OverridesEverything_ReturnsFalse()
     {
-        using var _ = new EnvScope(
-            ("NO_COLOR", "1"),
-            ("FORCE_COLOR", "1"),
-            ("GITHUB_ACTIONS", "true")
-        );
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsFalse();
+        using var _ = new EnvScope(("NO_COLOR", "1"), ("FORCE_COLOR", "1"), ("GITHUB_ACTIONS", "true"));
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: false));
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    public async Task NoColor_EmptyString_DoesNotDisableBecauseEnvIsAbsent()
+    [TestMethod]
+    public void NoColor_EmptyString_DoesNotDisableBecauseEnvIsAbsent()
     {
         using var _ = EnvScope.Clear(AllVars);
         using var force = new EnvScope(("FORCE_COLOR", "1"));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
+        Assert.IsTrue(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    [Arguments("1")]
-    [Arguments("true")]
-    [Arguments("yes")]
-    public async Task ForceColor_TruthyValues_ReturnsTrue(string value)
+    [TestMethod]
+    [DataRow("1")]
+    [DataRow("true")]
+    [DataRow("yes")]
+    public void ForceColor_TruthyValues_ReturnsTrue(string value)
     {
         using var _ = EnvScope.Clear(AllVars);
         using var force = new EnvScope(("FORCE_COLOR", value));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
+        Assert.IsTrue(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    [Arguments("0")]
-    [Arguments("false")]
-    [Arguments("False")]
-    [Arguments("FALSE")]
-    [Arguments("FaLsE")]
-    public async Task ForceColor_FalsyValues_DoesNotForce(string value)
+    [TestMethod]
+    [DataRow("0")]
+    [DataRow("false")]
+    [DataRow("False")]
+    [DataRow("FALSE")]
+    [DataRow("FaLsE")]
+    public void ForceColor_FalsyValues_DoesNotForce(string value)
     {
         using var _ = EnvScope.Clear(AllVars);
         using var force = new EnvScope(("FORCE_COLOR", value));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsFalse();
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    public async Task CliColorForce_TruthyValue_ReturnsTrue()
+    [TestMethod]
+    public void CliColorForce_TruthyValue_ReturnsTrue()
     {
         using var _ = EnvScope.Clear(AllVars);
         using var force = new EnvScope(("CLICOLOR_FORCE", "1"));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
+        Assert.IsTrue(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    public async Task TermDumb_DisablesColor()
+    [TestMethod]
+    public void TermDumb_DisablesColor()
     {
         using var _ = EnvScope.Clear(AllVars);
         using var term = new EnvScope(("TERM", "dumb"));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: false));
     }
 
-    [Test]
-    public async Task CliColorZero_DisablesColor()
+    [TestMethod]
+    public void CliColorZero_DisablesColor()
     {
         using var _ = EnvScope.Clear(AllVars);
         using var clicolor = new EnvScope(("CLICOLOR", "0"));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: false));
     }
 
-    [Test]
-    [Arguments("GITHUB_ACTIONS")]
-    [Arguments("GITLAB_CI")]
-    [Arguments("CIRCLECI")]
-    [Arguments("BUILDKITE")]
-    [Arguments("TF_BUILD")]
-    [Arguments("DRONE")]
-    [Arguments("APPVEYOR")]
-    [Arguments("TRAVIS")]
-    [Arguments("WOODPECKER")]
-    [Arguments("FORGEJO_ACTIONS")]
-    [Arguments("GITEA_ACTIONS")]
-    public async Task KnownCi_EnablesColorEvenWhenOutputRedirected(string ciVar)
+    [TestMethod]
+    [DataRow("GITHUB_ACTIONS")]
+    [DataRow("GITLAB_CI")]
+    [DataRow("CIRCLECI")]
+    [DataRow("BUILDKITE")]
+    [DataRow("TF_BUILD")]
+    [DataRow("DRONE")]
+    [DataRow("APPVEYOR")]
+    [DataRow("TRAVIS")]
+    [DataRow("WOODPECKER")]
+    [DataRow("FORGEJO_ACTIONS")]
+    [DataRow("GITEA_ACTIONS")]
+    public void KnownCi_EnablesColorEvenWhenOutputRedirected(string ciVar)
     {
         using var _ = EnvScope.Clear(AllVars);
         using var ci = new EnvScope((ciVar, "true"));
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
+        Assert.IsTrue(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    public async Task NoEnvSignals_FallsBackToTty()
+    [TestMethod]
+    public void NoEnvSignals_FallsBackToTty()
     {
         using var _ = EnvScope.Clear(AllVars);
-
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsTrue();
-        await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsFalse();
+        Assert.IsTrue(Ansi.IsSupported(isOutputRedirected: false));
+        Assert.IsFalse(Ansi.IsSupported(isOutputRedirected: true));
     }
 
-    [Test]
-    public async Task IsSupported_NoArgOverload_UsesActualConsoleRedirectionState()
+    [TestMethod]
+    public void IsSupported_NoArgOverload_UsesActualConsoleRedirectionState()
     {
         using var _ = EnvScope.Clear(AllVars);
-
         // Expected value derived from the console state directly, not by re-invoking the
         // two-arg overload — a no-arg overload that hardcoded either redirection state
         // would fail this on the runner (where stdout is redirected under `dotnet test`).
-        await Assert.That(Ansi.IsSupported()).IsEqualTo(!Console.IsOutputRedirected);
+        Assert.AreEqual(!Console.IsOutputRedirected, Ansi.IsSupported());
     }
 
-    [Test]
-    public async Task EnableOnWindows_DoesNotThrow_OnAnyPlatform()
+    [TestMethod]
+    public void EnableOnWindows_DoesNotThrow_OnAnyPlatform()
     {
-        await Assert.That(Ansi.EnableOnWindows).ThrowsNothing();
+        Ansi.EnableOnWindows();
     }
 }

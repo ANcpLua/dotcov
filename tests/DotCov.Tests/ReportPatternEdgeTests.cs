@@ -1,41 +1,39 @@
 namespace DotCov.Tests;
-
 /// <summary>
-/// The public equality and try-parse surface of <see cref="ReportPattern"/>: a null pattern
+/// The public equality and try-parse surface of <see cref = "ReportPattern"/>: a null pattern
 /// is a failed parse, and the object overload of <c>Equals</c> agrees with the typed one.
 /// </summary>
+[TestClass]
 public sealed class ReportPatternEdgeTests
 {
-    [Test]
-    public async Task TryParse_Null_FailsWithoutResult()
+    [TestMethod]
+    public void TryParse_Null_FailsWithoutResult()
     {
         var parsed = ReportPattern.TryParse(null, out var result);
-
-        await Assert.That(parsed).IsFalse();
-        await Assert.That(result).IsNull();
+        Assert.IsFalse(parsed);
+        Assert.IsNull(result);
     }
 
-    [Test]
-    public async Task EqualsObject_SameShape_IsEqualWithEqualHashCode()
+    [TestMethod]
+    public void EqualsObject_SameShape_IsEqualWithEqualHashCode()
     {
         object other = ReportPattern.Parse("**/*cobertura*.xml");
-
-        await Assert.That(ReportPattern.Default.Equals(other)).IsTrue();
-        await Assert.That(ReportPattern.Default.GetHashCode()).IsEqualTo(other.GetHashCode());
+        Assert.IsTrue(ReportPattern.Default.Equals(other));
+        Assert.AreEqual(other.GetHashCode(), ReportPattern.Default.GetHashCode());
     }
 
-    [Test]
-    public async Task EqualsObject_DifferentRecursionOrName_IsNotEqual()
+    [TestMethod]
+    public void EqualsObject_DifferentRecursionOrName_IsNotEqual()
     {
-        await Assert.That(ReportPattern.Default.Equals((object)ReportPattern.Parse("*cobertura*.xml"))).IsFalse();
-        await Assert.That(ReportPattern.Default.Equals((object)ReportPattern.Parse("**/*COBERTURA*.xml"))).IsFalse();
+        Assert.IsFalse(ReportPattern.Default.Equals((object)ReportPattern.Parse("*cobertura*.xml")));
+        Assert.IsFalse(ReportPattern.Default.Equals((object)ReportPattern.Parse("**/*COBERTURA*.xml")));
     }
 
-    [Test]
-    public async Task EqualsObject_NullOrOtherType_IsNotEqual()
+    [TestMethod]
+    public void EqualsObject_NullOrOtherType_IsNotEqual()
     {
         object text = ReportPattern.DefaultText;
-        await Assert.That(ReportPattern.Default.Equals(text)).IsFalse();
-        await Assert.That(ReportPattern.Default.Equals((object?)null)).IsFalse();
+        Assert.IsFalse(ReportPattern.Default.Equals(text));
+        Assert.IsFalse(ReportPattern.Default.Equals((object? )null));
     }
 }

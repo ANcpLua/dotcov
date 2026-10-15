@@ -22,9 +22,9 @@ class Build : FalloutBuild
     [UsedImplicitly(ImplicitUseKindFlags.Assign)]
     public string Configuration { get; set; } = "Release";
 
-    [Parameter("TUnit tree-node filter")]
+    [Parameter("MSTest test-case filter")]
     [UsedImplicitly(ImplicitUseKindFlags.Assign)]
-    public string Filter { get; set; } = "/*/*/*/*";
+    public string Filter { get; set; } = "FullyQualifiedName~DotCov.Tests";
 
     [Parameter("Existing report file or directory; skips coverage collection")]
     [UsedImplicitly(ImplicitUseKindFlags.Assign)]
@@ -68,7 +68,7 @@ class Build : FalloutBuild
     private string Input => Reports is null ? ResultsDirectory.ToString() : Path.GetFullPath(Reports, RootDirectory);
 
     Target Test => d => d
-        .Description("Run TUnit tests; --filter selects a tree-node scope")
+        .Description("Run MSTest tests; --filter selects test cases")
         .Executes(() => RunTests(coverage: false));
 
     Target CollectCoverage => d => d
@@ -139,7 +139,7 @@ class Build : FalloutBuild
 
     private void RunTests(bool coverage)
     {
-        DotNet($"test --project {TestProject} -c {Configuration} -p:Coverage={(coverage ? "true" : "false")} --results-directory {ResultsDirectory} --treenode-filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
+        DotNet($"test --project {TestProject} -c {Configuration} -p:Coverage={(coverage ? "true" : "false")} --results-directory {ResultsDirectory} --filter {Filter} --minimum-expected-tests 1 --no-ansi --progress off",
             workingDirectory: RootDirectory);
         Log.Information("Test results: {Path}", ResultsDirectory);
     }

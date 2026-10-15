@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <!-- Measure shipping assemblies, excluding generated code and compiler scaffolding.
@@ -22,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="TUnit" />
+    <PackageReference Include="MSTest" />
     <PackageReference Include="coverlet.MTP" />
   </ItemGroup>
 

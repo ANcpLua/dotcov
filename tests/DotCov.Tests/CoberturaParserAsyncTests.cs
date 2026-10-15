@@ -2,68 +2,52 @@ using System.Text;
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
+[TestClass]
 public sealed class CoberturaParserAsyncTests
 {
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_SmallDocument_ReturnsEquivalentReportToSync()
     {
-        var doc = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Line(1, hits: 3).Line(2, hits: 0))
-            .AddClass("src/B.cs", c => c.Line(5, hits: 1));
-
+        var doc = Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 3).Line(2, hits: 0)).AddClass("src/B.cs", c => c.Line(5, hits: 1));
         var sync = doc.Parse();
         await using var stream = doc.ToStream();
         var async = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(async.TotalLines).IsEqualTo(sync.TotalLines);
-        await Assert.That(async.TotalLinesHit).IsEqualTo(sync.TotalLinesHit);
-        await Assert.That(async.Files.Count).IsEqualTo(sync.Files.Count);
+        Assert.AreEqual(sync.TotalLines, async.TotalLines);
+        Assert.AreEqual(sync.TotalLinesHit, async.TotalLinesHit);
+        Assert.AreEqual(sync.Files.Count, async.Files.Count);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_MethodOnlyClass_YieldsTheSameReportAsSync()
     {
         // A class whose only lines sit under <methods> (no class-level <lines>): the sync walk
         // let the method lines stand in for the file at the class end; the async walk never
         // finished the class and reported the file with no lines at all.
-        var doc = Cobertura.NewDoc()
-            .AddClass("src/A.cs", "Ns.A", c => c
-                .Method("M", "()", "2", m => m.Line(3, hits: 1).Line(4, hits: 0))
-                .Method("N", "()", "1", m => m.Line(8, hits: 2)))
-            .AddClass("src/B.cs", c => c.Line(1, hits: 1));
-
+        var doc = Cobertura.NewDoc().AddClass("src/A.cs", "Ns.A", c => c.Method("M", "()", "2", m => m.Line(3, hits: 1).Line(4, hits: 0)).Method("N", "()", "1", m => m.Line(8, hits: 2))).AddClass("src/B.cs", c => c.Line(1, hits: 1));
         var sync = doc.Parse();
         await using var stream = doc.ToStream();
         var async = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(async.Files.Select(Shape)).IsEquivalentTo(sync.Files.Select(Shape));
-        await Assert.That(async.Warnings).IsEquivalentTo(sync.Warnings);
+        Assert.AreSequenceEqual(sync.Files.Select(Shape), async.Files.Select(Shape), SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(sync.Warnings, async.Warnings, SequenceOrder.InAnyOrder);
         var a = async.Files.Single(f => f.Path == "src/A.cs");
-        await Assert.That((a.LinesHit, a.LinesTotal)).IsEqualTo((2, 3));
-        await Assert.That(a.LineHits.Keys).IsEquivalentTo([3, 4, 8]);
+        Assert.AreEqual((2, 3), (a.LinesHit, a.LinesTotal));
+        Assert.AreSequenceEqual([3, 4, 8], a.LineHits.Keys, SequenceOrder.InAnyOrder);
     }
 
-    private static (string Path, int LinesHit, int LinesTotal, int BranchesHit, int BranchesTotal, string Lines) Shape(FileCoverage f) =>
-        (f.Path, f.LinesHit, f.LinesTotal, f.BranchesHit, f.BranchesTotal,
-            string.Join(",", f.LineHits.OrderBy(static kv => kv.Key).Select(static kv => $"{kv.Key}:{kv.Value}")));
-
-    [Test]
+    private static (string Path, int LinesHit, int LinesTotal, int BranchesHit, int BranchesTotal, string Lines) Shape(FileCoverage f) => (f.Path, f.LinesHit, f.LinesTotal, f.BranchesHit, f.BranchesTotal, string.Join(",", f.LineHits.OrderBy(static kv => kv.Key).Select(static kv => $"{kv.Key}:{kv.Value}")));
+    [TestMethod]
     public async Task ParseAsync_RespectsCancellation()
     {
-        await using var stream = Cobertura.NewDoc()
-            .AddClass("a.cs", c => c.Line(1, 1))
-            .ToStream();
+        await using var stream = Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToStream();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         var token = cts.Token;
-
         // The assertion executes and completes within the captured resource lifetime.
         // ReSharper disable once AccessToDisposedClosure
-        await Assert.That(async () => await CoberturaParser.ParseAsync(stream, ct: token)).Throws<OperationCanceledException>();
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await CoberturaParser.ParseAsync(stream, ct: token));
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_XxeEntityReference_Throws()
     {
         // With DtdProcessing.Ignore the DTD itself is skipped, so the entity reference in
@@ -76,11 +60,10 @@ public sealed class CoberturaParserAsyncTests
                                  </classes></package></packages></coverage>
                                  """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
-
         await Assert.ThrowsExactlyAsync<System.Xml.XmlException>(async () => await CoberturaParser.ParseAsync(stream));
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_BenignDoctype_Parses()
     {
         // Reference Cobertura emits a DOCTYPE on every report; skipping it (not dying on it)
@@ -95,52 +78,39 @@ public sealed class CoberturaParserAsyncTests
                                  </classes></package></packages></coverage>
                                  """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
-
         var report = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(report.Files).HasSingleItem();
-        await Assert.That(report.TotalLinesHit).IsEqualTo(1);
+        Assert.ContainsSingle(report.Files);
+        Assert.AreEqual(1, report.TotalLinesHit);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_EnforcesCharacterCap()
     {
-        await using var stream = Cobertura.NewDoc()
-            .AddClass("a.cs", c => c.Line(1, 1))
-            .ToStream();
-
+        await using var stream = Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToStream();
         await Assert.ThrowsExactlyAsync<System.Xml.XmlException>(async () => await CoberturaParser.ParseAsync(stream, maxChars: 50));
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_PartialBranch_RecordsBranchDetail()
     {
-        await using var stream = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Branch(10, "50% (1/2)"))
-            .ToStream();
-
+        await using var stream = Cobertura.NewDoc().AddClass("src/A.cs", c => c.Branch(10, "50% (1/2)")).ToStream();
         var report = await CoberturaParser.ParseAsync(stream);
-
         var partial = report.Files[0].PartialBranches.Single();
-        await Assert.That(partial.Line).IsEqualTo(10);
-        await Assert.That(partial.Covered).IsEqualTo(1);
-        await Assert.That(partial.Total).IsEqualTo(2);
+        Assert.AreEqual(10, partial.Line);
+        Assert.AreEqual(1, partial.Covered);
+        Assert.AreEqual(2, partial.Total);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_LineWithoutNumber_IsSkipped()
     {
-        await using var stream = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
-            .ToStream();
-
+        await using var stream = Cobertura.NewDoc().AddClass("src/A.cs", c => c.MalformedLine("", "5")).ToStream();
         var report = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(report.Files).HasSingleItem();
-        await Assert.That(report.Files[0].LinesTotal).IsEqualTo(0);
+        Assert.ContainsSingle(report.Files);
+        Assert.AreEqual(0, report.Files[0].LinesTotal);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_ClassWithoutFilename_IsSkipped()
     {
         const string xml = """
@@ -150,22 +120,16 @@ public sealed class CoberturaParserAsyncTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-
         var report = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(report.Files).IsEmpty();
+        Assert.IsEmpty(report.Files);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseAsync_NoBranchData_HasBranchDataFalse()
     {
-        await using var stream = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
-            .ToStream();
-
+        await using var stream = Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0)).ToStream();
         var report = await CoberturaParser.ParseAsync(stream);
-
-        await Assert.That(report.HasBranchData).IsFalse();
-        await Assert.That(report.Files[0].HasBranchData).IsFalse();
+        Assert.IsFalse(report.HasBranchData);
+        Assert.IsFalse(report.Files[0].HasBranchData);
     }
 }

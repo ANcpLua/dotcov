@@ -3,83 +3,112 @@ using DotCov.Tests.Infrastructure;
 using DotCov.Tool;
 
 namespace DotCov.Tests;
-
-[NotInParallel(ProcessState.Environment)]
-[Category("Integration")]
-[Timeout(60_000)]
-public sealed class CliUsageProcessTests : IDisposable
+[TestClass]
+[ResourceLock(ProcessState.Environment)]
+[TestCategory("Integration")]
+public sealed class CliUsageProcessTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-usage-");
-
     public void Dispose() => _ws.Dispose();
-
-    [Test]
-    public async Task BothVersionForms_PrintTheSameVersion(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task BothVersionForms_PrintTheSameVersion()
     {
+        var cancellationToken = testContext.CancellationToken;
         var command = await Run(cancellationToken, "version");
         var alias = await Run(cancellationToken, "--version");
-
-        await Assert.That(command.ExitCode).IsEqualTo(0);
-        await Assert.That(alias.ExitCode).IsEqualTo(0);
-        await Assert.That(alias.StdOut).IsEqualTo(command.StdOut);
-        await Assert.That(alias.StdOut).IsEqualTo($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version!.ToString(3)}{Environment.NewLine}");
-        await Assert.That(alias.StdErr).IsEmpty();
-        await Assert.That(command.StdErr).IsEmpty();
+        Assert.AreEqual(0, command.ExitCode);
+        Assert.AreEqual(0, alias.ExitCode);
+        Assert.AreEqual(command.StdOut, alias.StdOut);
+        Assert.AreEqual($"dotcov {typeof(CoberturaParser).Assembly.GetName().Version!.ToString(3)}{Environment.NewLine}", alias.StdOut);
+        Assert.IsEmpty(alias.StdErr);
+        Assert.IsEmpty(command.StdErr);
     }
 
-    [Test]
-    [Arguments("report")]
-    [Arguments("check")]
-    [Arguments("crap")]
-    [Arguments("snapshot")]
-    public async Task MissingArgument_AndSuppliedNonexistentPath_HaveDistinctExitCodes(
-        string command, CancellationToken cancellationToken)
+    [TestMethod]
+    [DataRow("report")]
+    [DataRow("check")]
+    [DataRow("crap")]
+    [DataRow("snapshot")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task MissingArgument_AndSuppliedNonexistentPath_HaveDistinctExitCodes(string command)
     {
+        var cancellationToken = testContext.CancellationToken;
         // check has no default threshold: the nonexistent path must be the only thing wrong.
         string[] threshold = command is "check" ? ["--min-line", "80"] : [];
         var missing = await Run(cancellationToken, command);
-        var nonexistent = await Run(cancellationToken, [command, _ws.PathOf("absent.xml"), .. threshold]);
-
-        await Assert.That(missing.ExitCode).IsEqualTo(DotCovCli.UsageExitCode);
-        await Assert.That(nonexistent.ExitCode).IsEqualTo(DotCovCli.ErrorExitCode);
-        await Assert.That(missing.StdOut).IsEmpty();
-        await Assert.That(nonexistent.StdOut).IsEmpty();
-        await Assert.That(missing.StdErr).StartsWith("error: missing path");
-        await Assert.That(nonexistent.StdErr).Contains(_ws.PathOf("absent.xml"));
+        var nonexistent = await Run(cancellationToken, [command, _ws.PathOf("absent.xml"), ..threshold]);
+        Assert.AreEqual(DotCovCli.UsageExitCode, missing.ExitCode);
+        Assert.AreEqual(DotCovCli.ErrorExitCode, nonexistent.ExitCode);
+        Assert.IsEmpty(missing.StdOut);
+        Assert.IsEmpty(nonexistent.StdOut);
+        Assert.StartsWith("error: missing path", missing.StdErr);
+        Assert.Contains(_ws.PathOf("absent.xml"), nonexistent.StdErr);
     }
 
-    [Test]
-    [Arguments("version")]
-    [Arguments("--version")]
-    [Arguments("help")]
-    [Arguments("--help")]
-    [Arguments("-h")]
-    public async Task NoInputCommands_RejectUnusedArguments(string command, CancellationToken cancellationToken)
+    [TestMethod]
+    [DataRow("version")]
+    [DataRow("--version")]
+    [DataRow("help")]
+    [DataRow("--help")]
+    [DataRow("-h")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task NoInputCommands_RejectUnusedArguments(string command)
     {
-        foreach (var extra in new[] { new[] { "extra" }, new[] { "--verbose" }, new[] { "--" } })
+        var cancellationToken = testContext.CancellationToken;
+        foreach (var extra in new[]
         {
-            var result = await Run(cancellationToken, [command, .. extra]);
-            await Assert.That(result.ExitCode).IsEqualTo(2);
-            await Assert.That(result.StdOut).IsEmpty();
-            await Assert.That(result.StdErr).StartsWith("error:");
+            new[]
+            {
+                "extra"
+            },
+            new[]
+            {
+                "--verbose"
+            },
+            new[]
+            {
+                "--"
+            }
+        }
+
+        )
+        {
+            var result = await Run(cancellationToken, [command, ..extra]);
+            Assert.AreEqual(2, result.ExitCode);
+            Assert.IsEmpty(result.StdOut);
+            Assert.StartsWith("error:", result.StdErr);
         }
     }
 
-    [Test]
-    [Arguments("test", "", null, null)]
-    [Arguments("report", "-q", null, null)]
-    [Arguments("crap", "absent.xml", "--metrics", "")]
-    [Arguments("report", "absent.xml", "--upload", "")]
-    [Arguments("report", "absent.xml", "--upload", "https://")]
-    public async Task InvalidArguments_AreRejectedBeforeExecution(string first, string second,
-        string? flag, string? value, CancellationToken cancellationToken)
+    [TestMethod]
+    [DataRow("test", "", null, null)]
+    [DataRow("report", "-q", null, null)]
+    [DataRow("crap", "absent.xml", "--metrics", "")]
+    [DataRow("report", "absent.xml", "--upload", "")]
+    [DataRow("report", "absent.xml", "--upload", "https://")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task InvalidArguments_AreRejectedBeforeExecution(string first, string second, string? flag, string? value)
     {
-        var args = flag is null ? new[] { first, second } : new[] { first, second, flag, value! };
+        var cancellationToken = testContext.CancellationToken;
+        var args = flag is null ? new[]
+        {
+            first,
+            second
+        }
+
+        : new[]
+        {
+            first,
+            second,
+            flag,
+            value!
+        };
         var result = await Run(cancellationToken, args);
-        await Assert.That(result.ExitCode).IsEqualTo(2);
-        await Assert.That(result.StdOut).IsEmpty();
-        await Assert.That(result.StdErr).StartsWith("error:");
-        await Assert.That(Directory.Exists(_ws.PathOf("TestResults"))).IsFalse();
+        Assert.AreEqual(2, result.ExitCode);
+        Assert.IsEmpty(result.StdOut);
+        Assert.StartsWith("error:", result.StdErr);
+        Assert.IsFalse(Directory.Exists(_ws.PathOf("TestResults")));
     }
 
     private Task<ChildRun> Run(CancellationToken cancellationToken, params string[] args)
@@ -94,8 +123,11 @@ public sealed class CliUsageProcessTests : IDisposable
         };
         foreach (var argument in new[]
         {
-            "exec", "--depsfile", Path.Combine(directory, "DotCov.Tests.deps.json"),
-            "--runtimeconfig", Path.Combine(directory, "DotCov.Tests.runtimeconfig.json"),
+            "exec",
+            "--depsfile",
+            Path.Combine(directory, "DotCov.Tests.deps.json"),
+            "--runtimeconfig",
+            Path.Combine(directory, "DotCov.Tests.runtimeconfig.json"),
             Path.Combine(directory, "DotCov.Tool.dll")
         }.Concat(args))
             start.ArgumentList.Add(argument);

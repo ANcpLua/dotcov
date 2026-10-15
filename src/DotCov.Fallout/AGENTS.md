@@ -7,7 +7,7 @@ or the component. Before routine verification, choose the matching target:
 ```sh
 dotnet tool restore
 fallout Test
-fallout Test --filter '/*/*/FalloutBuildTests/*'
+fallout Test --filter 'FullyQualifiedName~DotCov.Tests.FalloutBuildTests'
 fallout Coverage
 fallout Report --format md
 fallout Crap --top 10

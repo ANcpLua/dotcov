@@ -1,206 +1,175 @@
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
+[TestClass]
 public sealed class CrapSignatureMatchingTests
 {
-    [Test]
-    [Arguments("int x", "System.Int32")]
-    [Arguments("dynamic x", "System.Object")]
-    [Arguments("int? x", "System.Nullable`1<System.Int32>")]
-    [Arguments("decimal?[] x", "System.Nullable`1<System.Decimal>[]")]
-    [Arguments("ref long? x", "System.Nullable`1<System.Int64>&")]
-    [Arguments("List<int?> x", "System.Collections.Generic.List`1<System.Nullable`1<System.Int32>>")]
-    [Arguments("int x = 1", "System.Int32")]
-    [Arguments("char x = ','", "System.Char")]
-    [Arguments("string x = \"a,(b)=c\"", "System.String")]
-    [Arguments("List<int> x", "System.Collections.Generic.List`1<System.Int32>")]
-    [Arguments("(int,string) x", "System.ValueTuple`2<System.Int32,System.String>")]
-    [Arguments("int[,] x", "System.Int32[,]")]
-    [Arguments("params int[] x", "System.Int32[]")]
-    [Arguments("ref int x", "System.Int32&")]
-    [Arguments("out int x", "System.Int32&")]
-    [Arguments("in int x", "System.Int32&")]
-    [Arguments("global::App.Widget x", "App.Widget")]
-    [Arguments("Widget x", "App.Widget")]
-    [Arguments("string? x", "System.String")]
-    [Arguments("object? x", "System.Object")]
-    [Arguments("dynamic? x", "System.Object")]
-    [Arguments("string?[]? x", "System.String[]")]
-    [Arguments("int?[]? x", "System.Nullable`1<System.Int32>[]")]
-    [Arguments("List<string?> x", "System.Collections.Generic.List`1<System.String>")]
-    [Arguments("Widget[]? x", "App.Widget[]")]
-    [Arguments("Inner x", "App.Outer/Inner")]
-    [Arguments("Outer.Inner x", "App.Outer/Inner")]
-    [Arguments("App.Outer.Inner x", "App.Outer+Inner")]
-    [Arguments("Outer.Inner[] x", "App.Outer/Inner[]")]
-    [Arguments("List<string>? x", "System.Collections.Generic.List`1<System.String>")]
-    [Arguments("List<string?>? x", "System.Collections.Generic.List`1<System.String>")]
-    [Arguments("Widget? x", "App.Widget")]
-    [Arguments("Point? x", "System.Nullable`1<App.Point>")]
-    [Arguments("Box<int>? x", "System.Nullable`1<App.Box`1<System.Int32>>")]
-    [Arguments("Dictionary<string,List<Widget?>?>? x", "System.Collections.Generic.Dictionary`2<System.String,System.Collections.Generic.List`1<App.Widget>>")]
-    [Arguments("_Widget2? x", "App._Widget2")]
-    [Arguments("ref readonly int x", "System.Int32&")]
-    [Arguments("ref readonly Point? x", "System.Nullable`1<App.Point>&")]
-    public async Task CompleteSameArityOverloads_MatchTypesAndKeepTheirOwnComplexity(
-        string parameter, string ilType)
+    [TestMethod]
+    [DataRow("int x", "System.Int32")]
+    [DataRow("dynamic x", "System.Object")]
+    [DataRow("int? x", "System.Nullable`1<System.Int32>")]
+    [DataRow("decimal?[] x", "System.Nullable`1<System.Decimal>[]")]
+    [DataRow("ref long? x", "System.Nullable`1<System.Int64>&")]
+    [DataRow("List<int?> x", "System.Collections.Generic.List`1<System.Nullable`1<System.Int32>>")]
+    [DataRow("int x = 1", "System.Int32")]
+    [DataRow("char x = ','", "System.Char")]
+    [DataRow("string x = \"a,(b)=c\"", "System.String")]
+    [DataRow("List<int> x", "System.Collections.Generic.List`1<System.Int32>")]
+    [DataRow("(int,string) x", "System.ValueTuple`2<System.Int32,System.String>")]
+    [DataRow("int[,] x", "System.Int32[,]")]
+    [DataRow("params int[] x", "System.Int32[]")]
+    [DataRow("ref int x", "System.Int32&")]
+    [DataRow("out int x", "System.Int32&")]
+    [DataRow("in int x", "System.Int32&")]
+    [DataRow("global::App.Widget x", "App.Widget")]
+    [DataRow("Widget x", "App.Widget")]
+    [DataRow("string? x", "System.String")]
+    [DataRow("object? x", "System.Object")]
+    [DataRow("dynamic? x", "System.Object")]
+    [DataRow("string?[]? x", "System.String[]")]
+    [DataRow("int?[]? x", "System.Nullable`1<System.Int32>[]")]
+    [DataRow("List<string?> x", "System.Collections.Generic.List`1<System.String>")]
+    [DataRow("Widget[]? x", "App.Widget[]")]
+    [DataRow("Inner x", "App.Outer/Inner")]
+    [DataRow("Outer.Inner x", "App.Outer/Inner")]
+    [DataRow("App.Outer.Inner x", "App.Outer+Inner")]
+    [DataRow("Outer.Inner[] x", "App.Outer/Inner[]")]
+    [DataRow("List<string>? x", "System.Collections.Generic.List`1<System.String>")]
+    [DataRow("List<string?>? x", "System.Collections.Generic.List`1<System.String>")]
+    [DataRow("Widget? x", "App.Widget")]
+    [DataRow("Point? x", "System.Nullable`1<App.Point>")]
+    [DataRow("Box<int>? x", "System.Nullable`1<App.Box`1<System.Int32>>")]
+    [DataRow("Dictionary<string,List<Widget?>?>? x", "System.Collections.Generic.Dictionary`2<System.String,System.Collections.Generic.List`1<App.Widget>>")]
+    [DataRow("_Widget2? x", "App._Widget2")]
+    [DataRow("ref readonly int x", "System.Int32&")]
+    [DataRow("ref readonly Point? x", "System.Nullable`1<App.Point>&")]
+    public void CompleteSameArityOverloads_MatchTypesAndKeepTheirOwnComplexity(string parameter, string ilType)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
-            .Method("M", $"({ilType})", null, m => m.Line(1, 1))
-            .Method("M", "(System.Boolean)", null, m => m.Line(2, 1))).ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method($"void A.M({parameter})", 2, 1).Method("void A.M(bool value)", 7, 1));
-
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", $"({ilType})", null, m => m.Line(1, 1)).Method("M", "(System.Boolean)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"void A.M({parameter})", 2, 1).Method("void A.M(bool value)", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
-        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreSequenceEqual([2, 7], report.Methods.Select(m => m.Complexity), SequenceOrder.InAnyOrder);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task MultipleParameters_AndExcludedOverloads_KeepSeparateIdentities(bool exclude)
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void MultipleParameters_AndExcludedOverloads_KeepSeparateIdentities(bool exclude)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc()
-            .AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1)))
-            .AddClass("src/A.g.cs", "App.A", c => c
-                .Method("M", "(System.Int32,System.String)", null, m => m.Line(2, 1))
-                .Method("M", "(System.String,System.Int32)", null, m => m.Line(3, 1))).ToBytes());
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", "1", m => m.Line(1, 1))).AddClass("src/A.g.cs", "App.A", c => c.Method("M", "(System.Int32,System.String)", null, m => m.Line(2, 1)).Method("M", "(System.String,System.Int32)", null, m => m.Line(3, 1))).ToBytes());
         var coverage = CoberturaParser.ParseMethods(input);
-        if (exclude) coverage = coverage.Exclude([".g.cs"], []);
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method("void A.M(int x, string y)", 2, 1).Method("void A.M(string x, int y)", 7, 1));
+        if (exclude)
+            coverage = coverage.Exclude([".g.cs"], []);
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x, string y)", 2, 1).Method("void A.M(string x, int y)", 7, 1));
         var report = CrapAnalysis.Analyze(coverage, metrics);
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
-        await Assert.That(report.Methods.Count).IsEqualTo(exclude ? 1 : 3);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
+        Assert.AreEqual(exclude ? 1 : 3, report.Methods.Count);
     }
 
-    [Test]
-    [Arguments("void A.M(int)", "(System.Int32)")]
-    [Arguments("void A.M)", "(System.Int32)")]
-    [Arguments("void A.M(One.Widget x)", "(Other.Widget)")]
-    [Arguments("void A.M(int x)", "invalid)")]
-    [Arguments("void A.M(int x)", "(invalid")]
-    public async Task UnknownOrDifferentSignatures_CannotProveCompleteCoverage(string display, string signature)
+    [TestMethod]
+    [DataRow("void A.M(int)", "(System.Int32)")]
+    [DataRow("void A.M)", "(System.Int32)")]
+    [DataRow("void A.M(One.Widget x)", "(Other.Widget)")]
+    [DataRow("void A.M(int x)", "invalid)")]
+    [DataRow("void A.M(int x)", "(invalid")]
+    public void UnknownOrDifferentSignatures_CannotProveCompleteCoverage(string display, string signature)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
-            .Method("M", signature, "1", m => m.Line(1, 1))).ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method(display, 2, 1).Method("void A.M(bool value)", 7, 1));
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", signature, "1", m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 2, 1).Method("void A.M(bool value)", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.UnmatchedMetricsMembers).IsNotEmpty();
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+        Assert.IsNotEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    public async Task RepeatedSameSignatureAcrossFiles_CannotReplaceAMissingOverload()
+    [TestMethod]
+    public void RepeatedSameSignatureAcrossFiles_CannotReplaceAMissingOverload()
     {
-        using var input = new MemoryStream(Cobertura.NewDoc()
-            .AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, 1)))
-            .AddClass("other/A.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, 1)))
-            .ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method("void A.M(int x)", 2, 1).Method("void A.M(string value)", 7, 1));
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, 1))).AddClass("other/A.cs", "App.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 2, 1).Method("void A.M(string value)", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.UnmatchedMetricsMembers).IsEquivalentTo(["void A.M(string value)"]);
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+        Assert.AreSequenceEqual(["void A.M(string value)"], report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
+        Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
-    [Test]
-    [Arguments("get", false)]
-    [Arguments("set", false)]
-    [Arguments("init", false)]
-    [Arguments("get", true)]
-    [Arguments("set", true)]
-    public async Task SameArityIndexers_MatchParametersAndSetterValue(string accessor, bool missing)
+
+    [TestMethod]
+    [DataRow("get", false)]
+    [DataRow("set", false)]
+    [DataRow("init", false)]
+    [DataRow("get", true)]
+    [DataRow("set", true)]
+    public void SameArityIndexers_MatchParametersAndSetterValue(string accessor, bool missing)
     {
         var method = accessor == "get" ? "get_Item" : "set_Item";
         var value = accessor == "get" ? "" : ",System.String";
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c =>
         {
             c.Method(method, $"(System.Int32{value})", null, m => m.Line(1, 1));
-            if (!missing) c.Method(method, $"(System.String{value})", null, m => m.Line(2, 1));
+            if (!missing)
+                c.Method(method, $"(System.String{value})", null, m => m.Line(2, 1));
         }).ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method($"string A.this[int x].{accessor}", 2, 1)
-            .Method($"string A.this[string x].{accessor}", 7, 1));
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"string A.this[int x].{accessor}", 2, 1).Method($"string A.this[string x].{accessor}", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.UnmatchedMetricsMembers.Count).IsEqualTo(missing ? 1 : 0);
-        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo(missing ? [2] : new[] { 2, 7 });
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(missing ? GateOutcome.NoData : GateOutcome.Pass);
+        Assert.AreEqual(missing ? 1 : 0, report.UnmatchedMetricsMembers.Count);
+        Assert.AreSequenceEqual(missing ? [2] : [2, 7], report.Methods.Select(m => m.Complexity), SequenceOrder.InAnyOrder);
+        Assert.AreEqual(missing ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    [Arguments("string A.this[int x.get")]
-    [Arguments("string A.this[int x].unknown")]
-    [Arguments("A.this[int x].set")]
-    public async Task MalformedIndexerSignature_DoesNotProveAnOverloadMatch(string display)
+    [TestMethod]
+    [DataRow("string A.this[int x.get")]
+    [DataRow("string A.this[int x].unknown")]
+    [DataRow("A.this[int x].set")]
+    public void MalformedIndexerSignature_DoesNotProveAnOverloadMatch(string display)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c =>
-            c.Method("get_Item", "(System.Int32)", "1", m => m.Line(1, 1))).ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method(display, 2, 1).Method("string A.this[bool x].get", 7, 1));
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("get_Item", "(System.Int32)", "1", m => m.Line(1, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 2, 1).Method("string A.this[bool x].get", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.UnmatchedMetricsMembers).IsNotEmpty();
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+        Assert.IsNotEmpty(report.UnmatchedMetricsMembers);
+        Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    [Arguments("<", "op_LessThan")]
-    [Arguments(">", "op_GreaterThan")]
-    [Arguments("<<", "op_LeftShift")]
-    [Arguments(">>", "op_RightShift")]
-    [Arguments(">>>", "op_UnsignedRightShift")]
-    [Arguments("<=", "op_LessThanOrEqual")]
-    [Arguments(">=", "op_GreaterThanOrEqual")]
-    public async Task CompleteOperatorOverloads_IgnoreAngleTokensWhenLocatingParameters(string token, string name)
+    [TestMethod]
+    [DataRow("<", "op_LessThan")]
+    [DataRow(">", "op_GreaterThan")]
+    [DataRow("<<", "op_LeftShift")]
+    [DataRow(">>", "op_RightShift")]
+    [DataRow(">>>", "op_UnsignedRightShift")]
+    [DataRow("<=", "op_LessThanOrEqual")]
+    [DataRow(">=", "op_GreaterThanOrEqual")]
+    public void CompleteOperatorOverloads_IgnoreAngleTokensWhenLocatingParameters(string token, string name)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c
-            .Method(name, "(App.A,System.Int32)", null, m => m.Line(1, 1))
-            .Method(name, "(App.A,System.String)", null, m => m.Line(2, 1))).ToBytes());
-        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m
-            .Method($"bool A.operator {token}(App.A left, int right)", 2, 1)
-            .Method($"bool A.operator {token}(App.A left, string right)", 7, 1));
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method(name, "(App.A,System.Int32)", null, m => m.Line(1, 1)).Method(name, "(App.A,System.String)", null, m => m.Line(2, 1))).ToBytes());
+        var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"bool A.operator {token}(App.A left, int right)", 2, 1).Method($"bool A.operator {token}(App.A left, string right)", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.UnmatchedMetricsMembers).IsEmpty();
-        await Assert.That(report.Unscored).IsEmpty();
-        await Assert.That(report.Methods.Select(m => m.Complexity)).IsEquivalentTo([2, 7]);
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.Pass);
+        Assert.IsEmpty(report.UnmatchedMetricsMembers);
+        Assert.IsEmpty(report.Unscored);
+        Assert.AreSequenceEqual([2, 7], report.Methods.Select(m => m.Complexity), SequenceOrder.InAnyOrder);
+        Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task DistinctMethods_CannotReuseOneMetricsRow_UnlessBothHaveEmbeddedMeasurements(bool embedded)
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DistinctMethods_CannotReuseOneMetricsRow_UnlessBothHaveEmbeddedMeasurements(bool embedded)
     {
-        using var input = new MemoryStream(Cobertura.NewDoc()
-            .AddClass("src/A.cs", "App.A", c => c.Method("M", "()", embedded ? "2" : null, m => m.Line(1, 1)))
-            .AddClass("other/A.cs", "App.A", c => c.Method("M", "()", embedded ? "7" : null, m => m.Line(2, 1)))
-            .ToBytes());
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "()", embedded ? "2" : null, m => m.Line(1, 1))).AddClass("other/A.cs", "App.A", c => c.Method("M", "()", embedded ? "7" : null, m => m.Line(2, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.Methods.Count).IsEqualTo(embedded ? 2 : 1);
-        await Assert.That(report.Unscored.Count).IsEqualTo(embedded ? 0 : 1);
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(embedded ? GateOutcome.Pass : GateOutcome.NoData);
+        Assert.AreEqual(embedded ? 2 : 1, report.Methods.Count);
+        Assert.AreEqual(embedded ? 0 : 1, report.Unscored.Count);
+        Assert.AreEqual(embedded ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
-    [Test]
-    public async Task PropertyFallback_CanServeBothAccessors_ButCannotCrossFileIdentity()
+    [TestMethod]
+    public void PropertyFallback_CanServeBothAccessors_ButCannotCrossFileIdentity()
     {
-        using var input = new MemoryStream(Cobertura.NewDoc()
-            .AddClass("src/A.cs", "App.A", c => c
-                .Method("get_Value", "()", null, m => m.Line(1, 1))
-                .Method("set_Value", "(System.Int32)", null, m => m.Line(2, 1)))
-            .AddClass("other/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(3, 1)))
-            .ToBytes());
+        using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(1, 1)).Method("set_Value", "(System.Int32)", null, m => m.Line(2, 1))).AddClass("other/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(3, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Property("int A.Value", 2));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        await Assert.That(report.Methods.Count).IsEqualTo(2);
-        await Assert.That(report.Unscored.Single().File).IsEqualTo("other/A.cs");
-        await Assert.That(report.Evaluate(30).Outcome).IsEqualTo(GateOutcome.NoData);
+        Assert.AreEqual(2, report.Methods.Count);
+        Assert.AreEqual("other/A.cs", report.Unscored.Single().File);
+        Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
-
 }

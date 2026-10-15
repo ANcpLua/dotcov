@@ -2,6 +2,14 @@
 
 Release entries are newest first; historical task entries retain their original order.
 
+## 4.4.0 — 2026-10-15
+
+- Migrate the full test suite to MSTest 4.5.1 on native Microsoft.Testing.Platform.
+- Preserve all 1,999 existing test cases and add two scenario-provider contract tests.
+- Use native assertions, data rows, combinations, resource locks, cooperative cancellation, and per-test upload fixtures.
+- Remove the previous framework completely and update repository commands and guidance; retain the same Coverlet coverage scope and 100% gates.
+- Full notes: [4.4.0](docs/releases/4.4.0.md).
+
 ## 4.3.2 — 2026-10-15
 
 - Address JetBrains inspection findings in shipping code, build entry points, documentation, and tests.
@@ -482,10 +490,10 @@ error, unparenthesized-signature arity, unbalanced-mangled-name tolerance). All 
 feature methods now score ≤ 18.0 at 100% line coverage — the repo's top-10 worst is
 pre-existing code only. `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` green, 0 warnings.
 
-## Task 19 — 2026-09-18 — TUnit, ReportResolver, structured parse errors, DotCov.Fallout
+## Task 19 — 2026-09-18 — Native MTP tests, ReportResolver, structured parse errors, DotCov.Fallout
 
 Changed:
-- Test project moved from xUnit/VSTest to TUnit 1.67.0 on Microsoft.Testing.Platform
+- Test project moved to native Microsoft.Testing.Platform
   (`global.json` test runner). Coverage now comes from `coverlet.MTP` (`dotnet test --coverlet
   --coverlet-output-format cobertura --coverlet-file-prefix dotcov --coverlet-include "[DotCov*]*"
   --coverlet-exclude-by-attribute … --coverlet-exclude-by-file "**/obj/**/*.cs"`); the file is
@@ -516,7 +524,7 @@ Changed:
   exceptions are gone; the full transitive audit is clean.
 
 Verified:
-- 752/752 TUnit tests (679 baseline cases migrated, forwarding tests replaced by
+- 752/752 tests (679 baseline cases migrated, forwarding tests replaced by
   `ReportPatternTests`, `ReportResolverTests`, `ParserContractTests`, `FalloutBuildTests` — the
   latter run `tests/DotCov.Fallout.TestBuild` as a real Fallout process). Also green under
   `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`.
@@ -572,7 +580,7 @@ Fixed (numbers):
 Also: `dotcov --version` prints three components (`3.0.0`); `RejectUnusedArguments` split into
 `UnknownOption`/`RejectInvalidValues` so the repo's own CRAP gate stays at or below 30; CI's
 consumer and README-badge jobs pass `--probe-sources` (itsdangerous declares two roots);
-`tests/AGENTS.md` names TUnit 1.74.
+`tests/AGENTS.md` documents the native runner.
 
 Verified:
 - `fallout Coverage`: 100% lines and branches; full suite green. Each A-fix's regression test

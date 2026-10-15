@@ -3,7 +3,6 @@ using System.Text.Json;
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
 /// <summary>
 /// Runs the composite action's script (<c>.github/actions/badge/badge.sh</c>) as a real bash
 /// process against a local bare repository standing in for <c>origin</c>, with this build's dotcov:
@@ -11,175 +10,166 @@ namespace DotCov.Tests;
 /// and that the consumer's clone keeps its branches and config. Windows uses Git Bash,
 /// matching the composite action's shell rather than a possible WSL bash on PATH.
 /// </summary>
-[Category("Integration")]
-[Timeout(60_000)]
+[TestClass]
+[TestCategory("Integration")]
 public sealed class BadgeActionTests : IDisposable
 {
+    private readonly TestContext _testContext;
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-badge-action-");
     private readonly string _origin;
     private readonly string _clone;
     private readonly string _report;
     private string _bash = "bash";
-
-    public BadgeActionTests()
+    public BadgeActionTests(TestContext testContext)
     {
+        _testContext = testContext;
         _origin = _ws.CreateDirectory("origin.git");
         _clone = _ws.CreateDirectory("clone");
-        _report = _ws.Write("reports/coverage.cobertura.xml", Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c.Line(1, hits: 1).Branch(2, "50% (1/2)")));
+        _report = _ws.Write("reports/coverage.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 1).Branch(2, "50% (1/2)")));
     }
 
     public void Dispose() => _ws.Dispose();
-
     private sealed record ActionRun(int ExitCode, string Output, IReadOnlyDictionary<string, string> Outputs);
-
-    [Test]
-    public async Task Publish_BootstrapsAnOrphanBranch_ThenCommitsOnlyWhenTheBadgeChanges(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task Publish_BootstrapsAnOrphanBranch_ThenCommitsOnlyWhenTheBadgeChanges()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
         var first = await RunAction(cancellationToken, ("min-branch", "40"));
         var repeated = await RunAction(cancellationToken, ("min-branch", "40"));
         // The same rates against a raised branch minimum: the number stays, the verdict changes.
         var raised = await RunAction(cancellationToken, ("min-branch", "60"));
-
-        await Assert.That(first.ExitCode).IsEqualTo(0).Because(first.Output);
-        await Assert.That(repeated.Output).Contains("The badge on 'badges' is unchanged: 100.0% / 50.0% (brightgreen).");
-        await Assert.That(raised.ExitCode).IsEqualTo(1).Because(raised.Output);
-        await Assert.That(raised.Outputs["exit-code"]).IsEqualTo("1");
-
+        Assert.AreEqual(0, first.ExitCode, message: first.Output);
+        Assert.Contains("The badge on 'badges' is unchanged: 100.0% / 50.0% (brightgreen).", repeated.Output);
+        Assert.AreEqual(1, raised.ExitCode, message: raised.Output);
+        Assert.AreEqual("1", raised.Outputs["exit-code"]);
         // Two commits: the orphan root, then the red badge on top of it.
         var log = await Git(cancellationToken, _origin, "log", "--format=%s|%P", "badges");
         var root = await Git(cancellationToken, _origin, "rev-parse", "badges~1");
-        await Assert.That(log).IsEqualTo(
-            $"badge: 100.0% / 50.0% (red) for 0123456|{root}\nbadge: 100.0% / 50.0% (brightgreen) for 0123456|");
-        await Assert.That(await Git(cancellationToken, _origin, "ls-tree", "--name-only", "badges"))
-            .IsEqualTo("coverage-badge.json\ncoverage-badge.svg");
-
+        Assert.AreEqual($"badge: 100.0% / 50.0% (red) for 0123456|{root}\nbadge: 100.0% / 50.0% (brightgreen) for 0123456|", log);
+        Assert.AreEqual("coverage-badge.json\ncoverage-badge.svg", await Git(cancellationToken, _origin, "ls-tree", "--name-only", "badges"));
         // The published files are the ones this run rendered, nothing else.
         var published = await Git(cancellationToken, _origin, "show", "badges:coverage-badge.json");
         var rendered = await File.ReadAllTextAsync(Path.Combine(raised.Outputs["directory"], "coverage-badge.json"), cancellationToken);
-        await Assert.That(published).IsEqualTo(rendered);
+        Assert.AreEqual(rendered, published);
         using var json = JsonDocument.Parse(published);
-        await Assert.That(json.RootElement.GetProperty("color").GetString()).IsEqualTo("red");
-
+        Assert.AreEqual("red", json.RootElement.GetProperty("color").GetString());
         // The consumer's clone gains no branch and no identity.
-        await Assert.That(await Git(cancellationToken, _clone, "branch", "--list")).IsEmpty();
-        await Assert.That(await Git(cancellationToken, _clone, "config", "--local", "--list")).DoesNotContain("user.");
+        Assert.IsEmpty(await Git(cancellationToken, _clone, "branch", "--list"));
+        Assert.DoesNotContain("user.", await Git(cancellationToken, _clone, "config", "--local", "--list"));
     }
 
-    [Test]
-    public async Task NoThreshold_FailsWithDotcovsUsageError_AndPublishesNothing(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task NoThreshold_FailsWithDotcovsUsageError_AndPublishesNothing()
     {
+        var cancellationToken = _testContext.CancellationToken;
         // The action has no default threshold either: an implicit 80 would gate on a number
         // nobody chose.
         await Init(cancellationToken);
-
         var run = await RunAction(cancellationToken);
-
-        await Assert.That(run.ExitCode).IsEqualTo(2).Because(run.Output);
-        await Assert.That(run.Outputs["exit-code"]).IsEqualTo("2");
-        await Assert.That(run.Output).Contains("error: missing threshold: 'check' needs --min-line N, --min-branch N, or both");
-        await Assert.That(run.Output).Contains("dotcov check exited 2 without writing a badge; nothing was published.");
-        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+        Assert.AreEqual(2, run.ExitCode, message: run.Output);
+        Assert.AreEqual("2", run.Outputs["exit-code"]);
+        Assert.Contains("error: missing threshold: 'check' needs --min-line N, --min-branch N, or both", run.Output);
+        Assert.Contains("dotcov check exited 2 without writing a badge; nothing was published.", run.Output);
+        Assert.IsEmpty(await Git(cancellationToken, _origin, "branch", "--list"));
     }
 
-    [Test]
-    public async Task FailOnGateFalse_KeepsGateOutcomesGreen(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task FailOnGateFalse_KeepsGateOutcomesGreen()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
         var run = await RunAction(cancellationToken, ("min-line", "100"), ("min-branch", "60"), ("fail-on-gate", "false"));
-
-        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
-        await Assert.That(run.Outputs["exit-code"]).IsEqualTo("1");
-        await Assert.That(run.Output).Contains("Published 100.0% / 50.0% (red) to 'badges'.");
+        Assert.AreEqual(0, run.ExitCode, message: run.Output);
+        Assert.AreEqual("1", run.Outputs["exit-code"]);
+        Assert.Contains("Published 100.0% / 50.0% (red) to 'badges'.", run.Output);
     }
 
-    [Test]
-    public async Task Error_FailsEvenWithFailOnGateFalse_AndPublishesNothing(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task Error_FailsEvenWithFailOnGateFalse_AndPublishesNothing()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
         var run = await RunAction(cancellationToken, ("reports", _ws.PathOf("missing")), ("min-line", "80"), ("fail-on-gate", "false"));
-
-        await Assert.That(run.ExitCode).IsEqualTo(5).Because(run.Output);
-        await Assert.That(run.Output).Contains("::error::dotcov check exited 5 without writing a badge; nothing was published.");
-        await Assert.That(run.Outputs.ContainsKey("directory")).IsFalse();
-        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+        Assert.AreEqual(5, run.ExitCode, message: run.Output);
+        Assert.Contains("::error::dotcov check exited 5 without writing a badge; nothing was published.", run.Output);
+        Assert.IsFalse(run.Outputs.ContainsKey("directory"));
+        Assert.IsEmpty(await Git(cancellationToken, _origin, "branch", "--list"));
     }
 
-    [Test]
-    public async Task PublishFalse_RendersWithoutPushing(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task PublishFalse_RendersWithoutPushing()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
         var run = await RunAction(cancellationToken, ("min-line", "80"), ("publish", "false"));
-
-        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
-        await Assert.That(File.Exists(Path.Combine(run.Outputs["directory"], "coverage-badge.svg"))).IsTrue();
-        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+        Assert.AreEqual(0, run.ExitCode, message: run.Output);
+        Assert.IsTrue(File.Exists(Path.Combine(run.Outputs["directory"], "coverage-badge.svg")));
+        Assert.IsEmpty(await Git(cancellationToken, _origin, "branch", "--list"));
     }
 
-    [Test]
-    public async Task BadgeDirectory_PublishesTheRenderedBadge_WithoutRunningDotcov(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task BadgeDirectory_PublishesTheRenderedBadge_WithoutRunningDotcov()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
         var rendered = _ws.CreateDirectory("rendered");
         var svg = _ws.Write("rendered/coverage-badge.svg", "<svg/>");
         _ws.Write("rendered/coverage-badge.json", """{"schemaVersion":1,"label":"Coverage","message":"no data","color":"lightgrey"}""");
-
         // `false` as dotcov: running it would fail the step.
         var run = await RunAction(cancellationToken, ("reports", ""), ("badge-directory", rendered), ("command", "false"));
-
-        await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
-        await Assert.That(run.Outputs.ContainsKey("exit-code")).IsFalse();
-        await Assert.That(run.Outputs["directory"]).IsEqualTo(rendered);
-        await Assert.That(run.Output).Contains("Published no data (lightgrey) to 'badges'.");
-        await Assert.That(await Git(cancellationToken, _origin, "show", "badges:coverage-badge.svg")).IsEqualTo(await File.ReadAllTextAsync(svg, cancellationToken));
+        Assert.AreEqual(0, run.ExitCode, message: run.Output);
+        Assert.IsFalse(run.Outputs.ContainsKey("exit-code"));
+        Assert.AreEqual(rendered, run.Outputs["directory"]);
+        Assert.Contains("Published no data (lightgrey) to 'badges'.", run.Output);
+        Assert.AreEqual(await File.ReadAllTextAsync(svg, cancellationToken), await Git(cancellationToken, _origin, "show", "badges:coverage-badge.svg"));
     }
 
-    [Test]
-    public async Task BadgeDirectory_WithoutABadge_FailsAndPublishesNothing(CancellationToken cancellationToken)
+    [TestMethod]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task BadgeDirectory_WithoutABadge_FailsAndPublishesNothing()
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
         var empty = _ws.CreateDirectory("rendered");
-
         var run = await RunAction(cancellationToken, ("reports", ""), ("badge-directory", empty));
-
-        await Assert.That(run.ExitCode).IsEqualTo(1);
-        await Assert.That(run.Output).Contains($"::error::badge-directory '{empty}' holds no coverage-badge.svg and coverage-badge.json; nothing was published.");
-        await Assert.That(await Git(cancellationToken, _origin, "branch", "--list")).IsEmpty();
+        Assert.AreEqual(1, run.ExitCode);
+        Assert.Contains($"::error::badge-directory '{empty}' holds no coverage-badge.svg and coverage-badge.json; nothing was published.", run.Output);
+        Assert.IsEmpty(await Git(cancellationToken, _origin, "branch", "--list"));
     }
 
-    [Test]
-    [Arguments(true, "Set reports or badge-directory, not both.")]
-    [Arguments(false, "Set reports, or badge-directory to publish a badge rendered earlier.")]
-    public async Task ReportsAndBadgeDirectory_TakeExactlyOne(bool both, string error, CancellationToken cancellationToken)
+    [TestMethod]
+    [DataRow(true, "Set reports or badge-directory, not both.")]
+    [DataRow(false, "Set reports, or badge-directory to publish a badge rendered earlier.")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task ReportsAndBadgeDirectory_TakeExactlyOne(bool both, string error)
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
-        var run = await RunAction(cancellationToken, both
-            ? [("badge-directory", _ws.CreateDirectory("rendered"))]
-            : [("reports", "")]);
-
-        await Assert.That(run.ExitCode).IsEqualTo(1);
-        await Assert.That(run.Output).Contains($"::error::{error}");
-        await Assert.That(run.Outputs).IsEmpty();
+        var run = await RunAction(cancellationToken, both ? [("badge-directory", _ws.CreateDirectory("rendered"))] : [("reports", "")]);
+        Assert.AreEqual(1, run.ExitCode);
+        Assert.Contains($"::error::{error}", run.Output);
+        Assert.IsEmpty(run.Outputs);
     }
 
-    [Test]
-    [Arguments("publish", "yes")]
-    [Arguments("fail-on-gate", "1")]
-    public async Task NonBooleanSwitch_FailsBeforeRunningDotcov(string input, string value, CancellationToken cancellationToken)
+    [TestMethod]
+    [DataRow("publish", "yes")]
+    [DataRow("fail-on-gate", "1")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task NonBooleanSwitch_FailsBeforeRunningDotcov(string input, string value)
     {
+        var cancellationToken = _testContext.CancellationToken;
         await Init(cancellationToken);
-
         var run = await RunAction(cancellationToken, (input, value));
-
-        await Assert.That(run.ExitCode).IsEqualTo(1);
-        await Assert.That(run.Output).Contains($"::error::{input} must be true or false, not '{value}'.");
-        await Assert.That(run.Outputs).IsEmpty();
+        Assert.AreEqual(1, run.ExitCode);
+        Assert.Contains($"::error::{input} must be true or false, not '{value}'.", run.Output);
+        Assert.IsEmpty(run.Outputs);
     }
 
     private async Task Init(CancellationToken cancellationToken)
@@ -193,6 +183,7 @@ public sealed class BadgeActionTests : IDisposable
             if (!File.Exists(_bash))
                 throw new FileNotFoundException("Badge action tests require Git for Windows' Bash.", _bash);
         }
+
         await Git(cancellationToken, _origin, "init", "--quiet", "--bare");
         await Git(cancellationToken, _clone, "init", "--quiet");
         await Git(cancellationToken, _clone, "remote", "add", "origin", _origin);
@@ -203,12 +194,20 @@ public sealed class BadgeActionTests : IDisposable
     {
         var values = new Dictionary<string, string>
         {
-            ["reports"] = _report, ["badge-directory"] = "", ["pattern"] = "", ["min-line"] = "", ["min-branch"] = "", ["args"] = "",
-            ["branch"] = "badges", ["publish"] = "true", ["fail-on-gate"] = "true", ["version"] = "unused",
+            ["reports"] = _report,
+            ["badge-directory"] = "",
+            ["pattern"] = "",
+            ["min-line"] = "",
+            ["min-branch"] = "",
+            ["args"] = "",
+            ["branch"] = "badges",
+            ["publish"] = "true",
+            ["fail-on-gate"] = "true",
+            ["version"] = "unused",
             ["command"] = DotcovCommand(),
         };
-        foreach (var (name, value) in inputs) values[name] = value;
-
+        foreach (var(name, value)in inputs)
+            values[name] = value;
         var outputs = _ws.PathOf("github-output");
         await File.WriteAllTextAsync(outputs, "", cancellationToken);
         var start = Start(_bash, _clone, ShellPath(Path.Combine(AppContext.BaseDirectory, "BadgeAction", "badge.sh")));
@@ -218,13 +217,10 @@ public sealed class BadgeActionTests : IDisposable
         start.Environment["GITHUB_OUTPUT"] = outputs;
         start.Environment["GITHUB_SHA"] = "0123456789abcdef";
         start.Environment.Remove("GITHUB_RUN_ID");
-        foreach (var (name, value) in values)
+        foreach (var(name, value)in values)
             start.Environment[$"DOTCOV_{name.Replace('-', '_').ToUpperInvariant()}"] = value;
-
         var run = await ChildProcess.RunAsync(start, cancellationToken);
-        var written = (await File.ReadAllLinesAsync(outputs, cancellationToken))
-            .Select(static line => line.Split('=', 2))
-            .ToDictionary(static pair => pair[0], static pair => pair[1]);
+        var written = (await File.ReadAllLinesAsync(outputs, cancellationToken)).Select(static line => line.Split('=', 2)).ToDictionary(static pair => pair[0], static pair => pair[1]);
         return new ActionRun(run.ExitCode, run.Output, written);
     }
 
@@ -250,7 +246,6 @@ public sealed class BadgeActionTests : IDisposable
     }
 
     private static string ShellPath(string path) => path.Replace('\\', '/');
-
     private static ProcessStartInfo Start(string fileName, string directory, params string[] args)
     {
         var start = new ProcessStartInfo(fileName)
@@ -260,15 +255,14 @@ public sealed class BadgeActionTests : IDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        foreach (var arg in args) start.ArgumentList.Add(arg);
+        foreach (var arg in args)
+            start.ArgumentList.Add(arg);
         // The host's git identity and config must not leak in: the script supplies its own identity.
         start.Environment["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
         start.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
         start.Environment["NO_COLOR"] = "1";
         // The outer test platform's handshake variables would reach dotcov's own process.
-        foreach (var name in start.Environment.Keys
-                     .Where(static name => name.StartsWith("TESTINGPLATFORM_", StringComparison.OrdinalIgnoreCase))
-                     .ToList())
+        foreach (var name in start.Environment.Keys.Where(static name => name.StartsWith("TESTINGPLATFORM_", StringComparison.OrdinalIgnoreCase)).ToList())
             start.Environment.Remove(name);
         return start;
     }

@@ -3,13 +3,13 @@ using System.Xml;
 using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
-
 /// <summary>
-/// Pins <see cref="CodeMetricsReader"/> against the Microsoft.CodeAnalysis.Metrics XML shape
+/// Pins <see cref = "CodeMetricsReader"/> against the Microsoft.CodeAnalysis.Metrics XML shape
 /// (verified upstream: dotnet/roslyn <c>src/RoslynAnalyzers/Tools/Metrics/MetricsOutputWriter.cs</c>
 /// plus real generated reports): MinimallyQualifiedFormat member names, per-node Metric
 /// elements, Accessors nesting, and the display-string → coverage-name normalization.
 /// </summary>
+[TestClass]
 public sealed class CodeMetricsReaderTests
 {
     private static IReadOnlyList<CodeMetricsMember> Parse(string membersXml, string ns = "MyApp", string type = "Calculator")
@@ -57,109 +57,98 @@ public sealed class CodeMetricsReaderTests
           </Metrics>
         </Method>
         """;
-
-    [Test]
-    public async Task Method_WithReturnTypeAndParameters_NormalizesNameAndArity()
+    [TestMethod]
+    public void Method_WithReturnTypeAndParameters_NormalizesNameAndArity()
     {
         var members = Parse(Method("int Calculator.Add(int a, int b)", 2));
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.TypeName).IsEqualTo("MyApp.Calculator");
-        await Assert.That(m.MemberName).IsEqualTo("Add");
-        await Assert.That(m.Arity).IsEqualTo(2);
-        await Assert.That(m.CyclomaticComplexity).IsEqualTo(2);
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
-        await Assert.That(m.DisplayName).IsEqualTo("int Calculator.Add(int a, int b)");
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual("MyApp.Calculator", m.TypeName);
+        Assert.AreEqual("Add", m.MemberName);
+        Assert.AreEqual(2, m.Arity);
+        Assert.AreEqual(2, m.CyclomaticComplexity);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
+        Assert.AreEqual("int Calculator.Add(int a, int b)", m.DisplayName);
     }
 
-    [Test]
-    public async Task TopLevelStatements_EntryPointDisplay_NormalizesToMain()
+    [TestMethod]
+    public void TopLevelStatements_EntryPointDisplay_NormalizesToMain()
     {
         // Roslyn names the synthesized top-level-statements entry point `<Main>$`; it must
         // normalize to `Main` — the identity MethodIdentity gives the coverage side — instead
         // of being generic-stripped down to a bare `$`.
         var members = Parse(Method("void Program.&lt;Main&gt;$(string[] args)", 4), type: "Program");
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.MemberName).IsEqualTo("Main");
-        await Assert.That(m.Arity).IsEqualTo(1);
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Method);
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual("Main", m.MemberName);
+        Assert.AreEqual(1, m.Arity);
+        Assert.AreEqual(CodeMetricsMemberKind.Method, m.Kind);
     }
 
-    [Test]
-    public async Task TypeAndNamespaceMetrics_NeverLeakIntoMembers()
+    [TestMethod]
+    public void TypeAndNamespaceMetrics_NeverLeakIntoMembers()
     {
         // Assembly (999), namespace (888), and type (777) CyclomaticComplexity nodes surround
         // the member — only the member's own value may be recorded.
         var members = Parse(Method("void Calculator.M()", 3));
-
-        await Assert.That(members.Single().CyclomaticComplexity).IsEqualTo(3);
+        Assert.AreEqual(3, members.Single().CyclomaticComplexity);
     }
 
-    [Test]
-    public async Task GenericReturnType_WithCommaInsideAngles_DoesNotInflateArity()
+    [TestMethod]
+    public void GenericReturnType_WithCommaInsideAngles_DoesNotInflateArity()
     {
         var members = Parse(Method("Dictionary&lt;string, int&gt; Calculator.Load(string key)", 1));
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.MemberName).IsEqualTo("Load");
-        await Assert.That(m.Arity).IsEqualTo(1);
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual("Load", m.MemberName);
+        Assert.AreEqual(1, m.Arity);
     }
 
-    [Test]
-    public async Task GenericParameter_WithComma_CountsAsOneParameter()
+    [TestMethod]
+    public void GenericParameter_WithComma_CountsAsOneParameter()
     {
         var members = Parse(Method("void Calculator.Store(Dictionary&lt;string, int&gt; map)", 1));
-
-        await Assert.That(members.Single().Arity).IsEqualTo(1);
+        Assert.AreEqual(1, members.Single().Arity);
     }
 
-    [Test]
-    public async Task ParameterlessMethod_ArityZero()
+    [TestMethod]
+    public void ParameterlessMethod_ArityZero()
     {
         var members = Parse(Method("void Calculator.Reset()", 1));
-
-        await Assert.That(members.Single().Arity).IsEqualTo(0);
+        Assert.AreEqual(0, members.Single().Arity);
     }
 
-    [Test]
-    public async Task Constructor_NoReturnType_NormalizesToDotCtor()
+    [TestMethod]
+    public void Constructor_NoReturnType_NormalizesToDotCtor()
     {
         // Constructors display without a return type: `Calculator.Calculator(int seed)`.
         var members = Parse(Method("Calculator.Calculator(int seed)", 1));
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.MemberName).IsEqualTo(".ctor");
-        await Assert.That(m.Arity).IsEqualTo(1);
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual(".ctor", m.MemberName);
+        Assert.AreEqual(1, m.Arity);
     }
 
-    [Test]
-    public async Task GenericMethod_TypeArgumentsStripped()
+    [TestMethod]
+    public void GenericMethod_TypeArgumentsStripped()
     {
         var members = Parse(Method("T Calculator.Identity&lt;T&gt;(T value)", 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("Identity");
+        Assert.AreEqual("Identity", members.Single().MemberName);
     }
 
-    [Test]
-    public async Task GenericNamedType_ParametersStrippedFromTypeName()
+    [TestMethod]
+    public void GenericNamedType_ParametersStrippedFromTypeName()
     {
         var members = Parse(Method("void Stack&lt;T&gt;.Push(T item)", 1), type: "Stack&lt;T&gt;");
-
-        await Assert.That(members.Single().TypeName).IsEqualTo("MyApp.Stack");
+        Assert.AreEqual("MyApp.Stack", members.Single().TypeName);
     }
 
-    [Test]
-    public async Task NestedType_DottedNamedTypeName_KeptDotted()
+    [TestMethod]
+    public void NestedType_DottedNamedTypeName_KeptDotted()
     {
         // The writer prepends containing types with dots: <NamedType Name="Outer.Inner">.
         var members = Parse(Method("void Inner.M()", 1), type: "Outer.Inner");
-
-        await Assert.That(members.Single().TypeName).IsEqualTo("MyApp.Outer.Inner");
+        Assert.AreEqual("MyApp.Outer.Inner", members.Single().TypeName);
     }
 
-    [Test]
-    public async Task PropertyWithAccessors_EmitsAggregateAndAccessorEntries()
+    [TestMethod]
+    public void PropertyWithAccessors_EmitsAggregateAndAccessorEntries()
     {
         // Real shape (verified): Property Metrics first, then <Accessors> with Method children
         // whose display ends `.get` / `.set`.
@@ -182,23 +171,19 @@ public sealed class CodeMetricsReaderTests
               </Accessors>
             </Property>
             """);
-
-        await Assert.That(members.Count).IsEqualTo(3);
-
+        Assert.AreEqual(3, members.Count);
         var getter = members.Single(m => m.MemberName == "get_Value");
-        await Assert.That(getter.Kind).IsEqualTo(CodeMetricsMemberKind.Accessor);
-        await Assert.That(getter.CyclomaticComplexity).IsEqualTo(1);   // the accessor's own metric, not the aggregate
-
+        Assert.AreEqual(CodeMetricsMemberKind.Accessor, getter.Kind);
+        Assert.AreEqual(1, getter.CyclomaticComplexity); // the accessor's own metric, not the aggregate
         var setter = members.Single(m => m.MemberName == "set_Value");
-        await Assert.That(setter.CyclomaticComplexity).IsEqualTo(1);
-
+        Assert.AreEqual(1, setter.CyclomaticComplexity);
         var aggregate = members.Single(m => m.Kind == CodeMetricsMemberKind.Property);
-        await Assert.That(aggregate.MemberName).IsEqualTo("Value");
-        await Assert.That(aggregate.CyclomaticComplexity).IsEqualTo(2);
+        Assert.AreEqual("Value", aggregate.MemberName);
+        Assert.AreEqual(2, aggregate.CyclomaticComplexity);
     }
 
-    [Test]
-    public async Task Indexer_ThisDisplay_NormalizesToItem()
+    [TestMethod]
+    public void Indexer_ThisDisplay_NormalizesToItem()
     {
         var members = Parse("""
             <Property Name="int Calculator.this[int index]">
@@ -207,12 +192,11 @@ public sealed class CodeMetricsReaderTests
               </Metrics>
             </Property>
             """);
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("Item");
+        Assert.AreEqual("Item", members.Single().MemberName);
     }
 
-    [Test]
-    public async Task Field_NormalizesToFieldName()
+    [TestMethod]
+    public void Field_NormalizesToFieldName()
     {
         var members = Parse("""
             <Field Name="int Calculator.seed">
@@ -221,15 +205,14 @@ public sealed class CodeMetricsReaderTests
               </Metrics>
             </Field>
             """);
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.MemberName).IsEqualTo("seed");
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Field);
-        await Assert.That(m.Arity).IsNull();
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual("seed", m.MemberName);
+        Assert.AreEqual(CodeMetricsMemberKind.Field, m.Kind);
+        Assert.IsNull(m.Arity);
     }
 
-    [Test]
-    public async Task Event_NormalizesToEventName()
+    [TestMethod]
+    public void Event_NormalizesToEventName()
     {
         var members = Parse("""
             <Event Name="EventHandler Calculator.Changed">
@@ -238,14 +221,13 @@ public sealed class CodeMetricsReaderTests
               </Metrics>
             </Event>
             """);
-
-        var m = await Assert.That(members).HasSingleItem();
-        await Assert.That(m.MemberName).IsEqualTo("Changed");
-        await Assert.That(m.Kind).IsEqualTo(CodeMetricsMemberKind.Event);
+        var m = Assert.ContainsSingle(members);
+        Assert.AreEqual("Changed", m.MemberName);
+        Assert.AreEqual(CodeMetricsMemberKind.Event, m.Kind);
     }
 
-    [Test]
-    public async Task InitAccessor_NormalizesToSetPrefix()
+    [TestMethod]
+    public void InitAccessor_NormalizesToSetPrefix()
     {
         // init-only setters compile to set_ accessors — the identity coverage reports carry.
         var members = Parse("""
@@ -262,13 +244,12 @@ public sealed class CodeMetricsReaderTests
               </Accessors>
             </Property>
             """);
-
         var init = members.Single(m => m.Kind == CodeMetricsMemberKind.Accessor);
-        await Assert.That(init.MemberName).IsEqualTo("set_Value");
+        Assert.AreEqual("set_Value", init.MemberName);
     }
 
-    [Test]
-    public async Task EventAccessors_NormalizeToAddAndRemovePrefixes()
+    [TestMethod]
+    public void EventAccessors_NormalizeToAddAndRemovePrefixes()
     {
         var members = Parse("""
             <Event Name="EventHandler Calculator.Changed">
@@ -289,17 +270,15 @@ public sealed class CodeMetricsReaderTests
               </Accessors>
             </Event>
             """);
-
-        await Assert.That(members).Contains(m => m is { MemberName: "add_Changed", Kind: CodeMetricsMemberKind.Accessor });
-        await Assert.That(members).Contains(m => m is { MemberName: "remove_Changed", Kind: CodeMetricsMemberKind.Accessor });
+        Assert.Contains(m => m is { MemberName: "add_Changed", Kind: CodeMetricsMemberKind.Accessor }, members);
+        Assert.Contains(m => m is { MemberName: "remove_Changed", Kind: CodeMetricsMemberKind.Accessor }, members);
     }
 
-    [Test]
-    public async Task EqualityOperator_NormalizesToOpEquality()
+    [TestMethod]
+    public void EqualityOperator_NormalizesToOpEquality()
     {
         var members = Parse(Method("bool Calculator.operator ==(Calculator a, Calculator b)", 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("op_Equality");
+        Assert.AreEqual("op_Equality", members.Single().MemberName);
     }
 
     /// <summary>
@@ -308,75 +287,68 @@ public sealed class CodeMetricsReaderTests
     /// tokens carry unbalanced <c>&lt;</c>/<c>&gt;</c> that must not derail the depth-tracked
     /// parameter split before they reach the table.
     /// </summary>
-    [Test]
-    [Arguments("Calculator Calculator.operator +(Calculator a)", "op_UnaryPlus")]
-    [Arguments("Calculator Calculator.operator +(Calculator a, Calculator b)", "op_Addition")]
-    [Arguments("Calculator Calculator.operator *(Calculator a, Calculator b)", "op_Multiply")]
-    [Arguments("Calculator Calculator.operator /(Calculator a, Calculator b)", "op_Division")]
-    [Arguments("Calculator Calculator.operator %(Calculator a, Calculator b)", "op_Modulus")]
-    [Arguments("bool Calculator.operator !(Calculator a)", "op_LogicalNot")]
-    [Arguments("Calculator Calculator.operator ~(Calculator a)", "op_OnesComplement")]
-    [Arguments("Calculator Calculator.operator ++(Calculator a)", "op_Increment")]
-    [Arguments("Calculator Calculator.operator --(Calculator a)", "op_Decrement")]
-    [Arguments("bool Calculator.operator true(Calculator a)", "op_True")]
-    [Arguments("bool Calculator.operator false(Calculator a)", "op_False")]
-    [Arguments("Calculator Calculator.operator &amp;(Calculator a, Calculator b)", "op_BitwiseAnd")]
-    [Arguments("Calculator Calculator.operator |(Calculator a, Calculator b)", "op_BitwiseOr")]
-    [Arguments("Calculator Calculator.operator ^(Calculator a, Calculator b)", "op_ExclusiveOr")]
-    [Arguments("Calculator Calculator.operator &lt;&lt;(Calculator a, int shift)", "op_LeftShift")]
-    [Arguments("Calculator Calculator.operator &gt;&gt;(Calculator a, int shift)", "op_RightShift")]
-    [Arguments("Calculator Calculator.operator &gt;&gt;&gt;(Calculator a, int shift)", "op_UnsignedRightShift")]
-    [Arguments("bool Calculator.operator !=(Calculator a, Calculator b)", "op_Inequality")]
-    [Arguments("bool Calculator.operator &lt;(Calculator a, Calculator b)", "op_LessThan")]
-    [Arguments("bool Calculator.operator &gt;(Calculator a, Calculator b)", "op_GreaterThan")]
-    [Arguments("bool Calculator.operator &lt;=(Calculator a, Calculator b)", "op_LessThanOrEqual")]
-    [Arguments("bool Calculator.operator &gt;=(Calculator a, Calculator b)", "op_GreaterThanOrEqual")]
-    public async Task OperatorTokens_NormalizeToClsOpNames(string display, string expected)
+    [TestMethod]
+    [DataRow("Calculator Calculator.operator +(Calculator a)", "op_UnaryPlus")]
+    [DataRow("Calculator Calculator.operator +(Calculator a, Calculator b)", "op_Addition")]
+    [DataRow("Calculator Calculator.operator *(Calculator a, Calculator b)", "op_Multiply")]
+    [DataRow("Calculator Calculator.operator /(Calculator a, Calculator b)", "op_Division")]
+    [DataRow("Calculator Calculator.operator %(Calculator a, Calculator b)", "op_Modulus")]
+    [DataRow("bool Calculator.operator !(Calculator a)", "op_LogicalNot")]
+    [DataRow("Calculator Calculator.operator ~(Calculator a)", "op_OnesComplement")]
+    [DataRow("Calculator Calculator.operator ++(Calculator a)", "op_Increment")]
+    [DataRow("Calculator Calculator.operator --(Calculator a)", "op_Decrement")]
+    [DataRow("bool Calculator.operator true(Calculator a)", "op_True")]
+    [DataRow("bool Calculator.operator false(Calculator a)", "op_False")]
+    [DataRow("Calculator Calculator.operator &amp;(Calculator a, Calculator b)", "op_BitwiseAnd")]
+    [DataRow("Calculator Calculator.operator |(Calculator a, Calculator b)", "op_BitwiseOr")]
+    [DataRow("Calculator Calculator.operator ^(Calculator a, Calculator b)", "op_ExclusiveOr")]
+    [DataRow("Calculator Calculator.operator &lt;&lt;(Calculator a, int shift)", "op_LeftShift")]
+    [DataRow("Calculator Calculator.operator &gt;&gt;(Calculator a, int shift)", "op_RightShift")]
+    [DataRow("Calculator Calculator.operator &gt;&gt;&gt;(Calculator a, int shift)", "op_UnsignedRightShift")]
+    [DataRow("bool Calculator.operator !=(Calculator a, Calculator b)", "op_Inequality")]
+    [DataRow("bool Calculator.operator &lt;(Calculator a, Calculator b)", "op_LessThan")]
+    [DataRow("bool Calculator.operator &gt;(Calculator a, Calculator b)", "op_GreaterThan")]
+    [DataRow("bool Calculator.operator &lt;=(Calculator a, Calculator b)", "op_LessThanOrEqual")]
+    [DataRow("bool Calculator.operator &gt;=(Calculator a, Calculator b)", "op_GreaterThanOrEqual")]
+    public void OperatorTokens_NormalizeToClsOpNames(string display, string expected)
     {
         var members = Parse(Method(display, 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo(expected);
+        Assert.AreEqual(expected, members.Single().MemberName);
     }
 
-    [Test]
-    public async Task CheckedOperator_NormalizesToCheckedClsName()
+    [TestMethod]
+    public void CheckedOperator_NormalizesToCheckedClsName()
     {
         // `operator checked -` compiles to op_CheckedSubtraction (C# 11 checked operators);
         // the raw spelling could never match the coverage method.
         var members = Parse(Method("Calculator Calculator.operator checked -(Calculator a, Calculator b)", 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("op_CheckedSubtraction");
+        Assert.AreEqual("op_CheckedSubtraction", members.Single().MemberName);
     }
 
-    [Test]
-    public async Task UnaryVersusBinaryMinus_DisambiguatedByArity()
+    [TestMethod]
+    public void UnaryVersusBinaryMinus_DisambiguatedByArity()
     {
-        var members = Parse(
-            Method("Calculator Calculator.operator -(Calculator a)", 1) +
-            Method("Calculator Calculator.operator -(Calculator a, Calculator b)", 1));
-
-        await Assert.That(members).Contains(m => m.MemberName == "op_UnaryNegation");
-        await Assert.That(members).Contains(m => m.MemberName == "op_Subtraction");
+        var members = Parse(Method("Calculator Calculator.operator -(Calculator a)", 1) + Method("Calculator Calculator.operator -(Calculator a, Calculator b)", 1));
+        Assert.Contains(m => m.MemberName == "op_UnaryNegation", members);
+        Assert.Contains(m => m.MemberName == "op_Subtraction", members);
     }
 
-    [Test]
-    public async Task ImplicitConversion_NormalizesToOpImplicit()
+    [TestMethod]
+    public void ImplicitConversion_NormalizesToOpImplicit()
     {
         var members = Parse(Method("Calculator.implicit operator int(Calculator c)", 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("op_Implicit");
+        Assert.AreEqual("op_Implicit", members.Single().MemberName);
     }
 
-    [Test]
-    public async Task ExplicitConversion_NormalizesToOpExplicit()
+    [TestMethod]
+    public void ExplicitConversion_NormalizesToOpExplicit()
     {
         var members = Parse(Method("Calculator.explicit operator int(Calculator c)", 1));
-
-        await Assert.That(members.Single().MemberName).IsEqualTo("op_Explicit");
+        Assert.AreEqual("op_Explicit", members.Single().MemberName);
     }
 
-    [Test]
-    public async Task MemberWithoutComplexityMetric_IsKeptAsNoMeasurement()
+    [TestMethod]
+    public void MemberWithoutComplexityMetric_IsKeptAsNoMeasurement()
     {
         var members = Parse("""
             <Method Name="void Calculator.M()">
@@ -385,19 +357,17 @@ public sealed class CodeMetricsReaderTests
               </Metrics>
             </Method>
             """);
-
-        var member = await Assert.That(members).HasSingleItem();
-        await Assert.That(member.CyclomaticComplexity).IsEqualTo(0);
+        var member = Assert.ContainsSingle(members);
+        Assert.AreEqual(0, member.CyclomaticComplexity);
     }
 
-    [Test]
+    [TestMethod]
     public async Task ParseFile_MalformedXml_RethrowsWithPathPrefixed()
     {
         using var temp = TempWorkspace.Create("dotcov-metrics-");
         var path = temp.PrepareFile("bad.xml");
         await File.WriteAllTextAsync(path, "<CodeMetricsReport><unclosed>");
-
         var ex = Assert.ThrowsExactly<XmlException>(() => CodeMetricsReader.ParseFile(path));
-        await Assert.That(ex.Message).StartsWith(path);
+        Assert.StartsWith(path, ex.Message);
     }
 }

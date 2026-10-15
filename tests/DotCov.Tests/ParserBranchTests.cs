@@ -1,54 +1,40 @@
 using System.Text;
 using DotCov.Tests.Infrastructure;
-using TUnit.Assertions.Enums;
 
 namespace DotCov.Tests;
-
+[TestClass]
 public sealed class ParserBranchTests
 {
-    [Test]
-    public async Task Parse_RepeatedBranchLineWithDifferingValues_ReconcilesPerComponentMax()
+    [TestMethod]
+    public void Parse_RepeatedBranchLineWithDifferingValues_ReconcilesPerComponentMax()
     {
         // Vary both covered and total counts so each component's maximum is checked independently.
-        var f = Cobertura.NewDoc()
-            .AddClass("x.cs", c => c.Branch(5, "(1/2)"))
-            .AddClass("x.cs", c => c.Branch(5, "(2/4)"))
-            .Parse().Files[0];
-
-        await Assert.That(f.BranchesByLine[5]).IsEqualTo((2, 4));
-        await Assert.That(f.BranchesHit).IsEqualTo(2);
-        await Assert.That(f.BranchesTotal).IsEqualTo(4);
+        var f = Cobertura.NewDoc().AddClass("x.cs", c => c.Branch(5, "(1/2)")).AddClass("x.cs", c => c.Branch(5, "(2/4)")).Parse().Files[0];
+        Assert.AreEqual((2, 4), f.BranchesByLine[5]);
+        Assert.AreEqual(2, f.BranchesHit);
+        Assert.AreEqual(4, f.BranchesTotal);
     }
 
-    [Test]
-    public async Task Parse_FullyCoveredBranchLine_IsAbsentFromPartialBranches()
+    [TestMethod]
+    public void Parse_FullyCoveredBranchLine_IsAbsentFromPartialBranches()
     {
-        var f = Cobertura.NewDoc()
-            .AddClass("src/A.cs", c => c
-                .Branch(5, "100% (2/2)")
-                .Branch(10, "50% (1/2)"))
-            .Parse().Files[0];
-
-        var partial = await Assert.That(f.PartialBranches).HasSingleItem();
-        await Assert.That(partial.Line).IsEqualTo(10);
-        await Assert.That(partial.Covered).IsEqualTo(1);
-        await Assert.That(partial.Total).IsEqualTo(2);
+        var f = Cobertura.NewDoc().AddClass("src/A.cs", c => c.Branch(5, "100% (2/2)").Branch(10, "50% (1/2)")).Parse().Files[0];
+        var partial = Assert.ContainsSingle(f.PartialBranches);
+        Assert.AreEqual(10, partial.Line);
+        Assert.AreEqual(1, partial.Covered);
+        Assert.AreEqual(2, partial.Total);
     }
 
-    [Test]
-    public async Task Parse_OutOfOrderLinesAcrossClassBlocks_SortsUncoveredAndPartialBranchOutput()
+    [TestMethod]
+    public void Parse_OutOfOrderLinesAcrossClassBlocks_SortsUncoveredAndPartialBranchOutput()
     {
         // Nested types can emit earlier lines later; output ordering must not depend on insertion order.
-        var f = Cobertura.NewDoc()
-            .AddClass("a.cs", c => c.Line(10, hits: 0).Branch(12, "50% (1/2)"))
-            .AddClass("a.cs", c => c.Line(5, hits: 0).Branch(6, "50% (1/2)"))
-            .Parse().Files[0];
-
-        await Assert.That(f.UncoveredLines).IsEquivalentTo([5, 10], CollectionOrdering.Matching);
-        await Assert.That(f.PartialBranches.Select(static b => b.Line)).IsEquivalentTo([6, 12], CollectionOrdering.Matching);
+        var f = Cobertura.NewDoc().AddClass("a.cs", c => c.Line(10, hits: 0).Branch(12, "50% (1/2)")).AddClass("a.cs", c => c.Line(5, hits: 0).Branch(6, "50% (1/2)")).Parse().Files[0];
+        Assert.AreSequenceEqual([5, 10], f.UncoveredLines, SequenceOrder.InOrder);
+        Assert.AreSequenceEqual([6, 12], f.PartialBranches.Select(static b => b.Line), SequenceOrder.InOrder);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Parse_ValidConditionBeforeAnyLine_IsIgnoredWithoutCrashing()
     {
         // A condition without a preceding line has no line to attribute coverage to.
@@ -63,16 +49,14 @@ public sealed class ParserBranchTests
                              </class>
                            </classes></package></packages></coverage>
                            """;
-
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var report = await CoberturaParser.ParseAsync(stream);
-
-        var f = await Assert.That(report.Files).HasSingleItem();
-        await Assert.That(f.ConditionsByLine).IsEmpty();
-        await Assert.That(f.LinesHit).IsEqualTo(1);
+        var f = Assert.ContainsSingle(report.Files);
+        Assert.IsEmpty(f.ConditionsByLine);
+        Assert.AreEqual(1, f.LinesHit);
     }
 
-    [Test]
+    [TestMethod]
     public async Task Parse_ConditionWithoutCoverageAttribute_RecordsNoPhantomDetail()
     {
         const string xml = """
@@ -89,25 +73,20 @@ public sealed class ParserBranchTests
                              </class>
                            </classes></package></packages></coverage>
                            """;
-
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var f = await Assert.That((await CoberturaParser.ParseAsync(stream)).Files).HasSingleItem();
-
-        await Assert.That(f.ConditionsByLine).IsEmpty();      // aggregate-only fallback
-        await Assert.That(f.BranchesHit).IsEqualTo(1);        // line aggregate (1/2) preserved
-        await Assert.That(f.BranchesTotal).IsEqualTo(2);
+        var f = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream)).Files);
+        Assert.IsEmpty(f.ConditionsByLine); // aggregate-only fallback
+        Assert.AreEqual(1, f.BranchesHit); // line aggregate (1/2) preserved
+        Assert.AreEqual(2, f.BranchesTotal);
     }
 
-    [Test]
-    public async Task Parse_BranchOnLineZero_StillCollectsConditionDetail()
+    [TestMethod]
+    public void Parse_BranchOnLineZero_StillCollectsConditionDetail()
     {
-        var f = Cobertura.NewDoc()
-            .AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%")))
-            .Parse().Files[0];
-
-        await Assert.That(f.BranchesByLine[0]).IsEqualTo((1, 2));
-        await Assert.That(f.ConditionsByLine).HasSingleItem();
+        var f = Cobertura.NewDoc().AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%"))).Parse().Files[0];
+        Assert.AreEqual((1, 2), f.BranchesByLine[0]);
+        Assert.ContainsSingle(f.ConditionsByLine);
         var conds = f.ConditionsByLine.Single().Value;
-        await Assert.That(conds[0]).IsEqualTo(1);
+        Assert.AreEqual(1, conds[0]);
     }
 }
