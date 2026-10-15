@@ -100,6 +100,14 @@ matrix needs no merge step. Other file names need `--pattern` (`--pattern "**/co
 | 5 | `error:` | A report or file could not be read, written or uploaded |
 | 6 | `error:` | `dotcov test`: the test run failed; coverage was not evaluated |
 
+Source lines count once per file and line. Branches from distinct packages, classes
+and methods count separately, even when they share a source line and condition
+numbers. Repeated method data and class summaries are deduplicated across reports.
+
+Library consumers can inspect branch ownership through `FileCoverage.BranchesByOrigin`,
+keyed by package, class, method and signature. `BranchesByLine` contains the combined
+counts. Conflicting condition identities within one owner produce a warning.
+
 ## Risky methods: `crap`
 
 ```bash
