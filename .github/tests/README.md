@@ -185,3 +185,19 @@ bytes in a local bare origin. Together with the three peek-readable jobs, all ni
 artifacts. They read saved historical service evidence so external badge changes or service
 outages do not change the baseline. Updating a target requires refreshing its commit,
 README markup, service evidence, dependencies, and measured results together.
+
+## Publication verification
+
+`test_verify_publication.py` exercises the release verifier through a local HTTP
+feed, including incomplete uploads, delayed availability, stale registration data
+and invalid public package contents. Run it with:
+
+```sh
+python3 -B -m unittest discover -s .github/tests -p test_verify_publication.py -v
+```
+
+The release workflow separately verifies every actual public NuGet package and its
+source commit. It holds back the tool pointer until all six runtime/library
+packages can be downloaded, then installs and tests the public native tool before
+creating the GitHub Release. Availability checks retain their attempts and use
+fresh four-minute processes, with five windows before failing.

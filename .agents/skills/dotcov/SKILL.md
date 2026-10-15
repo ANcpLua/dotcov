@@ -22,7 +22,7 @@ Prefer a repository-pinned `DotCov.Tool`: restore its tool manifest and invoke i
 use the repository's preferred scope and version; the global installation command
 is `dotnet tool install --global DotCov.Tool`. Record the actual version, and inspect
 `dotcov <command> --help` for the installed contract. The guidance here was checked
-against DotCov 4.5.0.
+against DotCov 4.6.0.
 
 ## Collect, inspect, and gate
 

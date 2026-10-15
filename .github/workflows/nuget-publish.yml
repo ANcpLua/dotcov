@@ -69,6 +69,8 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
           shellcheck .github/actions/badge/badge.sh
+      - name: Test publication verification
+        run: python3 -B -m unittest discover -s .github/tests -p test_verify_publication.py -v
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
@@ -499,7 +501,7 @@ jobs:
 
   # Native AOT packages for DotCov.Tool — one RID per runner (Native AOT cannot cross-OS
   # compile, so each OS's package is built on that OS). Release-only; fail-fast so a single
-  # RID failure fails the whole job and gates `publish` (no partial/broken RID set ships).
+  # RID failure gates publication (no partial/broken RID set ships).
   pack-tool-native:
     needs: version
     if: needs.version.outputs.is_release == 'true'
@@ -555,7 +557,7 @@ jobs:
           path: artifacts/*.nupkg
           if-no-files-found: error
 
-  publish:
+  publish-subpackages:
     needs: [version, build, test, badge-action, consumer-coverage, readme-badge-coverage, pack-tool-native, pack-rest]
     if: needs.version.outputs.is_release == 'true'
     runs-on: ubuntu-latest
@@ -564,19 +566,22 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: artifacts
           pattern: pkg-*
           merge-multiple: true
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
       - name: Authenticate to NuGet (trusted publishing)
         id: login
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: ANcpLua
       # Push every sub-package FIRST (RID-specific, `any`, and the libraries). The DotCov.Tool
-      # *pointer* is held back: NuGet requires the packages it references to exist before it.
+      # *pointer* is held back until all sub-packages pass public download/source checks.
       - name: Push sub-packages
         run: |
           shopt -s nullglob
@@ -586,20 +591,83 @@ jobs:
             dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json \
               --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --skip-duplicate
           done
-      # Pointer LAST, as its own step — only reached if every sub-package push above succeeded.
-      # If a sub-package 403s or fails, the job aborts here and no broken pointer is published.
+      - name: Verify public sub-packages before publishing the pointer
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: bash .github/scripts/wait_for_publication.sh "$VERSION" "$GITHUB_SHA" subpackages artifacts/public-before-pointer
+      - name: Retain publication verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: public-before-pointer
+          path: artifacts/public-before-pointer/
+          if-no-files-found: error
+
+  publish-pointer:
+    needs: [version, publish-subpackages]
+    if: needs.version.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: pkg-rest
+          path: artifacts
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+      - name: Authenticate to NuGet (trusted publishing)
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ANcpLua
       - name: Push the DotCov.Tool pointer
         run: |
           dotnet nuget push "artifacts/DotCov.Tool.${{ needs.version.outputs.version }}.nupkg" \
             --source https://api.nuget.org/v3/index.json \
             --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --skip-duplicate
 
-  # The GitHub Release for a tag, after every package is on NuGet. Its notes are the finished
+  verify-published:
+    needs: [version, publish-pointer]
+    if: needs.version.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - name: Verify all public packages and source commits
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: bash .github/scripts/wait_for_publication.sh "$VERSION" "$GITHUB_SHA" all artifacts/public-release
+      - name: Install and exercise the public native tool
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cat > "$RUNNER_TEMP/public-nuget.config" <<'XML'
+          <configuration><packageSources><clear/><add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>
+          XML
+          dotnet tool install DotCov.Tool --version "$VERSION" \
+            --tool-path "$RUNNER_TEMP/published-dotcov" \
+            --configfile "$RUNNER_TEMP/public-nuget.config" --no-http-cache
+          python3 .github/scripts/verify_publication.py smoke \
+            --version "$VERSION" --commit "$GITHUB_SHA" --runtime linux-x64 \
+            --output artifacts/public-release --tool "$RUNNER_TEMP/published-dotcov/dotcov"
+      - name: Retain public package and installed-tool evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: verified-public-release
+          path: artifacts/public-release/
+          if-no-files-found: error
+
+  # The GitHub Release for a tag, after public packages and the installed tool are verified. Its notes are the finished
   # docs/releases/<version>.md; a tag without that file fails here, on purpose. Manual
   # dispatches publish packages only: they have no tag to release against, so this job is tag
   # pushes only.
   release:
-    needs: [version, publish]
+    needs: [version, verify-published]
     if: needs.version.outputs.is_release == 'true' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

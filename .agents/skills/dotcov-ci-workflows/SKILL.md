@@ -23,11 +23,15 @@ description: >-
      matrices. Preserve their pinned upstream revisions, native-count comparisons,
      README badge evidence, and timer checks in `.github/tests/`.
    - Only version-tag pushes and manual dispatches pack and publish release packages.
-     `publish` needs build, tests, all three integration matrices, and both package
-     jobs. Keep the `nuget` environment, trusted publishing, and sub-packages before
-     the `DotCov.Tool` pointer. The subsequent `release` job uses
-     `docs/releases/<version>.md` when `github.ref_type == 'tag'`, including a
-     dispatch against a tag; a branch dispatch publishes packages only.
+     `publish-subpackages` needs build, tests, all three integration matrices,
+     and both package jobs. It verifies the six public runtime/library packages
+     before `publish-pointer` obtains fresh trusted-publishing credentials in the
+     `nuget` environment and pushes `DotCov.Tool`. `verify-published` checks all
+     seven public packages and an installed native tool. The subsequent `release`
+     job depends on that verification and uses `docs/releases/<version>.md` when
+     `github.ref_type == 'tag'`, including a dispatch against a tag; a branch
+     dispatch publishes packages only. Preserve public-feed/source verification:
+     upload acceptance is not download availability.
 
 3. Preserve the measurement contract in the [test guide](../../../tests/AGENTS.md)
    and [build wrapper](../../../build/Build.cs): native MTP with coverlet.MTP,
@@ -50,8 +54,10 @@ description: >-
    main and tag runs finish. Keep the Dependabot author and same-repository guards
    around privileged auto-merge and its exclusion of major updates.
 6. For workflow or badge-script changes, run `actionlint` and
-   `shellcheck .github/actions/badge/badge.sh`, as the `build` job does, plus the
-   smallest relevant local check through the Fallout targets. For prose-only
+   `shellcheck .github/actions/badge/badge.sh .github/scripts/wait_for_publication.sh`,
+   plus the publication HTTP tests:
+   `python3 -B -m unittest discover -s .github/tests -p test_verify_publication.py -v`.
+   Use the smallest relevant Fallout target for changed .NET behavior. For prose-only
    skill edits, check frontmatter and links; no .NET build or test run is needed.
    Local checks do not exercise GitHub event handling; identify any unverified
    event paths. Use [dotcov-release](../dotcov-release/SKILL.md) when publication

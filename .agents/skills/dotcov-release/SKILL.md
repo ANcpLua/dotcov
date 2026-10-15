@@ -51,7 +51,7 @@ description: >-
 5. When publication is requested, use one trigger:
 
    - Push `v<version>` at the intended commit for NuGet publication followed by a
-     GitHub Release. The `release` job runs after `publish`, uses the notes file,
+     GitHub Release. The `release` job runs after `verify-published`, uses the notes file,
      and leaves an already-existing GitHub Release unchanged.
    - For package-only publication, manually dispatch `nuget-publish.yml` on the
      intended branch with `version` without the `v` prefix. A dispatch does not
@@ -60,8 +60,17 @@ description: >-
 
    Preserve the `nuget` environment and trusted-publishing authentication. Push
    all RID/fallback packages and both libraries before the `DotCov.Tool` pointer,
-   including when recovering a partial publication.
-6. Inspect the actual run's job and step conclusions, then verify every expected
+   including when recovering a partial publication. `publish-subpackages` then
+   verifies public indexes, registration, downloads and source commits with
+   `.github/scripts/verify_publication.py` before `publish-pointer` can run.
+   Availability checks use four-minute windows and fresh processes, up to five
+   windows. Pending is not success; incorrect metadata fails immediately.
+6. Require `verify-published` to verify all seven public packages and install the
+   exact native tool from nuget.org. Its smoke check compares the native binary
+   with its public package and exercises the version, captured report and both
+   gate outcomes. `release` depends on this job. Retain the verification artifacts;
+   a green upload step alone does not establish a usable release.
+   Inspect the actual run's job and step conclusions, then verify every expected
    package ID/version in the destination feed. A green run with skipped publishing
    or duplicate-skipping pushes does not establish new publication. Check package
    availability and registration before installing the exact published version in

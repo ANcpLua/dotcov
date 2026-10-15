@@ -2,6 +2,15 @@
 
 Release entries are newest first; historical task entries retain their original order.
 
+## 4.6.0 — 2026-10-15
+
+- Verify every runtime and library package is publicly indexed, registered and downloadable before publishing the tool pointer.
+- Reject wrong package IDs, versions and source commits; retain verification attempts and downloaded artifacts.
+- Install the exact public native tool, compare its binary with the public package, and check real report/gate behavior before creating the GitHub Release.
+- Bound each availability check to four minutes, restart with fresh requests when still pending, and fail after five windows.
+- Preserve all existing tests, measurement scope, exclusions and 100% coverage gates; retain the 4.5.0 branch ownership fix.
+- Full notes: [4.6.0](docs/releases/4.6.0.md).
+
 ## 4.5.0 — 2026-10-15
 
 - Preserve package, class, method and signature ownership for branch observations through parsing and merging.
