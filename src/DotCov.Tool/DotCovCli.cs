@@ -16,6 +16,8 @@ namespace DotCov.Tool;
 public static partial class DotCovCli
 {
     /// <summary>Exit code 1: a gate measured coverage below its threshold.</summary>
+    // Published exit-code alias used by external package consumers.
+    // ReSharper disable once UnusedMember.Global
     public const int FailExitCode = ExitCodes.Fail;
     /// <summary>Exit code 2: invalid command-line usage.</summary>
     public const int UsageExitCode = ExitCodes.Usage;
@@ -51,8 +53,10 @@ public static partial class DotCovCli
             }
 
             var parsed = Parse(command, own);
-            RejectUnusedArguments(command, parsed, forwarded);
-            var options = parsed.Options;
+            if (forwarded is not null && command is not "test")
+                throw UnknownOptionError(command, "--", null);
+            RejectUnusedArguments(command, parsed);
+            var options = parsed.Values;
             var color = console && !options.ContainsKey("no-color") && Ansi.IsSupported();
             return await Dispatch(command, options, forwarded, stdout, stderr, color);
         }
@@ -703,6 +707,8 @@ public static partial class DotCovCli
         }
     }
 
+    static readonly HttpClient UploadClient = new() { Timeout = TimeSpan.FromSeconds(30) };
+
     // JSON is built lazily: a table/markdown run with no --upload never pays to serialize it
     // (and never touches the JSON path at all). The Func defers JsonFormatter.Format until we
     // know an upload URL is actually present.
@@ -712,9 +718,8 @@ public static partial class DotCovCli
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            var response = await http.PostAsync(url,
-                new StringContent(json(), System.Text.Encoding.UTF8, "application/json"));
+            using var content = new StringContent(json(), System.Text.Encoding.UTF8, "application/json");
+            using var response = await UploadClient.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode)
             {
@@ -734,11 +739,8 @@ public static partial class DotCovCli
     }
 
     /// <summary>Fail before any report is read or test is run when an argument would otherwise be ignored.</summary>
-    static void RejectUnusedArguments(string command, ParsedArguments parsed, string[]? forwarded)
+    static void RejectUnusedArguments(string command, ParsedArguments parsed)
     {
-        if (forwarded is not null && command is not "test")
-            throw UnknownOptionError(command, "--", null);
-
         // What the dictionary cannot show, in order: an option it filed as a path or under a
         // path's slot, then the options it holds, then a flag that got no value — the unknown
         // name is the more useful diagnosis than its missing value.
@@ -746,7 +748,7 @@ public static partial class DotCovCli
             throw parsed.Unknown[0];
 
         var accepted = AcceptedOptions[command];
-        foreach (var (key, value) in parsed.Options)
+        foreach (var (key, value) in parsed.Values)
         {
             if (!accepted.Contains(key)) throw UnknownOption(command, key, value);
             if (value.Length is 0 && (IsPathSlot(command, key) || key.Equals("metrics", StringComparison.OrdinalIgnoreCase)))
@@ -756,7 +758,7 @@ public static partial class DotCovCli
         if (parsed.WithoutValue.Count > 0)
             throw parsed.WithoutValue[0];
 
-        RejectInvalidValues(parsed.Options);
+        RejectInvalidValues(parsed.Values);
     }
 
     /// <summary>The error for an option the command does not take, worded for what it most likely is.</summary>
@@ -776,7 +778,7 @@ public static partial class DotCovCli
         // the flag takes no value, when the value would become a stray positional argument.
         var equalsSign = key.IndexOf('=');
         var name = equalsSign > 0 ? key[..equalsSign] : key;
-        if (equalsSign > 0 && CommandsByName[command].Options.Contains(name, StringComparer.OrdinalIgnoreCase))
+        if (equalsSign > 0 && CommandsByName[command].OptionNames.Contains(name, StringComparer.OrdinalIgnoreCase))
             return UnknownOptionError(command, $"--{key}", null, ValuelessFlags.Contains(name)
                 ? $"'--{name}' takes no value."
                 : $"Write '--{name} {key[(equalsSign + 1)..]}'.");
@@ -807,7 +809,7 @@ public static partial class DotCovCli
     // following non-dash token stays positional: `report --exclude-generated cov.xml` must not
     // swallow the path as the flag's value. Comparer matches the parsed dictionary's.
     static readonly HashSet<string> ValuelessFlags =
-        new(StringComparer.OrdinalIgnoreCase) { "exclude-generated", "exclude-test-code", "exclude-external", "probe-sources", "github-summary", "no-color" };
+        [with(StringComparer.OrdinalIgnoreCase), "exclude-generated", "exclude-test-code", "exclude-external", "probe-sources", "github-summary", "no-color"];
 
     /// <summary>
     /// A command's arguments as options, plus an error for each argument the dictionary
@@ -816,7 +818,7 @@ public static partial class DotCovCli
     /// unknown name can still be reported by name).
     /// </summary>
     sealed record ParsedArguments(
-        Dictionary<string, string> Options, List<UsageError> Unknown, List<UsageError> WithoutValue);
+        Dictionary<string, string> Values, List<UsageError> Unknown, List<UsageError> WithoutValue);
 
     static ParsedArguments Parse(string command, string[] raw)
     {

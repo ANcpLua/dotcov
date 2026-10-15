@@ -103,24 +103,17 @@ public readonly record struct AmbiguousFile(string Path, IReadOnlyList<string> C
 /// with several roots lacks it, or no document declares it at all. An invalid request rather
 /// than an unreadable report, so the CLI exits with its usage code.
 /// </summary>
-public sealed class UndeclaredSourceRootException : Exception
+public sealed class UndeclaredSourceRootException(string sourceRoot, IReadOnlyList<string> declaredRoots, string? sourceName)
+    : Exception(BuildMessage(sourceRoot, declaredRoots, sourceName))
 {
-    public UndeclaredSourceRootException(string sourceRoot, IReadOnlyList<string> declaredRoots, string? sourceName)
-        : base(BuildMessage(sourceRoot, declaredRoots, sourceName))
-    {
-        SourceRoot = sourceRoot;
-        DeclaredRoots = declaredRoots;
-        SourceName = sourceName;
-    }
-
     /// <summary>The normalized root that was asked for.</summary>
-    public string SourceRoot { get; }
+    public string SourceRoot { get; } = sourceRoot;
 
     /// <summary>The normalized roots that were declared: by <see cref="SourceName"/>, or by every report read.</summary>
-    public IReadOnlyList<string> DeclaredRoots { get; }
+    public IReadOnlyList<string> DeclaredRoots { get; } = declaredRoots;
 
     /// <summary>The report that lacks the root; null when no report of the parse declares it.</summary>
-    public string? SourceName { get; }
+    public string? SourceName { get; } = sourceName;
 
     private static string BuildMessage(string sourceRoot, IReadOnlyList<string> declaredRoots, string? sourceName)
     {

@@ -45,7 +45,7 @@ public sealed class CliTestCommandFormatTests : IDisposable
         await Assert.That(run.StdErr).DoesNotContain("> ");
         // The held-back log stays in the run directory for whoever wants it.
         var log = Directory.GetFiles(Path.Combine(_ws.Root, "TestResults"), "dotnet-test.log", SearchOption.AllDirectories);
-        await Assert.That(await File.ReadAllTextAsync(log.Single())).StartsWith("> ");
+        await Assert.That(await File.ReadAllTextAsync(log.Single(), cancellationToken)).StartsWith("> ");
         await Assert.That(run.StdErr).DoesNotContain("files below");
     }
 

@@ -425,10 +425,10 @@ public sealed class FalloutBuildTests : IDisposable
         var env = new Dictionary<string, string?> { ["GITHUB_STEP_SUMMARY"] = summary };
 
         var pass = await RunBuild(cancellationToken, env, "--coverage-min-line", "40");
-        var passMarkdown = await File.ReadAllTextAsync(summary);
+        var passMarkdown = await File.ReadAllTextAsync(summary, cancellationToken);
         File.Delete(summary);
         var fail = await RunBuild(cancellationToken, env, "--coverage-min-line", "80");
-        var failMarkdown = await File.ReadAllTextAsync(summary);
+        var failMarkdown = await File.ReadAllTextAsync(summary, cancellationToken);
 
         await Assert.That(pass.ExitCode).IsEqualTo(0).Because(pass.Output);
         await Assert.That(passMarkdown).Contains("PASS: line 50.0% (min 40%)");

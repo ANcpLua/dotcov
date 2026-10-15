@@ -127,6 +127,8 @@ public sealed class CorePathIdentityTests
         // The 2.0.0 behaviour, now opt-in: probing finds the file under neither root, so the
         // first root applies — a no-op, so no prefix — with one document-level warning.
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(Doc([".", "/usr/lib/python3/dist-packages"], "app/main.py")));
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var report = CoberturaParser.Parse(stream, identity: FileIdentity.ProbeSources);
 
         await Assert.That(report.Files.Single().Path).IsEqualTo("app/main.py");

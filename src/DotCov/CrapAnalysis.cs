@@ -301,17 +301,16 @@ public static class CrapAnalysis
         IReadOnlyList<CodeMetricsMember>? members, HashSet<int> consumed)
     {
         if (members is null) return;
-        var pairs = order.Where(static method => !method.FoldedAway && method.Lines.Count > 0 &&
-                method.Signature is "" && method.Name.Method is ".ctor" or ".cctor")
+        var pairs = order.Where(static method => method is
+                { FoldedAway: false, Lines.Count: > 0, Signature: "", Name.Method: ".ctor" or ".cctor" })
             .GroupBy(static method => method.Name.TypeIdentity)
             .Where(static group => group.Count() == 2 &&
                 group.Select(method => method.Name.Method).Distinct().Count() == 2 &&
                 group.Select(method => method.File).Distinct().Count() == 1)
             .ToDictionary(static group => group.Key, static group => group.First().File);
         foreach (var group in members.Select(static (member, index) => (Member: member, Index: index))
-                     .Where(static entry => entry.Member.Kind is CodeMetricsMemberKind.Method &&
-                         entry.Member.MemberName is ".ctor" && entry.Member.ExecutableLines is not 0 &&
-                         entry.Member.Arity is null or 0)
+                     .Where(static entry => entry.Member is
+                         { Kind: CodeMetricsMemberKind.Method, MemberName: ".ctor", ExecutableLines: not 0, Arity: null or 0 })
                      .GroupBy(static entry => entry.Member.TypeIdentity ?? entry.Member.TypeName))
         {
             var candidates = group.ToArray();
@@ -380,9 +379,10 @@ public static class CrapAnalysis
     {
         if (string.IsNullOrWhiteSpace(file) || file is "UNKNOWN") return file;
         var path = PathIdentity.NormalizeRoot(file);
-        if (roots.Count == 1 && roots[0].Length > 0 && !path.StartsWith('/') &&
-            !(path.Length >= 2 && path[1] == ':'))
-            path = PathIdentity.NormalizeRoot($"{roots[0].TrimEnd('/')}/{path}");
+        if (roots.Count is not 1) return path;
+        var root = roots[0];
+        if (root.Length > 0 && !path.StartsWith('/') && path.AsSpan() is not [_, ':', ..])
+            path = PathIdentity.NormalizeRoot($"{root.TrimEnd('/')}/{path}");
         return path;
     }
 
@@ -397,7 +397,7 @@ public static class CrapAnalysis
                 index.ByArity.GetValueOrDefault((key, null))),
             MergeCandidates(scoped?.ByArity.GetValueOrDefault((key, arity)) ?? default,
                 scoped?.ByArity.GetValueOrDefault((key, null)) ?? default));
-        if (signature is not null && compatible.ExecutableCount > 0 && !compatible.HasUnknownSignature)
+        if (signature is not null && compatible is { ExecutableCount: > 0, HasUnknownSignature: false })
         {
             var exact = MergeCandidates(index.BySignature.GetValueOrDefault((key, signature)),
                 scoped?.BySignature.GetValueOrDefault((key, signature)) ?? default);
@@ -565,7 +565,7 @@ public static class CrapAnalysis
         }
 
         /// <summary>
-        /// Merge by <see cref="Math.Max"/>, never by sum: a lambda or state machine folded into
+        /// Merge by <see cref="Math.Max(int, int)"/>, never by sum: a lambda or state machine folded into
         /// its origin measures overlapping IL, and the largest per-IL-method value is the honest
         /// whole-method bound.
         /// </summary>

@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.1</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.3.2</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.3.1 adds a repository-hosted skill for collecting and interpreting coverage in consuming projects.
-Repository CI and release skills now cover current event matrices, release notes, complete package publication, and installed-tool verification.
-Updates ANcpLua.Analyzers to 2.1.5. CLI behavior, coverage gates, and JSON output contracts are unchanged.
+DotCov 4.3.2 addresses repository inspection findings across the parser, formatters, CLI, build entry points, and tests.
+Reuses the upload HTTP client, disposes request and response content, and materializes nullable signature inputs once.
+Corrects XML documentation and asynchronous resource disposal while retaining published APIs, synchronous parser tests, coverage gates, and JSON contracts.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>

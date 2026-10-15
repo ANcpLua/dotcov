@@ -373,11 +373,11 @@ public sealed class CliJsonContractTests : IDisposable
             var (passCode, passing, _) = await Run("check", path, "--min-line", "79", "--format", "json");
 
             await Assert.That(failCode).IsEqualTo(1);
-            using var fail = System.Text.Json.JsonDocument.Parse(failing);
+            using var fail = JsonDocument.Parse(failing);
             await Assert.That(fail.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(79.99);
             await Assert.That(fail.RootElement.GetProperty("files")[0].GetProperty("lineRate").GetDouble()).IsEqualTo(79.99);
             await Assert.That(passCode).IsEqualTo(0);
-            using var pass = System.Text.Json.JsonDocument.Parse(passing);
+            using var pass = JsonDocument.Parse(passing);
             await Assert.That(pass.RootElement.GetProperty("summary").GetProperty("lineRate").GetDouble()).IsEqualTo(80);
         }
         finally

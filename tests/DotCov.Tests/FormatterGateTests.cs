@@ -4,7 +4,7 @@ using DotCov.Tests.Infrastructure;
 namespace DotCov.Tests;
 
 /// <summary>
-/// The <see cref="MarkdownFormatter.Format(CoverageReport, GateResult)"/> overload: badge and
+/// The <see cref="MarkdownFormatter.Format(CoverageReport, GateResult, int)"/> overload: badge and
 /// verdict come from the precomputed <see cref="GateResult"/> (no re-evaluation), any
 /// dimension the gate failed renders floored — mirroring <see cref="GateResult.ToString"/> —
 /// so the markdown body can never round a failing 79.96% up to a self-contradictory 80.0%

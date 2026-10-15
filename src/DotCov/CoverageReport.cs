@@ -190,7 +190,7 @@ public readonly record struct FileCoverage(
     /// the presented map IS the raw map; <see cref="FromLineData"/> sets it whenever an
     /// overlay changed the presentation.
     /// </summary>
-    internal IReadOnlyDictionary<int, (int Covered, int Total)> RawBranchesByLine
+    private IReadOnlyDictionary<int, (int Covered, int Total)> RawBranchesByLine
     {
         get => field ?? BranchesByLine;
         init;
@@ -388,14 +388,14 @@ public readonly record struct FileCoverage(
     /// (zero for parser output); for a hand-built record it is its own counts when
     /// <see cref="LineHits"/> does not reproduce them, and zero when it does.
     /// </summary>
-    internal (int Hit, int Total) LineCountFloor
+    private (int Hit, int Total) LineCountFloor
     {
         get => _lineCountFloor ?? (LinesBackedByLineData ? default : (LinesHit, LinesTotal));
         init => _lineCountFloor = value;
     }
 
     /// <summary>Branch twin of <see cref="LineCountFloor"/>, judged against <see cref="BranchesByLine"/>.</summary>
-    internal (int Hit, int Total) BranchCountFloor
+    private (int Hit, int Total) BranchCountFloor
     {
         get => _branchCountFloor ?? (BranchesBackedByLineData ? default : (BranchesHit, BranchesTotal));
         init => _branchCountFloor = value;
@@ -604,13 +604,11 @@ public readonly record struct FileCoverage(
     }
 }
 
-public sealed class CoverageReport
+public sealed class CoverageReport(IReadOnlyList<FileCoverage> files)
 {
     public static readonly CoverageReport Empty = new([]);
 
-    public CoverageReport(IReadOnlyList<FileCoverage> files) => Files = files;
-
-    public IReadOnlyList<FileCoverage> Files { get; }
+    public IReadOnlyList<FileCoverage> Files { get; } = files;
 
     /// <summary>
     /// Structured anomalies the parser/merger observed while producing this report.
@@ -666,6 +664,8 @@ public sealed class CoverageReport
     /// The exclusions applied to this report and the files they removed;
     /// <see cref="FileExclusion.None"/> until <see cref="Exclude(IEnumerable{string}, IEnumerable{string})"/> runs.
     /// </summary>
+    // Published API used by external package consumers.
+    // ReSharper disable once MemberCanBePrivate.Global
     public FileExclusion Exclusion { get; init; } = FileExclusion.None;
 
     public int TotalLines => Files.Sum(static f => f.LinesTotal);

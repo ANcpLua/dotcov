@@ -250,7 +250,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
         }
         Skip.When(unreadable is null, "running as root on a host with no write-only sysfs attribute");
 
-        var (code, stdout, stderr) = await Run("report", unreadable!);
+        var (code, stdout, stderr) = await Run("report", unreadable);
 
         await AssertOneLineError(code, stdout, stderr, $"error: Access to the path '{unreadable}' is denied.", expectedCode: 5);
     }

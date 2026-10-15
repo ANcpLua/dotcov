@@ -4,7 +4,7 @@ using DotCov.Tests.Infrastructure;
 namespace DotCov.Tests;
 
 /// <summary>
-/// Pins the opt-in <see cref="CoberturaParser.ParseMethods"/> family: per-method entries stay
+/// Pins the opt-in <c>CoberturaParser.ParseMethods</c> family: per-method entries stay
 /// DISTINCT (the exact opposite of the class-level parse's dedup-into-file-sets semantics),
 /// file keys join against <see cref="FileCoverage.Path"/>, and only usable complexity survives.
 /// Fixture expectations are hand-counted from the corpus files, never copied from their
@@ -296,6 +296,8 @@ public sealed class MethodCoverageParseTests
         var bad = temp.PrepareFile("b.cobertura.xml");
         await File.WriteAllTextAsync(bad, "<coverage><packages>");
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         var ex = Assert.ThrowsExactly<ReportParseException>(() =>
             CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Parse("*.cobertura.xml"))));
         await Assert.That(ex.SourceName).IsEqualTo(bad);

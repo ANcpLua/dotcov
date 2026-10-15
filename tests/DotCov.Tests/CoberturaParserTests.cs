@@ -138,6 +138,8 @@ public sealed class CoberturaParserTests
                                  """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(malicious));
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
@@ -254,6 +256,8 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var file = CoberturaParser.Parse(stream).Files.Single();
 
         await Assert.That(file.LinesTotal).IsEqualTo(2);
@@ -285,6 +289,8 @@ public sealed class CoberturaParserTests
                            """;
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var file = CoberturaParser.Parse(stream).Files.Single();
 
         await Assert.That(file.LinesTotal).IsEqualTo(2);

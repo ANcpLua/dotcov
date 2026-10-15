@@ -54,7 +54,7 @@ public sealed class BadgeActionTests : IDisposable
         await Assert.That(log).IsEqualTo(
             $"badge: 100.0% / 50.0% (red) for 0123456|{root}\nbadge: 100.0% / 50.0% (brightgreen) for 0123456|");
         await Assert.That(await Git(cancellationToken, _origin, "ls-tree", "--name-only", "badges"))
-            .IsEqualTo($"coverage-badge.json{"\n"}coverage-badge.svg");
+            .IsEqualTo("coverage-badge.json\ncoverage-badge.svg");
 
         // The published files are the ones this run rendered, nothing else.
         var published = await Git(cancellationToken, _origin, "show", "badges:coverage-badge.json");
@@ -210,7 +210,7 @@ public sealed class BadgeActionTests : IDisposable
         foreach (var (name, value) in inputs) values[name] = value;
 
         var outputs = _ws.PathOf("github-output");
-        File.WriteAllText(outputs, "");
+        await File.WriteAllTextAsync(outputs, "", cancellationToken);
         var start = Start(_bash, _clone, ShellPath(Path.Combine(AppContext.BaseDirectory, "BadgeAction", "badge.sh")));
         if (OperatingSystem.IsWindows())
             start.Environment["PATH"] = Path.GetDirectoryName(_bash) + Path.PathSeparator + start.Environment["PATH"];

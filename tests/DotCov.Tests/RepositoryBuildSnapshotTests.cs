@@ -35,7 +35,7 @@ public sealed class RepositoryBuildSnapshotTests : IDisposable
         await Assert.That(run.ExitCode).IsEqualTo(0).Because(run.Output);
         var snapshot = await Assert.That(
             Directory.GetFiles(_workspace.PathOf("artifacts"), "snapshot.json", SearchOption.AllDirectories)).HasSingleItem();
-        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(snapshot!, cancellationToken));
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(snapshot, cancellationToken));
         await Assert.That(json.RootElement.GetProperty("commit").GetString()).IsEqualTo(commit);
         await Assert.That(json.RootElement.GetProperty("branch").GetString()).IsEqualTo("unknown");
         await Assert.That(json.RootElement.GetProperty("project").GetString()).IsEqualTo("dotcov");

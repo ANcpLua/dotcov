@@ -4,7 +4,7 @@ namespace DotCov;
 
 /// <summary>
 /// Per-method coverage detail from one Cobertura <c>&lt;method&gt;</c> entry, produced by the
-/// opt-in <see cref="CoberturaParser.ParseMethods"/> family. Deliberately RAW: names are the
+/// opt-in <c>CoberturaParser.ParseMethods</c> family. Deliberately RAW: names are the
 /// emitter's IL-level names (<c>ClassName</c> may be a compiler-synthesized state-machine or
 /// display class like <c>Ns.Type/&lt;M&gt;d__3</c>, <c>MethodName</c> may be <c>MoveNext</c> or a
 /// mangled lambda), and no folding or normalization is applied here — that interpretation layer

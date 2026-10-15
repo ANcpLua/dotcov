@@ -13,7 +13,7 @@ public sealed class CoberturaParserAsyncTests
             .AddClass("src/B.cs", c => c.Line(5, hits: 1));
 
         var sync = doc.Parse();
-        using var stream = doc.ToStream();
+        await using var stream = doc.ToStream();
         var async = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(async.TotalLines).IsEqualTo(sync.TotalLines);
@@ -34,7 +34,7 @@ public sealed class CoberturaParserAsyncTests
             .AddClass("src/B.cs", c => c.Line(1, hits: 1));
 
         var sync = doc.Parse();
-        using var stream = doc.ToStream();
+        await using var stream = doc.ToStream();
         var async = await CoberturaParser.ParseAsync(stream);
 
         await Assert.That(async.Files.Select(Shape)).IsEquivalentTo(sync.Files.Select(Shape));
@@ -51,13 +51,16 @@ public sealed class CoberturaParserAsyncTests
     [Test]
     public async Task ParseAsync_RespectsCancellation()
     {
-        using var stream = Cobertura.NewDoc()
+        await using var stream = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(1, 1))
             .ToStream();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
+        var token = cts.Token;
 
-        await Assert.That(async () => await CoberturaParser.ParseAsync(stream, ct: cts.Token)).Throws<OperationCanceledException>();
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
+        await Assert.That(async () => await CoberturaParser.ParseAsync(stream, ct: token)).Throws<OperationCanceledException>();
     }
 
     [Test]
@@ -102,7 +105,7 @@ public sealed class CoberturaParserAsyncTests
     [Test]
     public async Task ParseAsync_EnforcesCharacterCap()
     {
-        using var stream = Cobertura.NewDoc()
+        await using var stream = Cobertura.NewDoc()
             .AddClass("a.cs", c => c.Line(1, 1))
             .ToStream();
 
@@ -112,7 +115,7 @@ public sealed class CoberturaParserAsyncTests
     [Test]
     public async Task ParseAsync_PartialBranch_RecordsBranchDetail()
     {
-        using var stream = Cobertura.NewDoc()
+        await using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Branch(10, "50% (1/2)"))
             .ToStream();
 
@@ -127,7 +130,7 @@ public sealed class CoberturaParserAsyncTests
     [Test]
     public async Task ParseAsync_LineWithoutNumber_IsSkipped()
     {
-        using var stream = Cobertura.NewDoc()
+        await using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.MalformedLine("", "5"))
             .ToStream();
 
@@ -156,7 +159,7 @@ public sealed class CoberturaParserAsyncTests
     [Test]
     public async Task ParseAsync_NoBranchData_HasBranchDataFalse()
     {
-        using var stream = Cobertura.NewDoc()
+        await using var stream = Cobertura.NewDoc()
             .AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0))
             .ToStream();
 

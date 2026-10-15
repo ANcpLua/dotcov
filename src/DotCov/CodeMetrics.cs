@@ -269,7 +269,7 @@ public static partial class CodeMetricsReader
         }
     }
 
-    private sealed record TypeContext(string Name, string Identity, string SimpleName);
+    private sealed record TypeContext(string Name, string Identity, string ShortName);
 
     // Share the enclosing identity strings across every member in a type scope. Computing
     // the joins per member amplifies deeply nested input into repeated work and allocations.
@@ -288,7 +288,7 @@ public static partial class CodeMetricsReader
 
     private static CodeMetricsMember Materialize(PendingMember pending, TypeContext type, int complexity)
     {
-        var (memberName, arity, kind) = ParseDisplay(MethodSignatures.VisualBasicDisplay(pending.Display), pending.Element, type.SimpleName);
+        var (memberName, arity, kind) = ParseDisplay(MethodSignatures.VisualBasicDisplay(pending.Display), pending.Element, type.ShortName);
 
         return new CodeMetricsMember(type.Name, memberName, kind, arity, complexity, pending.Display)
         {
@@ -309,7 +309,7 @@ public static partial class CodeMetricsReader
     /// trailing C# 14 extension block (<c>Ext.extension(string)</c>) dropped — its members are
     /// emitted as static methods of the enclosing static class.
     /// </summary>
-    [GeneratedRegex(@"<([^<>]*)>", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("<([^<>]*)>", RegexOptions.CultureInvariant)]
     private static partial Regex TypeParameterLists();
 
     private static string TypeSegment(string name, bool retainArity = false)

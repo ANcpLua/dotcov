@@ -156,7 +156,8 @@ public static partial class DotCovCli
             start.ArgumentList.Add(argument);
         if (noColor) start.Environment["NO_COLOR"] = "1";
 
-        using var process = new Process { StartInfo = start };
+        using var process = new Process();
+        process.StartInfo = start;
 
         // The two streams raise their events on different threads; a TextWriter is not thread-safe.
         var sync = new Lock();

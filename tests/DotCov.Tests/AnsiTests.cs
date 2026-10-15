@@ -16,11 +16,11 @@ public sealed class AnsiTests
     [Test]
     public async Task NoColor_OverridesEverything_ReturnsFalse()
     {
-        using var _ = new EnvScope([
+        using var _ = new EnvScope(
             ("NO_COLOR", "1"),
             ("FORCE_COLOR", "1"),
             ("GITHUB_ACTIONS", "true")
-        ]);
+        );
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsFalse();
@@ -30,7 +30,7 @@ public sealed class AnsiTests
     public async Task NoColor_EmptyString_DoesNotDisableBecauseEnvIsAbsent()
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var force = new EnvScope([("FORCE_COLOR", "1")]);
+        using var force = new EnvScope(("FORCE_COLOR", "1"));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
     }
@@ -42,7 +42,7 @@ public sealed class AnsiTests
     public async Task ForceColor_TruthyValues_ReturnsTrue(string value)
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var force = new EnvScope([("FORCE_COLOR", value)]);
+        using var force = new EnvScope(("FORCE_COLOR", value));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
     }
@@ -56,7 +56,7 @@ public sealed class AnsiTests
     public async Task ForceColor_FalsyValues_DoesNotForce(string value)
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var force = new EnvScope([("FORCE_COLOR", value)]);
+        using var force = new EnvScope(("FORCE_COLOR", value));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsFalse();
     }
@@ -65,7 +65,7 @@ public sealed class AnsiTests
     public async Task CliColorForce_TruthyValue_ReturnsTrue()
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var force = new EnvScope([("CLICOLOR_FORCE", "1")]);
+        using var force = new EnvScope(("CLICOLOR_FORCE", "1"));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
     }
@@ -74,7 +74,7 @@ public sealed class AnsiTests
     public async Task TermDumb_DisablesColor()
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var term = new EnvScope([("TERM", "dumb")]);
+        using var term = new EnvScope(("TERM", "dumb"));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
     }
@@ -83,7 +83,7 @@ public sealed class AnsiTests
     public async Task CliColorZero_DisablesColor()
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var clicolor = new EnvScope([("CLICOLOR", "0")]);
+        using var clicolor = new EnvScope(("CLICOLOR", "0"));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: false)).IsFalse();
     }
@@ -103,7 +103,7 @@ public sealed class AnsiTests
     public async Task KnownCi_EnablesColorEvenWhenOutputRedirected(string ciVar)
     {
         using var _ = EnvScope.Clear(AllVars);
-        using var ci = new EnvScope([(ciVar, "true")]);
+        using var ci = new EnvScope((ciVar, "true"));
 
         await Assert.That(Ansi.IsSupported(isOutputRedirected: true)).IsTrue();
     }

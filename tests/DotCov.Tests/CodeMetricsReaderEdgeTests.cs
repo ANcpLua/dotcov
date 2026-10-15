@@ -99,8 +99,8 @@ public sealed class CodeMetricsReaderEdgeTests
 
         await Assert.That(members.Select(m => (m.MemberName, m.Kind, m.Arity))).IsEquivalentTo(
         [
-            ("get_Pair", CodeMetricsMemberKind.Accessor, (int?)null),
-            ("set_Pair", CodeMetricsMemberKind.Accessor, (int?)null),
+            ("get_Pair", CodeMetricsMemberKind.Accessor, null),
+            ("set_Pair", CodeMetricsMemberKind.Accessor, null),
             ("Pair", CodeMetricsMemberKind.Property, (int?)null),
         ]);
     }

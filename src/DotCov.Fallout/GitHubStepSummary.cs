@@ -7,7 +7,7 @@ namespace DotCov.Fallout;
 /// </summary>
 internal static class GitHubStepSummary
 {
-    public const string Variable = "GITHUB_STEP_SUMMARY";
+    private const string Variable = "GITHUB_STEP_SUMMARY";
 
     public static string? ConfiguredPath => Environment.GetEnvironmentVariable(Variable) is { Length: > 0 } path ? path : null;
 

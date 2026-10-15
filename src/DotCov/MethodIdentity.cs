@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace DotCov;
 
 /// <summary>
-/// The compiler-name-mangling normalization table behind <see cref="CrapAnalysis.Analyze"/>:
+/// The compiler-name-mangling normalization table behind <c>CrapAnalysis.Analyze</c>:
 /// maps coverlet's IL-level (class, method) pairs back to the source method a human (or an
 /// agent refactoring toward a green gate) would name. One home for every mangling rule so the
 /// matcher and any future consumer can never disagree about what a synthetic name means.
@@ -32,7 +32,7 @@ namespace DotCov;
 /// </summary>
 internal static class MethodIdentity
 {
-    private static readonly Regex FileTypePrefix = new(@"<[A-Za-z0-9_]*>F[0-9A-F]{64}__",
+    private static readonly Regex FileTypePrefix = new("<[A-Za-z0-9_]*>F[0-9A-F]{64}__",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
     // The source file remains part of MethodName, so two file-local Worker types
@@ -45,15 +45,17 @@ internal static class MethodIdentity
     /// constructors, <c>SetStateMachine</c>, the non-<c>MoveNext</c> surface of iterator state
     /// machines, anonymous-type members — whose lines belong to no method a source file names.
     /// </summary>
+    /// <param name="className">The IL-level declaring type.</param>
+    /// <param name="methodName">The IL-level method name.</param>
     /// <param name="typeKey">Display type identity, generic arity stripped: <c>Ns.Outer.Inner</c>.</param>
     /// <param name="typeIdentity">
     /// The same chain with generic arity kept (<c>Ns.Result`1</c>): <c>Result</c> and
     /// <c>Result&lt;T&gt;</c> share a display name but are different types whose methods must
     /// never merge.
     /// </param>
-    /// <param name="folded">
-    /// True when the identity came from a synthetic container, meaning the signature/arity of
-    /// the raw entry does not describe the origin method.
+    /// <param name="methodKey">The source-level method name.</param>
+    /// <param name="origin">
+    /// The synthetic method's source ordinal and body identity, or null for a source method.
     /// </param>
     internal static bool TryNormalize(
         string className, string methodName,
@@ -207,7 +209,7 @@ internal static class MethodIdentity
         var close = MatchingClose(segment);
         if (close <= 1) return false;                              // "<>…" has no origin name
         var rest = segment.AsSpan(close + 1);
-        if (!rest.SequenceEqual("d") && !rest.StartsWith("d__", StringComparison.Ordinal)) return false;
+        if (rest is not "d" && !rest.StartsWith("d__", StringComparison.Ordinal)) return false;
 
         var inner = segment[1..close];
         // A plain inner name is the method itself, so the state machine IS that method's body;
@@ -238,7 +240,7 @@ internal static class MethodIdentity
             ordinal = MethodOrdinal(rest[3..]);
         else if (rest.StartsWith("g__", StringComparison.Ordinal))
             ordinal = MethodOrdinal(rest[(rest.IndexOf('|') + 1)..]);
-        else if (!rest.SequenceEqual("$"))
+        else if (rest is not "$")
             return false;
 
         // A bracketed origin may itself be mangled (<RunAsync>b__0_0 inside an async-lambda

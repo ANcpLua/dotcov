@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Xml;
-using DotCov;
 using DotCov.Formatters;
 using DotCov.Tool;
 using Fallout.Common;
@@ -9,6 +8,8 @@ using Fallout.Common.IO;
 using JetBrains.Annotations;
 using Serilog;
 using static Fallout.Common.Tools.DotNet.DotNetTasks;
+
+namespace DotCov.Build;
 
 // Fallout reads [Parameter] properties and runs Target properties by reflection, by name
 // (`fallout Coverage`). Fallout itself ships no JetBrains annotations, so [UsedImplicitly] tells

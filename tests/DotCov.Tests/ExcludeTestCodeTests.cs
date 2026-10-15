@@ -264,7 +264,7 @@ public sealed class ExcludeTestCodeTests : IDisposable
         await Assert.That(merged.Exclusion.Patterns).IsEquivalentTo([TestFile, "Only.g.cs"]);
         await Assert.That(merged.Exclusion.Keep).IsEquivalentTo(["Program.cs"]);
         await Assert.That(excluded.Exclusion.ExcludedFiles).IsEquivalentTo([TestFile, "src/Only.g.cs"]);
-        using var json = JsonDocument.Parse(DotCov.Formatters.JsonFormatter.Format(merged));
+        using var json = JsonDocument.Parse(Formatters.JsonFormatter.Format(merged));
         await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
             .IsEquivalentTo(["src/Only.g.cs"]);
     }

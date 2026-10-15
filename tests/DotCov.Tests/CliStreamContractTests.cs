@@ -216,7 +216,7 @@ public sealed class CliStreamContractTests : IDisposable
         await Assert.That(stdout).Contains("src/A.cs");
         if (format is "json")
         {
-            using var json = System.Text.Json.JsonDocument.Parse(stdout);
+            using var json = JsonDocument.Parse(stdout);
             await Assert.That(json.RootElement.GetProperty("files").GetArrayLength()).IsEqualTo(1);
             await Assert.That(json.RootElement.GetProperty("excluded").EnumerateArray().Select(static e => e.GetString()!))
                 .IsEquivalentTo(["obj/Gen.g.cs"]);

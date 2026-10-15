@@ -12,13 +12,13 @@ namespace DotCov.Tool;
 public static partial class DotCovCli
 {
     /// <summary>One command: how it is invoked, what it does, and the options it takes, in help order.</summary>
-    sealed record CommandHelp(string Name, string Usage, string[] Summary, string[] Options);
+    sealed record CommandHelp(string Name, string Usage, string[] Summary, string[] OptionNames);
 
     /// <summary>One option: its name as parsed (no dashes), its syntax, and its description lines.</summary>
     sealed record OptionHelp(string Name, string Syntax, string[] Description);
 
     /// <summary>A paragraph, an exit code, or an example, shown in full help and in each listed command's help.</summary>
-    sealed record HelpEntry(string[] Commands, string[] Lines);
+    sealed record HelpEntry(string[] CommandNames, string[] Lines);
 
     // Option groups several commands share: the exclusion flags and the file-identity flags.
     static readonly string[] Exclusion = ["exclude-generated", "exclude-test-code", "exclude-external", "keep"];
@@ -63,7 +63,7 @@ public static partial class DotCovCli
     // for. Declared after Commands: static initializers of one file run in textual order.
     static readonly Dictionary<string, HashSet<string>> AcceptedOptions = Commands.ToDictionary(
         static c => c.Name,
-        static c => new HashSet<string>([.. c.Options, .. Positionals(c.Name)], StringComparer.OrdinalIgnoreCase),
+        static c => new HashSet<string>([.. c.OptionNames, .. Positionals(c.Name)], StringComparer.OrdinalIgnoreCase),
         StringComparer.Ordinal);
 
     static readonly OptionHelp[] Options =
@@ -245,7 +245,7 @@ public static partial class DotCovCli
         sb.AppendLine();
         sb.AppendLine("Options (a command rejects any option it does not take, never ignores it):");
         foreach (var option in Options)
-            AppendOption(sb, option, $"({string.Join(", ", Commands.Where(c => c.Options.Contains(option.Name)).Select(static c => c.Name))})");
+            AppendOption(sb, option, $"({string.Join(", ", Commands.Where(c => c.OptionNames.Contains(option.Name)).Select(static c => c.Name))})");
         AppendOption(sb, HelpOption, "(every command)");
 
         foreach (var note in Notes)
@@ -266,19 +266,19 @@ public static partial class DotCovCli
 
         sb.AppendLine();
         sb.AppendLine("Options:");
-        foreach (var name in command.Options)
+        foreach (var name in command.OptionNames)
             AppendOption(sb, OptionsByName[name], null);
         AppendOption(sb, HelpOption, null);
 
         foreach (var note in Notes)
         {
-            if (!note.Commands.Contains(command.Name)) continue;
+            if (!note.CommandNames.Contains(command.Name)) continue;
             sb.AppendLine();
             AppendLines(sb, note.Lines, "");
         }
 
-        AppendEntries(sb, "Exit codes:", ExitCodeEntries.Where(e => e.Commands.Contains(command.Name)));
-        AppendEntries(sb, "Examples:", Examples.Where(e => e.Commands.Contains(command.Name)));
+        AppendEntries(sb, "Exit codes:", ExitCodeEntries.Where(e => e.CommandNames.Contains(command.Name)));
+        AppendEntries(sb, "Examples:", Examples.Where(e => e.CommandNames.Contains(command.Name)));
         return sb.ToString();
     }
 
@@ -312,7 +312,7 @@ public static partial class DotCovCli
     // ── Mistakes that name their fix ──
 
     /// <summary>The options a command's error advice lists and corrects to: its own, then --help.</summary>
-    static IEnumerable<string> ValidOptions(string command) => CommandsByName[command].Options.Append(HelpOption.Name);
+    static IEnumerable<string> ValidOptions(string command) => CommandsByName[command].OptionNames.Append(HelpOption.Name);
 
     /// <summary>A command name that is not one: the closest command, then every command.</summary>
     static UsageError UnknownCommand(string name) =>

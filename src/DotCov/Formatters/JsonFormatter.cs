@@ -18,12 +18,14 @@ namespace DotCov.Formatters;
 /// detail that is empty is omitted rather than written as <c>null</c> or <c>[]</c>: a file
 /// without uncovered lines has no <c>uncovered</c> key. Strings use relaxed escaping: only what
 /// JSON itself requires is escaped, so paths read as written (<c>Größe&lt;T&gt;.cs</c>, not
-/// <c><</c> sequences).
+/// <c>&lt;</c> sequences).
 /// </para>
 /// </summary>
 public static class JsonFormatter
 {
     /// <summary>The version of the JSON shape every dotcov document opens with; raised on any breaking change.</summary>
+    // Published API used by external package consumers.
+    // ReSharper disable once MemberCanBePrivate.Global
     public const int SchemaVersion = 1;
 
     private static readonly JsonWriterOptions Options = new()
@@ -137,6 +139,9 @@ public static class JsonFormatter
         writer.WriteEndArray();
     }
 
+    /// <param name="writer">The destination JSON writer.</param>
+    /// <param name="report">The measured report to render.</param>
+    /// <param name="top">The number of file rows shown, or null for all of them.</param>
     /// <param name="lineFloorBelow">The missed line minimum when the gate failed lines, else null.</param>
     /// <param name="branchFloorBelow">The missed branch minimum when the gate failed branches, else null.</param>
     private static void WriteReport(

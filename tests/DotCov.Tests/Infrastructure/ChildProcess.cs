@@ -10,8 +10,9 @@ internal static class ChildProcess
         cancellationToken.ThrowIfCancellationRequested();
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Could not start {startInfo.FileName}.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
+        // Drain both pipes even after cancellation kills and reaps the child.
+        var stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
         try
         {
             await process.WaitForExitAsync(cancellationToken);

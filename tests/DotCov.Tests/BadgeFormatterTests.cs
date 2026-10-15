@@ -31,7 +31,7 @@ public sealed class BadgeFormatterTests
         yield return (CoverageReport.Empty.Evaluate(80), "no data", "#9f9f9f", "lightgrey");
         // Lines measured, but a branch minimum against a report without branch data.
         yield return (Reports.Single("a.cs", hit: 10, total: 10).Evaluate(80, 50), "no data", "#9f9f9f", "lightgrey");
-        yield return (Reports.Single("a.cs", hit: 10, total: 10).Evaluate(0, 0), "disabled", "#dfb317", "yellow");
+        yield return (Reports.Single("a.cs", hit: 10, total: 10).Evaluate(0), "disabled", "#dfb317", "yellow");
     }
 
     [Test]

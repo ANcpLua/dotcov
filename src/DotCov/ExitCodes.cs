@@ -8,6 +8,8 @@ namespace DotCov;
 public static class ExitCodes
 {
     /// <summary>A measured pass.</summary>
+    // Published API used by external package consumers.
+    // ReSharper disable once MemberCanBePrivate.Global
     public const int Pass = 0;
 
     /// <summary>FAIL: measured and below a threshold.</summary>

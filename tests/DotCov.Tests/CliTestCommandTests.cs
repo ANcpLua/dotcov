@@ -17,7 +17,7 @@ namespace DotCov.Tests;
 public sealed class CliTestCommandTests : IDisposable
 {
     private const string TestingPlatformCoverage = "--coverage --coverage-output-format cobertura";
-    private const string VSTestCoverage = "--collect \"Code Coverage;Format=cobertura\"";
+    private const string VsTestCoverage = "--collect \"Code Coverage;Format=cobertura\"";
     private const string TestingPlatformGlobalJson = """{ "test": { "runner": "Microsoft.Testing.Platform" } }""";
 
     // A space in every path: arguments reach dotnet test as a list, never as a split string.
@@ -34,7 +34,7 @@ public sealed class CliTestCommandTests : IDisposable
         var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "80");
 
         await Assert.That(run.StdOut).Contains("test missing.csproj --results-directory \"");
-        await Assert.That(run.StdOut).Contains($"{Created("TestResults")}\" {VSTestCoverage}");
+        await Assert.That(run.StdOut).Contains($"{Created("TestResults")}\" {VsTestCoverage}");
         await AssertNotEvaluated(run);
     }
 
@@ -83,13 +83,13 @@ public sealed class CliTestCommandTests : IDisposable
 
         var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "80");
 
-        await Assert.That(run.StdOut).Contains(VSTestCoverage);
+        await Assert.That(run.StdOut).Contains(VsTestCoverage);
         await AssertNotEvaluated(run);
     }
 
     [Test]
     [Arguments("Microsoft.Testing.Platform", """{ "test": { "runner": "VSTest" } }""", TestingPlatformCoverage)]
-    [Arguments(" vstest ", TestingPlatformGlobalJson, VSTestCoverage)]
+    [Arguments(" vstest ", TestingPlatformGlobalJson, VsTestCoverage)]
     [Arguments("xunit", TestingPlatformGlobalJson, TestingPlatformCoverage)]
     public async Task DotnetTestRunnerVariable_WinsOverGlobalJson_WhenRecognized(
         string runner, string globalJson, string coverage, CancellationToken cancellationToken)
@@ -111,7 +111,7 @@ public sealed class CliTestCommandTests : IDisposable
         var run = await Dotcov(cancellationToken, "test", "missing.csproj", "--min-line", "90",
             "--", "-c", "Release", "--filter", "Category=Slow Tests", "--min-line");
 
-        await Assert.That(run.StdOut).Contains($"{VSTestCoverage} -c Release --filter \"Category=Slow Tests\" --min-line{Environment.NewLine}");
+        await Assert.That(run.StdOut).Contains($"{VsTestCoverage} -c Release --filter \"Category=Slow Tests\" --min-line{Environment.NewLine}");
         await AssertNotEvaluated(run);
     }
 

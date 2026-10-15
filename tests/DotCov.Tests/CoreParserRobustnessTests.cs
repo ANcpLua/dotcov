@@ -22,6 +22,8 @@ public sealed class CoreParserRobustnessTests
             .AddClass("a.cs", c => c.Line(1, 1))
             .ToStream();
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream, maxChars: 50));
     }
 
@@ -32,6 +34,8 @@ public sealed class CoreParserRobustnessTests
         // gate would then read as NoData instead of "your input is broken".
         using var stream = new MemoryStream("this is not xml at all"u8.ToArray());
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
@@ -45,6 +49,8 @@ public sealed class CoreParserRobustnessTests
             .ToBytes();
         using var stream = new MemoryStream(full, 0, full.Length / 2);
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
     }
 
@@ -59,6 +65,8 @@ public sealed class CoreParserRobustnessTests
         File.WriteAllText(temp.PrepareFile("bad/coverage.cobertura.xml"),
             "<coverage><packages>");   // truncated
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
     }
 
@@ -107,6 +115,8 @@ public sealed class CoreParserRobustnessTests
         var badPath = temp.PrepareFile("bad/coverage.cobertura.xml");
         await File.WriteAllTextAsync(badPath, "<coverage><packages>");
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));
 
         await Assert.That(ex.SourceName).IsEqualTo(badPath);

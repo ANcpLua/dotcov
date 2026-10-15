@@ -43,11 +43,13 @@ public sealed class MethodCoverageReport
     public IReadOnlyList<AmbiguousFile> AmbiguousFiles { get; init; } = [];
 
     /// <summary>The exclusions applied to this report and the files they removed.</summary>
+    // Published API used by external package consumers.
+    // ReSharper disable once MemberCanBePrivate.Global
     public FileExclusion Exclusion { get; init; } = FileExclusion.None;
 
     // Retain identities removed by Exclude for metrics completeness accounting only.
     // They must never contribute lines, complexity, or unscored rows to the selected scope.
-    internal IReadOnlyList<MethodCoverage> ExcludedMethods { get; init; } = [];
+    internal IReadOnlyList<MethodCoverage> ExcludedMethods { get; private init; } = [];
 
     // The root --source-root chose; relative metrics paths resolve against it as files did.
     internal string? SelectedSourceRoot { get; init; }
@@ -103,8 +105,7 @@ public sealed class MethodCoverageReport
             Exclusion = Exclusion.Then(rules, keepRules, excluded),
             ExclusionSteps = [.. ExclusionSteps, (rules, keepRules)],
             SelectedSourceRoot = SelectedSourceRoot,
-            ExcludedMethods = ExcludedMethods.Concat(
-                Methods.Where(m => excludedPaths.Contains(m.File))).ToArray()
+            ExcludedMethods = [.. ExcludedMethods, .. Methods.Where(m => excludedPaths.Contains(m.File))]
         };
     }
 }

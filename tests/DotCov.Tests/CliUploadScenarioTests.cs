@@ -119,8 +119,8 @@ public sealed class CliUploadScenarioTests(UploadEndpointFixture endpoint) : IDi
 
     private async Task<(int Code, string Output, string Error)> Run(params string[] args)
     {
-        using var output = new StringWriter();
-        using var error = new StringWriter();
+        await using var output = new StringWriter();
+        await using var error = new StringWriter();
         var code = await DotCovCli.RunAsync([.. args, "--upload", endpoint.Url.AbsoluteUri], output, error);
         return (code, output.ToString(), error.ToString());
     }

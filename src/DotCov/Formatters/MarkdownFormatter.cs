@@ -42,6 +42,11 @@ public static class MarkdownFormatter
             floorLine: gate.LineBelowThreshold, floorBranch: gate.BranchBelowThreshold, top: null, offenders: (gate, top))
         + Invariant($"{Environment.NewLine}`{gate}`{Environment.NewLine}");
 
+    /// <param name="report">The measured report to render.</param>
+    /// <param name="gate">The evaluated verdict, or null when no threshold was supplied.</param>
+    /// <param name="thresholdLine">The threshold description, or null to omit it.</param>
+    /// <param name="floorLine">Whether to floor line rates in the failed dimension.</param>
+    /// <param name="floorBranch">Whether to floor branch rates in the failed dimension.</param>
     /// <param name="top">The number of file rows shown, or null for all of them.</param>
     /// <param name="offenders">The gate whose offenders are listed and how many, or null for no list.</param>
     private static string Render(

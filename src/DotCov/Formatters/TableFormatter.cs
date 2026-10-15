@@ -19,12 +19,12 @@ public static class TableFormatter
 
     /// <summary>
     /// Render the report next to an already-evaluated <see cref="GateResult"/>, flooring exactly
-    /// what <see cref="MarkdownFormatter.Format(CoverageReport, GateResult)"/> floors: in a
+    /// what <see cref="MarkdownFormatter.Format(CoverageReport, GateResult, int)"/> floors: in a
     /// dimension the gate failed, the TOTAL cell and every file cell below the missed minimum
     /// round toward the verdict (one decimal, floor), so a 19999/20000 TOTAL beside
     /// <c>FAIL: line 99.9% (min 100%)</c> reads <c>99.9%</c>, never <c>100.0%</c>. Passing
     /// dimensions and passing files keep normal rounding, so a passing gate renders
-    /// byte-identical to <see cref="Format(CoverageReport, bool)"/>. Presentation only: the gate
+    /// byte-identical to <see cref="Format(CoverageReport, bool, int?)"/>. Presentation only: the gate
     /// is not re-evaluated, and no verdict line is appended.
     /// </summary>
     public static string Format(CoverageReport report, GateResult gate, bool color) =>
@@ -63,6 +63,8 @@ public static class TableFormatter
         return sb.ToString();
     }
 
+    /// <param name="report">The measured report to render.</param>
+    /// <param name="color">Whether to render ANSI colors.</param>
     /// <param name="lineFloorBelow">The missed line minimum when the gate failed lines, else null.</param>
     /// <param name="branchFloorBelow">The missed branch minimum when the gate failed branches, else null.</param>
     /// <param name="top">The number of file rows shown, or null for all of them.</param>
@@ -207,7 +209,7 @@ public static class TableFormatter
 /// The single worst-first file ordering policy shared by the human-facing text formatters
 /// (table and markdown): unmeasured files (null line rate) sort first, then ascending line
 /// rate; ties keep document order (stable sort). JSON deliberately keeps document order —
-/// machines sort as they need — see the note in <see cref="JsonFormatter.Format"/>.
+/// machines sort as they need — see the note in <see cref="JsonFormatter.Format(CoverageReport, int?)"/>.
 /// </summary>
 internal static class FormatterOrdering
 {

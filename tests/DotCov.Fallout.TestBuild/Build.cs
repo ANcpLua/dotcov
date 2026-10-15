@@ -1,9 +1,10 @@
 using System.Globalization;
 using System.IO.Pipes;
-using DotCov.Fallout;
 using Fallout.Common;
 using Fallout.Components;
 using Serilog;
+
+namespace DotCov.Fallout.TestBuild;
 
 /// <summary>The plain consumer: no ICompile, so ReportCoverage must run on its own.</summary>
 class Build : FalloutBuild, ICoverageReport

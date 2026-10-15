@@ -5,11 +5,11 @@ namespace DotCov.Tests;
 
 /// <summary>
 /// The gate-aware <see cref="TableFormatter.Format(CoverageReport, GateResult, bool)"/>: it
-/// floors exactly what <see cref="MarkdownFormatter.Format(CoverageReport, GateResult)"/>
+/// floors exactly what <see cref="MarkdownFormatter.Format(CoverageReport, GateResult, int)"/>
 /// floors — the TOTAL of a dimension the gate failed, and the per-file cells below the missed
 /// minimum — so a table logged next to <c>FAIL: line 99.9% (min 100%)</c> can never show a
 /// TOTAL of <c>100.0%</c>. Everything else, and every passing gate, renders byte-identical to
-/// <see cref="TableFormatter.Format(CoverageReport, bool)"/>.
+/// <see cref="TableFormatter.Format(CoverageReport, bool, int?)"/>.
 /// </summary>
 public sealed class TableFormatterEdgeTests
 {

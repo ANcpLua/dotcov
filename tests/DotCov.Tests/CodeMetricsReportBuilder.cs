@@ -48,7 +48,7 @@ internal sealed class CodeMetricsReportBuilder
         return CodeMetricsReader.Parse(stream);
     }
 
-    internal static XElement Metrics(int complexity) =>
+    private static XElement Metrics(int complexity) =>
         new("Metrics",
             new XElement("Metric", new XAttribute("Name", "MaintainabilityIndex"), new XAttribute("Value", "90")),
             new XElement("Metric", new XAttribute("Name", "CyclomaticComplexity"), new XAttribute("Value", complexity)),

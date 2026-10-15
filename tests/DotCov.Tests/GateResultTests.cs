@@ -56,7 +56,7 @@ public sealed class GateResultTests
     {
         // `--coverage-min-line 0 --coverage-min-branch 0` looks like a gate but cannot fail,
         // so it should say so rather than say "pass".
-        var gate = Report(hit: 1, total: 100, bHit: 0, bTotal: 0).Evaluate(0, 0);
+        var gate = Report(hit: 1, total: 100, bHit: 0, bTotal: 0).Evaluate(0);
 
         await Assert.That(gate.Outcome).IsEqualTo(GateOutcome.Disabled);
         await Assert.That(gate.IsPass).IsFalse();
@@ -69,7 +69,7 @@ public sealed class GateResultTests
     public async Task Disabled_TakesPrecedenceOverNoData()
     {
         // An unarmed gate over an empty report is still first and foremost unarmed.
-        await Assert.That(CoverageReport.Empty.Evaluate(0, 0).Outcome).IsEqualTo(GateOutcome.Disabled);
+        await Assert.That(CoverageReport.Empty.Evaluate(0).Outcome).IsEqualTo(GateOutcome.Disabled);
     }
 
     [Test]
@@ -185,7 +185,7 @@ public sealed class GateResultTests
         // The one test allowed to know the wording. Everything else asserts structure
         // (Outcome, LineBelowThreshold, BranchBelowThreshold), so rewording the prose is a
         // one-test change instead of a scatter of false failures.
-        await Assert.That(Report(1, 100, 0, 0).Evaluate(0, 0).Reason).IsEqualTo("no positive threshold - this gate cannot fail");
+        await Assert.That(Report(1, 100, 0, 0).Evaluate(0).Reason).IsEqualTo("no positive threshold - this gate cannot fail");
         await Assert.That(Report(1, 100, 0, 0).Evaluate(-5).Reason).IsEqualTo("no positive threshold - this gate cannot fail");
         await Assert.That(CoverageReport.Empty.Evaluate(95, 75).Reason).IsEqualTo("report carries no line data - nothing was measured");
         await Assert.That(Report(8, 10, 0, 0).Evaluate(50, 75).Reason).IsEqualTo("branch threshold of 75% requested but the report carries no branch data");

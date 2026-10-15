@@ -35,7 +35,7 @@ public sealed class CoverageSnapshotTests
         var ts = new DateTimeOffset(2026, 5, 11, 12, 30, 45, TimeSpan.FromHours(2));
         var snapshot = new CoverageSnapshot("abc123", "main", "MyApp", ts, null, CoverageReport.Empty);
 
-        var json = DotCov.Formatters.JsonFormatter.FormatSnapshot(snapshot);
+        var json = Formatters.JsonFormatter.FormatSnapshot(snapshot);
 
         await Assert.That(json).Contains("\"timestamp\": \"2026-05-11T12:30:45+02:00\"");
 

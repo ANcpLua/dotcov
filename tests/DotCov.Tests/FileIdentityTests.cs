@@ -47,6 +47,8 @@ public sealed class FileIdentityTests : IDisposable
         await Assert.That(warning.Detail).IsEqualTo(
             $"relative filename 'test_app.py' could belong to any of 2 <source> roots ('{src}', '{tests}') - keyed under the first, identity unresolved");
 
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var probed = CoberturaParser.Parse(TwoRoots(src, tests, "test_app.py").ToStream(), identity: FileIdentity.ProbeSources);
         await Assert.That(probed.Files.Single().Path).IsEqualTo($"{tests}/test_app.py");
         await Assert.That(probed.AmbiguousFiles).IsEmpty();
@@ -96,6 +98,8 @@ public sealed class FileIdentityTests : IDisposable
     public async Task SourceRoot_ResolvesAgainstTheChosenRoot_WithoutWarnings()
     {
         // Compared after normalization: a Windows spelling of a declared root matches it.
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var report = CoberturaParser.Parse(TwoRoots("C:/repo/src", "C:/repo/tests", "x.cs").ToStream(),
             identity: FileIdentity.FromSourceRoot(@"c:\repo\tests\"));
 
@@ -108,6 +112,8 @@ public sealed class FileIdentityTests : IDisposable
     [Test]
     public async Task SourceRoot_TheNoOpRoot_LeavesRelativeNamesUnprefixed()
     {
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var report = CoberturaParser.Parse(TwoRoots(".", "/real", "app/main.py").ToStream(),
             identity: FileIdentity.FromSourceRoot("."));
 
@@ -190,7 +196,11 @@ public sealed class FileIdentityTests : IDisposable
 
         // Two parses with different modes, interleaved, each get their own resolution.
         var xml = TwoRoots("/a", "/b", "x.cs");
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var explicitRoot = CoberturaParser.Parse(xml.ToStream(), identity: FileIdentity.FromSourceRoot("/b"));
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var lexical = CoberturaParser.Parse(xml.ToStream());
         await Assert.That(explicitRoot.Files.Single().Path).IsEqualTo("/b/x.cs");
         await Assert.That(lexical.Files.Single().Path).IsEqualTo("/a/x.cs");
@@ -298,8 +308,12 @@ public sealed class FileIdentityTests : IDisposable
             </classes></package></packages></coverage>
             """);
 
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var probed = CoberturaParser.Parse(new MemoryStream(xml), identity: FileIdentity.ProbeSources);
         Directory.Delete(holder, recursive: true);
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var probedElsewhere = CoberturaParser.Parse(new MemoryStream(xml), identity: FileIdentity.ProbeSources);
 
         await Assert.That(probed.Files.Single().Path).IsEqualTo($"{holder}/x.cs");

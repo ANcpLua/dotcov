@@ -43,7 +43,7 @@ internal static partial class MethodSignatures
     [GeneratedRegex(@"System\.Nullable<([\p{L}_][\w.]*)", RegexOptions.CultureInvariant)]
     private static partial Regex NullableTypeNames();
 
-    [GeneratedRegex(@"`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("`[0-9]+(?=<)", RegexOptions.CultureInvariant)]
     private static partial Regex ConstructedArity();
 
     // delegate*<P1, ..., R>, with or without a calling convention; the last '>' closes it.
@@ -123,15 +123,22 @@ internal static partial class MethodSignatures
             throw new InvalidDataException($"{identity} exceeds 16384 characters.");
     }
 
-    internal sealed class NullableIdentities(IEnumerable<string?> coverage)
+    internal sealed class NullableIdentities
     {
-        public readonly HashSet<string> Observed = coverage.Where(static s => s is not null)
-            .SelectMany(static s => TypeNamePattern.Matches(s!).Select(static m => m.Value)).ToHashSet(StringComparer.Ordinal);
-        public readonly HashSet<string> Values = coverage.Where(static s => s is not null)
-            .SelectMany(static s => NullableTypeNames().Matches(s!).Select(static m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
+        public readonly HashSet<string> Observed;
+        public readonly HashSet<string> Values;
         // Names some coverage signature carries without a Nullable wrapper.
-        public readonly HashSet<string> Bare = coverage.Where(static s => s is not null)
-            .SelectMany(static s => BareNames(s!)).ToHashSet(StringComparer.Ordinal);
+        public readonly HashSet<string> Bare;
+
+        public NullableIdentities(IEnumerable<string?> coverage)
+        {
+            var signatures = coverage.OfType<string>().ToArray();
+            Observed = signatures.SelectMany(static s => TypeNamePattern.Matches(s).Select(static m => m.Value))
+                .ToHashSet(StringComparer.Ordinal);
+            Values = signatures.SelectMany(static s => NullableTypeNames().Matches(s).Select(static m => m.Groups[1].Value))
+                .ToHashSet(StringComparer.Ordinal);
+            Bare = signatures.SelectMany(BareNames).ToHashSet(StringComparer.Ordinal);
+        }
 
         private static IEnumerable<string> BareNames(string signature)
         {

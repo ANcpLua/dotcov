@@ -137,7 +137,7 @@ public sealed class CoverageReportEdgeTests
 
         var file = merged.Files.Single();
         await Assert.That((file.LinesHit, file.LinesTotal)).IsEqualTo((2, 50));
-        await Assert.That(file.LineHits.Keys).IsEquivalentTo([1, 2], CollectionOrdering.Any);
+        await Assert.That(file.LineHits.Keys).IsEquivalentTo([1, 2]);
         await Assert.That(merged.Evaluate(80).Outcome).IsEqualTo(GateOutcome.Fail);
     }
 
@@ -228,7 +228,7 @@ public sealed class CoverageReportEdgeTests
         var file = merged.Files.Single();
         await Assert.That(a.Files.Single().BranchesByLine[5]).IsEqualTo((2, 4));
         await Assert.That((file.LinesHit, file.LinesTotal)).IsEqualTo((4, 5));
-        await Assert.That(file.LineHits.Keys).IsEquivalentTo([1, 2, 3, 5, 9], CollectionOrdering.Any);
+        await Assert.That(file.LineHits.Keys).IsEquivalentTo([1, 2, 3, 5, 9]);
         await Assert.That(file.BranchesByLine[5]).IsEqualTo((1, 4));
         await Assert.That(file.BranchesByLine[9]).IsEqualTo((2, 2));
         await Assert.That((file.BranchesHit, file.BranchesTotal)).IsEqualTo((3, 6));

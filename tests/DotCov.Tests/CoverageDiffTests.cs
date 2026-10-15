@@ -536,7 +536,7 @@ public sealed class CoverageDiffTests
         await Assert.That(d.LineChanges[0]).IsTypeOf<LineDelta.NewlyMissed>();
 
         // The rendered color shares the same epsilon: dim, not red.
-        var pen = new DotCov.Formatters.AnsiPen(enabled: true);
+        var pen = new AnsiPen(enabled: true);
         await Assert.That(pen.Delta("x", d.Delta)).StartsWith("\e[2m");
     }
 

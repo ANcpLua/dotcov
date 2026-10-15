@@ -2,6 +2,14 @@
 
 Release entries are newest first; historical task entries retain their original order.
 
+## 4.3.2 — 2026-10-15
+
+- Address JetBrains inspection findings in shipping code, build entry points, documentation, and tests.
+- Reuse the upload HTTP client and dispose upload request content and responses.
+- Materialize nullable signature inputs once and make asynchronous test resource disposal explicit.
+- Preserve published APIs and intentional synchronous parser tests with narrowly documented inspection annotations.
+- Full notes: [4.3.2](docs/releases/4.3.2.md).
+
 ## 4.3.1 — 2026-10-15
 
 - Add the repository-hosted `dotcov` skill for coverage collection and result interpretation in consuming repositories.

@@ -152,8 +152,8 @@ public sealed class ReportResolverTests : IDisposable
         var path = _ws.Write("coverage.cobertura.xml", Doc("a.cs"));
         var input = ReportResolver.Resolve(_ws.Root).Single();
 
-        using var first = input.OpenStream();
-        using var second = input.OpenStream();
+        await using var first = input.OpenStream();
+        await using var second = input.OpenStream();
 
         await Assert.That(input.SourceName).IsEqualTo(path);
         await Assert.That(first.Position).IsEqualTo(0L);
@@ -169,9 +169,9 @@ public sealed class ReportResolverTests : IDisposable
         var bytes = Doc("a.cs").ToBytes();
         var input = ReportInput.FromBytes("in-memory", bytes);
 
-        using (var first = input.OpenStream())
+        await using (var first = input.OpenStream())
             first.ReadByte();
-        using var second = input.OpenStream();
+        await using var second = input.OpenStream();
 
         await Assert.That(input.SourceName).IsEqualTo("in-memory");
         await Assert.That(second.Position).IsEqualTo(0L);

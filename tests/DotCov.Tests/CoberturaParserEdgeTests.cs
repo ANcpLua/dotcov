@@ -24,6 +24,8 @@ public sealed class CoberturaParserEdgeTests
     private static async Task<(CoverageReport Sync, CoverageReport Async)> ParseBoth(string xml)
     {
         var bytes = Encoding.UTF8.GetBytes(xml);
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var sync = CoberturaParser.Parse(new MemoryStream(bytes));
         using var stream = new MemoryStream(bytes);
         var async = await CoberturaParser.ParseAsync(stream);
@@ -310,6 +312,8 @@ public sealed class CoberturaParserEdgeTests
         MethodCoverageReport methods;
         using (CultureScope.CommaDecimal())
         {
+            // Exercise the synchronous parser contract alongside awaited assertions.
+            // ReSharper disable once MethodHasAsyncOverload
             report = CoberturaParser.Parse(new MemoryStream(bytes));
             methods = CoberturaParser.ParseMethods(new MemoryStream(bytes));
         }
@@ -331,6 +335,8 @@ public sealed class CoberturaParserEdgeTests
             .Replace("<?xml version=\"1.0\"?>", "<?xml version=\"1.0\" encoding=\"utf-16\"?>");
         var bytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
 
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var sync = CoberturaParser.Parse(new MemoryStream(bytes));
         using var stream = new MemoryStream(bytes);
         var async = await CoberturaParser.ParseAsync(stream);

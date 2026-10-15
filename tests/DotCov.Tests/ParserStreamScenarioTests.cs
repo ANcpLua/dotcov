@@ -15,7 +15,7 @@ public sealed class ParserStreamScenarioTests
     [StreamScenarioSource]
     public async Task ParseAsync_FragmentedNonSeekableInput_PreservesUnicodeAndMeasurements(StreamScenario scenario)
     {
-        using var stream = scenario.Open(Document(), asyncOnly: true);
+        await using var stream = scenario.Open(Document(), asyncOnly: true);
 
         var report = await CoberturaParser.ParseAsync(stream);
 
@@ -36,7 +36,7 @@ public sealed class ParserStreamScenarioTests
         StreamScenario scenario, CancellationToken cancellationToken)
     {
         var bytes = Document();
-        using var stream = scenario.Open(bytes, asyncOnly: true);
+        await using var stream = scenario.Open(bytes, asyncOnly: true);
         stream.PauseAt(bytes.AsSpan().IndexOf("<line "u8) + 4);
         var parsing = CoberturaParser.ParseAsync(stream, ct: cancellationToken);
         bool wasPending;
@@ -69,7 +69,7 @@ public sealed class ParserStreamScenarioTests
     [StreamScenarioSource]
     public async Task ParseMethods_FragmentedInput_KeepsMethodMeasurementsSeparate(StreamScenario scenario)
     {
-        using var stream = scenario.Open(Document());
+        await using var stream = scenario.Open(Document());
 
         var report = CoberturaParser.ParseMethods(stream);
 
@@ -86,7 +86,7 @@ public sealed class ParserStreamScenarioTests
     public async Task ParseAsync_ReadFailsInsideClass_PropagatesIoFailureAndLeavesCallerStreamOpen(StreamScenario scenario)
     {
         var bytes = Document();
-        using var stream = scenario.Open(bytes, asyncOnly: true);
+        await using var stream = scenario.Open(bytes, asyncOnly: true);
         var failure = new IOException("source disconnected inside a class");
         stream.FailAt(bytes.AsSpan().IndexOf("<line "u8) + 4, failure);
 
@@ -104,7 +104,7 @@ public sealed class ParserStreamScenarioTests
         StreamScenario scenario, CancellationToken cancellationToken)
     {
         var bytes = Document();
-        using var stream = scenario.Open(bytes, asyncOnly: true);
+        await using var stream = scenario.Open(bytes, asyncOnly: true);
         stream.PauseAt(bytes.AsSpan().IndexOf("<line "u8));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var parsing = CoberturaParser.ParseAsync(stream, ct: cancellation.Token);

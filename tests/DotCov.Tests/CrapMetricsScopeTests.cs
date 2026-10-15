@@ -76,7 +76,10 @@ public sealed class CrapMetricsScopeTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/Ext.cs", "App.Ext", c =>
         {
             for (var i = 0; i < count; i++)
-                c.Method("M", $"(App.Arg{i},System.String)", null, m => m.Line(i + 1, 1));
+            {
+                var line = i + 1;
+                c.Method("M", $"(App.Arg{i},System.String)", null, m => m.Line(line, 1));
+            }
         }).ToBytes());
 
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);

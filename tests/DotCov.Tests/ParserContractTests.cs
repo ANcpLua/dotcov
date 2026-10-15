@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Xml;
 using DotCov.Formatters;
@@ -76,6 +75,8 @@ public sealed class ParserContractTests : IDisposable
 
         using var syncStream = new MemoryStream(bytes);
         using var asyncStream = new MemoryStream(bytes);
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         var viaStream = CoberturaParser.Parse(syncStream);
         var viaAsync = await CoberturaParser.ParseAsync(asyncStream);
         var viaBytes = CoberturaParser.Parse(ReportInput.FromBytes(name, bytes));
@@ -176,6 +177,8 @@ public sealed class ParserContractTests : IDisposable
         using var async = new MemoryStream(bytes);
         using var methods = new MemoryStream(bytes);
 
+        // Exercise the synchronous parser contract alongside awaited assertions.
+        // ReSharper disable once MethodHasAsyncOverload
         CoberturaParser.Parse(sync);
         await CoberturaParser.ParseAsync(async);
         CoberturaParser.ParseMethods(methods);
@@ -201,7 +204,7 @@ public sealed class ParserContractTests : IDisposable
 
         foreach (var path in new[] { good, bad })
         {
-            using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            await using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             await Assert.That(exclusive.CanRead).IsTrue();
         }
     }
@@ -241,6 +244,8 @@ public sealed class ParserContractTests : IDisposable
         // A caller-owned stream has no source name to attach; the reader's exception passes through.
         using var stream = new MemoryStream("this is not xml at all"u8.ToArray());
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseMethods(new MemoryStream("<x>"u8.ToArray())));
     }
@@ -288,10 +293,12 @@ public sealed class ParserContractTests : IDisposable
     [Test]
     public async Task ParseAsync_MalformedDocument_ThrowsLikeSync()
     {
-        var bytes = Encoding.UTF8.GetBytes("<coverage><packages>");
+        var bytes = "<coverage><packages>"u8.ToArray();
         using var sync = new MemoryStream(bytes);
         using var async = new MemoryStream(bytes);
 
+        // The assertion executes and completes within the captured resource lifetime.
+        // ReSharper disable once AccessToDisposedClosure
         var syncEx = Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(sync));
         var asyncEx = (await Assert.ThrowsExactlyAsync<XmlException>(async () => await CoberturaParser.ParseAsync(async)))!;
 

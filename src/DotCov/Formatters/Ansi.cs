@@ -49,7 +49,7 @@ public static partial class Ansi
     private static bool HasEnv(string name) => !string.IsNullOrEmpty(Env(name));
 
     private static bool IsTrue(string name) =>
-        Env(name) is { } v && v.Length > 0 && v is not "0" && !string.Equals(v, "false", StringComparison.OrdinalIgnoreCase);
+        Env(name) is { Length: > 0 } and not "0" and var v && !string.Equals(v, "false", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsKnownCiWithAnsi()
     {
@@ -75,13 +75,13 @@ public static partial class Ansi
         "Windows-only Win32 console interop; the guard branches are unreachable in Linux/macOS coverage runs.")]
     private static void EnableWindowsVt()
     {
-        const int StdOutputHandle = -11;
-        const uint EnableVirtualTerminalProcessing = 0x0004;
+        const int stdOutputHandle = -11;
+        const uint enableVirtualTerminalProcessing = 0x0004;
 
-        var handle = GetStdHandle(StdOutputHandle);
+        var handle = GetStdHandle(stdOutputHandle);
         if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return;
         if (!GetConsoleMode(handle, out var mode)) return;
-        SetConsoleMode(handle, mode | EnableVirtualTerminalProcessing);
+        SetConsoleMode(handle, mode | enableVirtualTerminalProcessing);
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
@@ -93,6 +93,8 @@ public static partial class Ansi
     [SupportedOSPlatform("windows")]
     private static partial bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
+    // The Win32 ABI returns BOOL; enabling terminal color is best effort.
+    // ReSharper disable once UnusedMethodReturnValue.Local
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     [SupportedOSPlatform("windows")]

@@ -176,7 +176,7 @@ public static partial class CoberturaParser
         public readonly List<CoverageWarning> Warnings = [];
         public readonly List<AmbiguousFile> AmbiguousFiles = [];
         private readonly HashSet<CoverageWarning> _seen = [];
-        private readonly HashSet<string> _ambiguous = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _ambiguous = [];
 
         public FileIdentity Identity => scope.Identity;
 
