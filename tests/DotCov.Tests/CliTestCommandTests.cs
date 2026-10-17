@@ -62,7 +62,7 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
     {
         var cancellationToken = testContext.CancellationToken;
         _ws.Write("global.json", TestingPlatformGlobalJson);
-        var run = await Dotcov(cancellationToken, _ws.CreateDirectory("src/App.Tests"), new Dictionary<string, string?>(), "test", "--min-line", "80");
+        var run = await Dotcov(_ws.CreateDirectory("src/App.Tests"), new Dictionary<string, string?>(), cancellationToken, "test", "--min-line", "80");
         Assert.Contains("test --results-directory \"", run.StdOut);
         Assert.Contains($"{Created("src/App.Tests/TestResults")}\" {TestingPlatformCoverage}", run.StdOut);
         AssertNotEvaluated(run);
@@ -91,7 +91,7 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
     {
         var cancellationToken = testContext.CancellationToken;
         _ws.Write("global.json", globalJson);
-        var run = await Dotcov(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["DOTNET_TEST_RUNNER"] = runner }, "test", "missing.csproj", "--min-line", "80");
+        var run = await Dotcov(_ws.Root, new Dictionary<string, string?> { ["DOTNET_TEST_RUNNER"] = runner }, cancellationToken, "test", "missing.csproj", "--min-line", "80");
         Assert.Contains(coverage, run.StdOut);
         AssertNotEvaluated(run);
     }
@@ -101,9 +101,7 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
     public async Task ExistingStartupHook_IsRetainedAndCanCoexistWithTheEmbeddedHook()
     {
         var hook = Path.Combine(AppContext.BaseDirectory, "DotCov.CoverageHook.dll");
-        var run = await Dotcov(testContext.CancellationToken, _ws.Root,
-            new Dictionary<string, string?> { ["DOTNET_STARTUP_HOOKS"] = hook },
-            "test", "missing.csproj", "--min-line", "80");
+        var run = await Dotcov(_ws.Root, new Dictionary<string, string?> { ["DOTNET_STARTUP_HOOKS"] = hook }, testContext.CancellationToken, "test", "missing.csproj", "--min-line", "80");
         AssertNotEvaluated(run);
         Assert.Contains("does not exist", run.StdOut);
         Assert.DoesNotContain("startup hook", run.StdOut.ToLowerInvariant());
@@ -127,7 +125,7 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
         var cancellationToken = testContext.CancellationToken;
         // DOTNET_HOST_PATH, which the SDK sets for the tools it runs, names the dotnet to start.
         var dotnet = _ws.PathOf("no-sdk/dotnet");
-        var run = await Dotcov(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, "test", "--min-line", "80");
+        var run = await Dotcov(_ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, cancellationToken, "test", "--min-line", "80");
         Assert.AreEqual(5, run.ExitCode);
         Assert.StartsWith($"> \"{dotnet}\" test --results-directory ", run.StdOut);
         Assert.StartsWith("error: ", run.StdErr);
@@ -146,8 +144,8 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
         var cancellationToken = testContext.CancellationToken;
         var project = WriteTestingPlatformProject();
         var summary = _ws.PathOf("step-summary.md");
-        var run = await Dotcov(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["GITHUB_STEP_SUMMARY"] = summary, // Leave no compiler server or MSBuild node holding files in the workspace.
- ["UseSharedCompilation"] = "false", ["MSBUILDDISABLENODEREUSE"] = "1" }, "test", project, "--min-line", minLine, "--exclude-generated", "--github-summary", "--badge-dir", "badge");
+        var run = await Dotcov(_ws.Root, new Dictionary<string, string?> { ["GITHUB_STEP_SUMMARY"] = summary, // Leave no compiler server or MSBuild node holding files in the workspace.
+ ["UseSharedCompilation"] = "false", ["MSBUILDDISABLENODEREUSE"] = "1" }, cancellationToken, "test", project, "--min-line", minLine, "--exclude-generated", "--github-summary", "--badge-dir", "badge");
         Assert.AreEqual(expectedCode, run.ExitCode, message: run.Output);
         Assert.Contains($"test --project {project} --results-directory ", run.StdOut);
         Assert.Contains("Sign.cs", run.StdOut);
@@ -248,7 +246,7 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
     /// </summary>
     private string Created(string testResults)
     {
-        var run = Directory.GetDirectories(_ws.PathOf(testResults)).Single();
+        var run = Assert.ContainsSingle(Directory.GetDirectories(_ws.PathOf(testResults)));
         return Path.DirectorySeparatorChar + Path.Combine("TestResults", Path.GetFileName(run));
     }
 
@@ -260,8 +258,8 @@ public sealed class CliTestCommandTests(TestContext testContext) : IDisposable
         Assert.DoesNotContain("PASS:", run.Output);
     }
 
-    private Task<ChildRun> Dotcov(CancellationToken cancellationToken, params string[] args) => Dotcov(cancellationToken, _ws.Root, new Dictionary<string, string?>(), args);
-    private static async Task<ChildRun> Dotcov(CancellationToken cancellationToken, string workingDirectory, IReadOnlyDictionary<string, string?> environment, params string[] args)
+    private Task<ChildRun> Dotcov(CancellationToken cancellationToken, params string[] args) => Dotcov(_ws.Root, new Dictionary<string, string?>(), cancellationToken, args);
+    private static async Task<ChildRun> Dotcov(string workingDirectory, IReadOnlyDictionary<string, string?> environment, CancellationToken cancellationToken, params string[] args)
     {
         var directory = AppContext.BaseDirectory;
         var start = new ProcessStartInfo("dotnet")

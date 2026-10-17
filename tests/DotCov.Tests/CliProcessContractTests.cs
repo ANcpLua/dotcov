@@ -45,8 +45,8 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
         return path;
     }
 
-    private Task<ChildRun> Dotcov(CancellationToken cancellationToken, IReadOnlyDictionary<string, string?> environment, params string[] args) => DotcovProcess.RunAsync(cancellationToken, _ws.Root, environment, args);
-    private Task<ChildRun> DotcovTest(CancellationToken cancellationToken, string dotnet, params string[] args) => Dotcov(cancellationToken, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, ["test", ..args]);
+    private Task<ChildRun> Dotcov(IReadOnlyDictionary<string, string?> environment, CancellationToken cancellationToken, params string[] args) => DotcovProcess.RunAsync(_ws.Root, environment, cancellationToken, args);
+    private Task<ChildRun> DotcovTest(string dotnet, CancellationToken cancellationToken, params string[] args) => Dotcov(new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, cancellationToken, ["test", ..args]);
     // ── dotcov test: dotnet test output and the table on stdout, the verdict leading stderr ──
     [TestMethod]
     [Timeout(60_000, CooperativeCancellation = true)]
@@ -54,7 +54,7 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
     {
         var cancellationToken = testContext.CancellationToken;
         var dotnet = FakeDotnet.Write(_ws, HalfCovered());
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "40");
         Assert.AreEqual(0, run.ExitCode, message: run.Output);
         var stdout = run.StdOut.Split(Environment.NewLine);
         Assert.StartsWith("> ", stdout[0]);
@@ -82,7 +82,7 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
             echo Failed: 1, Passed: 0
             exit /b 3
             """);
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "40");
         // 6, apart from 5 for a report dotcov could not read.
         Assert.AreEqual(6, run.ExitCode);
         Assert.Contains("Failed: 1, Passed: 0", run.StdOut);
@@ -107,7 +107,7 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
             echo Failed: 1, Passed: 0
             exit /b 3
             """);
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40", "--format", format);
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "40", "--format", format);
         Assert.AreEqual(6, run.ExitCode);
         Assert.IsEmpty(run.StdOut);
         Assert.StartsWith($"error: dotnet test exited with code 3; coverage was not evaluated.{Environment.NewLine}> ", run.StdErr);
@@ -121,7 +121,7 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
         var cancellationToken = testContext.CancellationToken;
         // test takes no --pattern, so the empty-directory advice would name a flag it rejects.
         var dotnet = Script("silent-dotnet", "#!/bin/sh\nexit 0\n", "@exit /b 0\n");
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "40");
         Assert.AreEqual(DotCovCli.NoDataExitCode, run.ExitCode);
         var stderr = run.StdErr.Split(Environment.NewLine);
         Assert.StartsWith("NODATA: ", stderr[0]);
@@ -135,7 +135,7 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
     {
         var cancellationToken = testContext.CancellationToken;
         var dotnet = FakeDotnet.Write(_ws, HalfCovered());
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "40", "--", "--help");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "40", "--", "--help");
         Assert.AreEqual(0, run.ExitCode, message: run.Output);
         Assert.EndsWith(" --help", run.StdOut.Split(Environment.NewLine)[0]);
         Assert.DoesNotContain("Options:", run.StdOut);
@@ -152,9 +152,9 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
         var cancellationToken = testContext.CancellationToken;
         var report = HalfCovered();
         string[] args = command is "diff" ? [command, report, report] : [command, report];
-        var coloured = await Dotcov(cancellationToken, Ci(), args);
-        var flag = await Dotcov(cancellationToken, Ci(), [..args, "--no-color"]);
-        var variable = await Dotcov(cancellationToken, Ci(("NO_COLOR", "1")), args);
+        var coloured = await Dotcov(Ci(), cancellationToken, args);
+        var flag = await Dotcov(Ci(), cancellationToken, [..args, "--no-color"]);
+        var variable = await Dotcov(Ci(("NO_COLOR", "1")), cancellationToken, args);
         Assert.IsTrue(AnsiStrip.ContainsAnsi(coloured.StdOut), message: coloured.StdOut);
         foreach (var plain in new[]
         {
@@ -186,8 +186,8 @@ public sealed partial class CliProcessContractTests(TestContext testContext) : I
             call "{fake}" %*
             exit /b %errorlevel%
             """);
-        var coloured = await Dotcov(cancellationToken, Ci(("DOTNET_HOST_PATH", dotnet)), "test", "--min-line", "40");
-        var plain = await Dotcov(cancellationToken, Ci(("DOTNET_HOST_PATH", dotnet)), "test", "--min-line", "40", "--no-color");
+        var coloured = await Dotcov(Ci(("DOTNET_HOST_PATH", dotnet)), cancellationToken, "test", "--min-line", "40");
+        var plain = await Dotcov(Ci(("DOTNET_HOST_PATH", dotnet)), cancellationToken, "test", "--min-line", "40", "--no-color");
         Assert.AreEqual(0, coloured.ExitCode, message: coloured.Output);
         Assert.Contains("\e[32mdotnet colour", coloured.StdOut);
         Assert.AreEqual(0, plain.ExitCode, message: plain.Output);

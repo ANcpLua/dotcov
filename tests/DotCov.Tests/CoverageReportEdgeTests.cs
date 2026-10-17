@@ -69,14 +69,14 @@ public sealed class CoverageReportEdgeTests
             SourceRoots = ["/_"]
         };
         var merged = CoverageReport.Merge(a, b);
-        var shared = merged.Files.Single(f => f.Path == "/repo/src/Shared.cs");
+        var shared = Assert.ContainsSingle(f => f.Path == "/repo/src/Shared.cs", merged.Files);
         Assert.AreEqual(2, shared.LinesHit);
         Assert.AreEqual(2, shared.LinesTotal);
         var warning = Assert.ContainsSingle(merged.Warnings);
         Assert.AreEqual(CoverageWarningKind.FileIdentityAmbiguous, warning.Kind);
         Assert.AreEqual("/repo/src/Util.cs", warning.File);
         Assert.Contains("'/_/src/Util.cs'", warning.Detail);
-        Assert.IsFalse(merged.Warnings.Any(w => w.Detail.Contains("Shared.cs", StringComparison.Ordinal)));
+        Assert.DoesNotContain(w => w.Detail.Contains("Shared.cs", StringComparison.Ordinal), merged.Warnings);
     }
 
     [TestMethod]
@@ -94,7 +94,7 @@ public sealed class CoverageReportEdgeTests
             SourceRoots = [right]
         };
         var merged = CoverageReport.Merge(a, b);
-        Assert.AreEqual(expectedRoots, merged.SourceRoots.Count);
+        Assert.HasCount(expectedRoots, merged.SourceRoots);
         Assert.AreEqual(left, merged.SourceRoots[0]);
     }
 
@@ -103,7 +103,7 @@ public sealed class CoverageReportEdgeTests
     {
         var report = Cobertura.NewDoc().WithSource("c:repo").AddClass("A.cs", c => c.Line(1, 1)).Parse();
         Assert.AreSequenceEqual(["c:repo"], report.SourceRoots, SequenceOrder.InOrder);
-        Assert.AreEqual("c:repo/A.cs", report.Files.Single().Path);
+        Assert.AreEqual("c:repo/A.cs", Assert.ContainsSingle(report.Files).Path);
     }
 
     // ── Count-only records: counts not backed by per-line data ────────────────
@@ -126,7 +126,7 @@ public sealed class CoverageReportEdgeTests
     public void Merge_CountOnlyRecords_ReconcileEachCountWithMathMax()
     {
         var merged = CoverageReport.Merge(Reports.Single("src/A.cs", hit: 5, total: 10, bHit: 0, bTotal: 8), Reports.Single("src/A.cs", hit: 7, total: 9, bHit: 3, bTotal: 4));
-        var file = merged.Files.Single();
+        var file = Assert.ContainsSingle(merged.Files);
         Assert.AreEqual((7, 10), (file.LinesHit, file.LinesTotal));
         Assert.AreEqual((3, 8), (file.BranchesHit, file.BranchesTotal));
     }
@@ -139,7 +139,7 @@ public sealed class CoverageReportEdgeTests
         var withLines = new CoverageReport([new FileCoverage("src/A.cs", 2, 2, 0, 0) { LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1 } }]);
         var countOnly = Reports.Single("src/A.cs", hit: 0, total: 50);
         var merged = CoverageReport.Merge(withLines, countOnly);
-        var file = merged.Files.Single();
+        var file = Assert.ContainsSingle(merged.Files);
         Assert.AreEqual((2, 50), (file.LinesHit, file.LinesTotal));
         Assert.AreSequenceEqual([1, 2], file.LineHits.Keys, SequenceOrder.InAnyOrder);
         Assert.AreEqual(GateOutcome.Fail, merged.Evaluate(80).Outcome);
@@ -152,8 +152,8 @@ public sealed class CoverageReportEdgeTests
         // the record vouches for 5 hit lines, its per-line data for 1.
         var claimed = new CoverageReport([new FileCoverage("src/A.cs", 5, 10, 0, 0) { LineHits = Enumerable.Range(1, 10).ToDictionary(l => l, l => l == 1 ? 1 : 0) }]);
         var merged = CoverageReport.Merge(claimed, claimed);
-        Assert.AreEqual(5, merged.Files.Single().LinesHit);
-        Assert.AreEqual(10, merged.Files.Single().LinesTotal);
+        Assert.AreEqual(5, Assert.ContainsSingle(merged.Files).LinesHit);
+        Assert.AreEqual(10, Assert.ContainsSingle(merged.Files).LinesTotal);
     }
 
     [TestMethod]
@@ -163,7 +163,7 @@ public sealed class CoverageReportEdgeTests
         // merges by line, the branch dimension falls back to Math.Max of the counts.
         var a = new CoverageReport([new FileCoverage("src/A.cs", 1, 2, 3, 4) { LineHits = new Dictionary<int, int> { [1] = 1, [2] = 0 } }]);
         var b = new CoverageReport([new FileCoverage("src/A.cs", 1, 2, 1, 2) { LineHits = new Dictionary<int, int> { [1] = 0, [2] = 1 }, BranchesByLine = new Dictionary<int, (int Covered, int Total)> { [2] = (1, 2) } }]);
-        var file = CoverageReport.Merge(a, b).Files.Single();
+        var file = Assert.ContainsSingle(CoverageReport.Merge(a, b).Files);
         Assert.AreEqual((2, 2), (file.LinesHit, file.LinesTotal));
         Assert.AreEqual((3, 4), (file.BranchesHit, file.BranchesTotal));
         Assert.AreEqual((1, 2), file.BranchesByLine[2]);
@@ -183,8 +183,8 @@ public sealed class CoverageReportEdgeTests
             'P' => new CoverageReport([new FileCoverage("src/A.cs", 2, 2, 0, 0) { LineHits = new Dictionary<int, int> { [1] = 1, [2] = 1 } }]),
             'Q' => new CoverageReport([new FileCoverage("src/A.cs", 2, 2, 0, 0) { LineHits = new Dictionary<int, int> { [3] = 1, [4] = 1 } }]),
             _ => Reports.Single("src/A.cs", hit: 0, total: 50)}).ToArray();
-        var left = CoverageReport.Merge(CoverageReport.Merge(reports[0], reports[1]), reports[2]).Files.Single();
-        var right = CoverageReport.Merge(reports[0], CoverageReport.Merge(reports[1], reports[2])).Files.Single();
+        var left = Assert.ContainsSingle(CoverageReport.Merge(CoverageReport.Merge(reports[0], reports[1]), reports[2]).Files);
+        var right = Assert.ContainsSingle(CoverageReport.Merge(reports[0], CoverageReport.Merge(reports[1], reports[2])).Files);
         Assert.AreEqual((4, 50), (left.LinesHit, left.LinesTotal));
         Assert.AreEqual((4, 50), (right.LinesHit, right.LinesTotal));
     }
@@ -199,15 +199,15 @@ public sealed class CoverageReportEdgeTests
         var a = Cobertura.NewDoc().AddClass("src/W.cs", c => c.Line(1, 3).Line(2, 0).BranchWithConditions(5, "25% (1/4)", (1, "50%"), (2, "0%")).Branch(9, "50% (1/2)")).AddClass("src/W.cs", "src.W.cs", c => c.BranchWithConditions(5, "25% (1/4)", (1, "0%"), (2, "50%"))).Parse();
         var b = Cobertura.NewDoc().AddClass("src/W.cs", c => c.Line(2, 1).Line(3, 0).BranchWithConditions(5, "25% (1/4)", (1, "0%"), (3, "50%")).Branch(9, "100% (2/2)")).Parse();
         var merged = CoverageReport.Merge(a, b);
-        var file = merged.Files.Single();
-        Assert.AreEqual((2, 4), a.Files.Single().BranchesByLine[5]);
+        var file = Assert.ContainsSingle(merged.Files);
+        Assert.AreEqual((2, 4), Assert.ContainsSingle(a.Files).BranchesByLine[5]);
         Assert.AreEqual((4, 5), (file.LinesHit, file.LinesTotal));
         Assert.AreSequenceEqual([1, 2, 3, 5, 9], file.LineHits.Keys, SequenceOrder.InAnyOrder);
         Assert.AreEqual((1, 4), file.BranchesByLine[5]);
         Assert.AreEqual((2, 2), file.BranchesByLine[9]);
         Assert.AreEqual((3, 6), (file.BranchesHit, file.BranchesTotal));
         Assert.AreSequenceEqual([3], file.UncoveredLines, SequenceOrder.InOrder);
-        Assert.AreEqual(CoverageWarningKind.ConditionIdentityMismatch, merged.Warnings.Single().Kind);
+        Assert.AreEqual(CoverageWarningKind.ConditionIdentityMismatch, Assert.ContainsSingle(merged.Warnings).Kind);
     }
 
     // ── Gate boundaries ───────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ public sealed class CoverageReportEdgeTests
         var gate = report.Evaluate(100);
         Assert.AreEqual(GateOutcome.Fail, gate.Outcome);
         Assert.AreEqual("FAIL: line 99.9% (min 100%), branch n/a (min 0%) - line coverage below threshold", gate.ToString());
-        Assert.AreEqual("src/A.cs", report.Offenders(gate).Single().Path);
+        Assert.AreEqual("src/A.cs", Assert.ContainsSingle(report.Offenders(gate)).Path);
     }
 
     [TestMethod]

@@ -34,7 +34,7 @@ public sealed class CrapTupleAndRootTests
     {
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", $"({TupleShape(shape)})", "1", m => m.Line(1, 1))).ToBytes());
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input));
-        Assert.AreEqual(1, report.Methods.Single().Complexity);
+        Assert.AreEqual(1, Assert.ContainsSingle(report.Methods).Complexity);
     }
 
     // Roslyn metrics displays do spell tuples in source syntax: malformed or too deep is an input error.
@@ -83,7 +83,7 @@ public sealed class CrapTupleAndRootTests
         var report = CoberturaParser.ParseMethods(input).Exclude(["/repo/src/Generated.g.cs"], keep ? ["/repo/src/Generated.g.cs"] : []);
         var metrics = CodeMetricsReportBuilder.ParseType("App", "Generated", m => m.Method("void Generated.M()", 2, 1)).Select(m => m with { File = "src/Generated.g.cs" }).ToArray();
         var analysis = CrapAnalysis.Analyze(report, metrics);
-        Assert.AreEqual(keep ? 1 : 0, analysis.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(keep ? 1 : 0, analysis.UnmatchedMetricsMembers);
         Assert.AreEqual(keep ? GateOutcome.NoData : GateOutcome.Pass, analysis.Evaluate(30).Outcome);
     }
 

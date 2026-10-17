@@ -24,7 +24,7 @@ public sealed class CoverageDiffEdgeTests
         Assert.AreEqual(FileChangeKind.Modified, d.Change);
         Assert.AreEqual(CoverageDiff.MovementEpsilon, d.Delta);
         Assert.IsTrue(d.IsImprovement);
-        Assert.AreEqual("a.cs", result.Improvements.Single().Path);
+        Assert.AreEqual("a.cs", Assert.ContainsSingle(result.Improvements).Path);
         Assert.IsEmpty(result.Regressions);
         Assert.AreEqual(CoverageDiff.MovementEpsilon, result.Delta);
         // The rendered colour reads the same value: movement, green — row and TOTAL alike.
@@ -43,7 +43,7 @@ public sealed class CoverageDiffEdgeTests
         Assert.AreEqual(FileChangeKind.Modified, d.Change);
         Assert.AreEqual(-CoverageDiff.MovementEpsilon, d.Delta);
         Assert.IsTrue(d.IsRegression);
-        Assert.AreEqual("a.cs", result.Regressions.Single().Path);
+        Assert.AreEqual("a.cs", Assert.ContainsSingle(result.Regressions).Path);
         Assert.AreEqual(-CoverageDiff.MovementEpsilon, result.Delta);
         Assert.StartsWith("\e[31m", new AnsiPen(enabled: true).Delta("x", d.Delta));
     }
@@ -85,9 +85,9 @@ public sealed class CoverageDiffEdgeTests
             SourceRoots = ["/new"]
         };
         var result = CoverageDiff.Compare(before, after);
-        Assert.AreEqual("old/App.cs", result.Removed.Single().Path);
+        Assert.AreEqual("old/App.cs", Assert.ContainsSingle(result.Removed).Path);
         Assert.AreSequenceEqual(["svc-a/App.cs", "svc-b/App.cs"], result.Added.Select(static f => f.Path), SequenceOrder.InAnyOrder);
-        Assert.IsFalse(result.Files.Any(static f => f.Change is FileChangeKind.Modified));
+        Assert.DoesNotContain(static f => f.Change is FileChangeKind.Modified, result.Files);
     }
 
     [TestMethod]
@@ -122,9 +122,9 @@ public sealed class CoverageDiffEdgeTests
         var before = Reports.Single("src/Old.cs", hit: 1, total: 2);
         var after = Reports.Single("src/New.cs", hit: 2, total: 2);
         var result = CoverageDiff.Compare(before, after);
-        Assert.AreEqual(2, result.Files.Count);
-        Assert.AreEqual("src/Old.cs", result.Removed.Single().Path);
-        Assert.AreEqual("src/New.cs", result.Added.Single().Path);
-        Assert.IsFalse(result.Files.Any(static f => f.Change is FileChangeKind.Modified));
+        Assert.HasCount(2, result.Files);
+        Assert.AreEqual("src/Old.cs", Assert.ContainsSingle(result.Removed).Path);
+        Assert.AreEqual("src/New.cs", Assert.ContainsSingle(result.Added).Path);
+        Assert.DoesNotContain(static f => f.Change is FileChangeKind.Modified, result.Files);
     }
 }

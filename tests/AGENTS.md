@@ -17,9 +17,8 @@ dotnet test --project tests/DotCov.Tests --list-tests
 ```
 
 The Fallout `--filter` parameter forwards the native MSTest test-case expression.
-Discover new cases before executing them. The migration preserves all 1,999
-existing cases and adds two scenario-provider contract tests plus a read-only
-workspace cleanup regression. Branch-origin regressions also cover captured
+Discover new cases before executing them. Verify the intended scenarios and
+their data rows, rather than preserving a historical test count. Branch-origin regressions also cover captured
 Microsoft reports, same-line owners, summary deduplication and merge order.
 Use `--report-trx` for structured execution results; resolve additional options
 from the actual runner's `--help` rather than assuming another runner's flags.
@@ -59,8 +58,14 @@ classic and timestamped Cobertura reports; `coverage.xml` needs an explicit patt
   `WellKnownResources.EnvironmentVariables`. Preserve participation of both
   readers and writers. Use `EnvScope` / `CultureScope` for restoration.
 - Use native `[TestClass]`, `[TestMethod]`, `[DataRow]`, `[DynamicData]`, and
-  `[CombinatorialData]`. Immutable scenario descriptors use `ITestDataSource`.
+  `[CombinatorialData]`. Prefer typed tuples or `TestDataRow<T>` for computed
+  scenarios; use row metadata for readable names. Introduce a custom data-source
+  attribute only when the built-in APIs cannot express the required behavior.
   Discovery must not open streams, start servers, or acquire mutable resources.
+- Choose assertions for their failure diagnostics: use collection, type,
+  comparison, and exception assertions directly instead of reducing their
+  results to booleans or relying on LINQ exceptions. Tests must explain and
+  verify behavior; line and branch coverage do not establish assertion quality.
 - Native synchronous assertions execute immediately. Await real asynchronous
   operations and async exception assertions. Keep tests of synchronous parser
   contracts on the synchronous API; an async assertion or cleanup does not

@@ -171,7 +171,7 @@ public sealed class ExcludeTestCodeTests(TestContext testContext) : IDisposable
     {
         var cancellationToken = testContext.CancellationToken;
         var dotnet = FakeDotnet.Write(_ws, Mixed());
-        var run = await DotcovProcess.RunAsync(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, "test", "--min-line", "70", "--exclude-test-code");
+        var run = await DotcovProcess.RunAsync(_ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = dotnet }, cancellationToken, "test", "--min-line", "70", "--exclude-test-code");
         Assert.AreEqual(1, run.ExitCode, message: run.Output);
         Assert.DoesNotContain("WidgetTests", run.StdOut);
         Assert.StartsWith("FAIL: line 50.0% (min 70%)", run.StdErr);

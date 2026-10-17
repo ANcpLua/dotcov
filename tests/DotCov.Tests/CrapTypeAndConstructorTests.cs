@@ -55,7 +55,7 @@ public sealed class CrapTypeAndConstructorTests
         });
         using var input = new MemoryStream(doc.ToBytes());
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(2, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(2, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -96,7 +96,7 @@ public sealed class CrapTypeAndConstructorTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/Ext.cs", identity, c => c.Method("Make", "()", null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", owner, m => m.Method("int extension<T>(T).Make()", 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(identity, metrics.Single().TypeIdentity);
+        Assert.AreEqual(identity, Assert.ContainsSingle(metrics).TypeIdentity);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
         Assert.IsEmpty(report.Unscored);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);

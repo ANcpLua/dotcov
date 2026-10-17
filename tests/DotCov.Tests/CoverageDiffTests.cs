@@ -32,7 +32,7 @@ public sealed class CoverageDiffTests
         var before = Make(new FileCoverage("a.cs", 9, 10, 0, 0));
         var after = Make(new FileCoverage("a.cs", 6, 10, 0, 0));
         var result = CoverageDiff.Compare(before, after);
-        Assert.IsTrue(result.Files[0].Delta < 0);
+        Assert.AreEqual(-0.3, result.Files[0].Delta!.Value, 1e-10);
         Assert.ContainsSingle(result.Regressions);
     }
 
@@ -109,9 +109,9 @@ public sealed class CoverageDiffTests
         var before = Make(new FileCoverage("svc-a/Program.cs", 8, 10, 0, 0) { LineHits = new Dictionary<int, int> { [1] = 1 } });
         var after = Make(new FileCoverage("svc-b/Program.cs", 1, 10, 0, 0) { LineHits = new Dictionary<int, int> { [1] = 0 } });
         var result = CoverageDiff.Compare(before, after);
-        Assert.AreEqual(2, result.Files.Count);
-        Assert.AreEqual("svc-a/Program.cs", result.Removed.Single().Path);
-        Assert.AreEqual("svc-b/Program.cs", result.Added.Single().Path);
+        Assert.HasCount(2, result.Files);
+        Assert.AreEqual("svc-a/Program.cs", Assert.ContainsSingle(result.Removed).Path);
+        Assert.AreEqual("svc-b/Program.cs", Assert.ContainsSingle(result.Added).Path);
         Assert.DoesNotContain(f => f.Change is FileChangeKind.Modified, result.Files);
         foreach (var f in result.Files)
             Assert.IsEmpty(f.LineChanges);
@@ -142,9 +142,9 @@ public sealed class CoverageDiffTests
         var before = Make(new FileCoverage("net/xt_TCPMSS.c", 4, 4, 0, 0), new FileCoverage("net/xt_tcpmss.c", 0, 4, 0, 0));
         var after = Make(new FileCoverage("net/xt_TCPMSS.c", 4, 4, 0, 0), new FileCoverage("net/xt_tcpmss.c", 2, 4, 0, 0));
         var result = CoverageDiff.Compare(before, after);
-        Assert.AreEqual(2, result.Files.Count);
-        var upper = result.Files.Single(f => f.Path == "net/xt_TCPMSS.c");
-        var lower = result.Files.Single(f => f.Path == "net/xt_tcpmss.c");
+        Assert.HasCount(2, result.Files);
+        var upper = Assert.ContainsSingle(f => f.Path == "net/xt_TCPMSS.c", result.Files);
+        var lower = Assert.ContainsSingle(f => f.Path == "net/xt_tcpmss.c", result.Files);
         Assert.AreEqual(FileChangeKind.Unchanged, upper.Change);
         Assert.AreEqual(FileChangeKind.Modified, lower.Change);
         Assert.AreEqual(0.5, lower.Delta);
@@ -160,14 +160,14 @@ public sealed class CoverageDiffTests
         var before = Make(new FileCoverage("gone.cs", 0, 2, 0, 0));
         var after = Make(new FileCoverage("fresh.cs", 0, 2, 0, 0));
         var result = CoverageDiff.Compare(before, after);
-        var removed = result.Removed.Single();
+        var removed = Assert.ContainsSingle(result.Removed);
         Assert.AreEqual("gone.cs", removed.Path);
         Assert.AreEqual(0.0, removed.Delta);
         Assert.IsFalse(double.IsNegative(removed.Delta!.Value));
         Assert.IsTrue(removed.IsRegression);
         Assert.IsFalse(removed.IsImprovement);
-        Assert.AreEqual("gone.cs", result.Regressions.Single().Path);
-        var added = result.Added.Single();
+        Assert.AreEqual("gone.cs", Assert.ContainsSingle(result.Regressions).Path);
+        var added = Assert.ContainsSingle(result.Added);
         Assert.AreEqual("fresh.cs", added.Path);
         Assert.AreEqual(0.0, added.Delta);
         Assert.IsFalse(added.IsRegression);
@@ -275,10 +275,10 @@ public sealed class CoverageDiffTests
         var after = Make(new FileCoverage("a.cs", 1, 1, 0, 0) { LineHits = new Dictionary<int, int> { [10] = 1, [30] = 7 } });
         var result = CoverageDiff.Compare(before, after);
         var changes = result.Files[0].LineChanges;
-        Assert.AreEqual(2, changes.Count);
-        var removed = (Assert.IsExactInstanceOfType<LineDelta.Removed>(changes.Single(c => c.Line == 20)));
+        Assert.HasCount(2, changes);
+        var removed = (Assert.IsExactInstanceOfType<LineDelta.Removed>(Assert.ContainsSingle(c => c.Line == 20, changes)));
         Assert.AreEqual(4, removed.BeforeHits);
-        var added = (Assert.IsExactInstanceOfType<LineDelta.Added>(changes.Single(c => c.Line == 30)));
+        var added = (Assert.IsExactInstanceOfType<LineDelta.Added>(Assert.ContainsSingle(c => c.Line == 30, changes)));
         Assert.AreEqual(7, added.AfterHits);
     }
 
@@ -409,8 +409,8 @@ public sealed class CoverageDiffTests
         var before = Make(new FileCoverage("gone.cs", 8, 10, 0, 0));
         var after = Make(new FileCoverage("fresh.cs", 9, 10, 0, 0));
         var result = CoverageDiff.Compare(before, after);
-        Assert.AreEqual("gone.cs", result.Regressions.Single().Path);
-        Assert.AreEqual("fresh.cs", result.Improvements.Single().Path);
+        Assert.AreEqual("gone.cs", Assert.ContainsSingle(result.Regressions).Path);
+        Assert.AreEqual("fresh.cs", Assert.ContainsSingle(result.Improvements).Path);
     }
 
     [TestMethod]

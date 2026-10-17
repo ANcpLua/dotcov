@@ -10,7 +10,7 @@ namespace DotCov.Tests;
 /// synchronous and the asynchronous entry point, which must agree.
 /// </summary>
 [TestClass]
-public sealed class CoberturaParserEdgeTests
+public sealed class CoberturaParserEdgeTests(TestContext testContext)
 {
     private static string Doc(string sources, string classes) => $"""
          <?xml version="1.0"?>
@@ -18,18 +18,23 @@ public sealed class CoberturaParserEdgeTests
          {classes}
          </classes></package></packages></coverage>
          """;
-    private static async Task<(CoverageReport Sync, CoverageReport Async)> ParseBoth(string xml)
+    private async Task<(CoverageReport Sync, CoverageReport Async)> ParseBoth(string xml)
     {
         var bytes = Encoding.UTF8.GetBytes(xml);
+        using var syncStream = new MemoryStream(bytes);
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var sync = CoberturaParser.Parse(new MemoryStream(bytes));
+        var sync = CoberturaParser.Parse(syncStream);
         using var stream = new MemoryStream(bytes);
-        var async = await CoberturaParser.ParseAsync(stream);
+        var async = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         return (sync, async);
     }
 
-    private static MethodCoverageReport ParseMethods(string xml) => CoberturaParser.ParseMethods(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+    private static MethodCoverageReport ParseMethods(string xml)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        return CoberturaParser.ParseMethods(stream);
+    }
     // ── Conditions belong to their own line ──────────────────────────────────
     [TestMethod]
     [DataRow("number=\"eleven\"")]
@@ -116,7 +121,7 @@ public sealed class CoberturaParserEdgeTests
         )
         {
             var f = Assert.ContainsSingle(report.Files);
-            Assert.IsFalse(f.BranchesByLine.ContainsKey(7));
+            Assert.DoesNotContain(7, f.BranchesByLine.Keys);
             Assert.AreEqual(1, f.BranchesHit);
             Assert.AreEqual(2, f.BranchesTotal);
             Assert.AreEqual(0.5, report.BranchRate);
@@ -200,7 +205,7 @@ public sealed class CoberturaParserEdgeTests
         )
         {
             Assert.AreSequenceEqual(["/repo"], report.SourceRoots, SequenceOrder.InOrder);
-            Assert.AreEqual("/repo/app/main.py", report.Files.Single().Path);
+            Assert.AreEqual("/repo/app/main.py", Assert.ContainsSingle(report.Files).Path);
             Assert.IsEmpty(report.Warnings);
         }
     }
@@ -269,11 +274,11 @@ public sealed class CoberturaParserEdgeTests
 
         )
         {
-            Assert.AreEqual(2, report.Files.Count);
-            var empty = report.Files.Single(static f => f.Path == "src/Empty.cs");
+            Assert.HasCount(2, report.Files);
+            var empty = Assert.ContainsSingle(static f => f.Path == "src/Empty.cs", report.Files);
             Assert.AreEqual(0, empty.LinesTotal);
             Assert.IsNull(empty.LineRate);
-            var a = report.Files.Single(static f => f.Path == "src/A.cs");
+            var a = Assert.ContainsSingle(static f => f.Path == "src/A.cs", report.Files);
             Assert.AreEqual(1, a.LinesHit);
         }
     }
@@ -343,13 +348,15 @@ public sealed class CoberturaParserEdgeTests
         MethodCoverageReport methods;
         using (CultureScope.CommaDecimal())
         {
+            using var reportStream = new MemoryStream(bytes);
+            using var methodsStream = new MemoryStream(bytes);
             // Exercise the synchronous parser contract alongside awaited assertions.
             // ReSharper disable once MethodHasAsyncOverload
-            report = CoberturaParser.Parse(new MemoryStream(bytes));
-            methods = CoberturaParser.ParseMethods(new MemoryStream(bytes));
+            report = CoberturaParser.Parse(reportStream);
+            methods = CoberturaParser.ParseMethods(methodsStream);
         }
 
-        Assert.AreEqual(2, methods.Methods.Single().Complexity);
+        Assert.AreEqual(2, Assert.ContainsSingle(methods.Methods).Complexity);
         var f = Assert.ContainsSingle(report.Files);
         Assert.AreEqual((1, 2), f.BranchesByLine[2]);
         Assert.AreEqual(1, f.ConditionsByLine[2][0]);
@@ -363,11 +370,12 @@ public sealed class CoberturaParserEdgeTests
         // root and filename intact on the sync and the async path.
         var xml = Doc("<sources><source>/répo</source></sources>", """<class name="X" filename="src/Größe.cs"><lines><line number="1" hits="2" /></lines></class>""").Replace("<?xml version=\"1.0\"?>", "<?xml version=\"1.0\" encoding=\"utf-16\"?>");
         var bytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
+        using var syncStream = new MemoryStream(bytes);
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var sync = CoberturaParser.Parse(new MemoryStream(bytes));
+        var sync = CoberturaParser.Parse(syncStream);
         using var stream = new MemoryStream(bytes);
-        var async = await CoberturaParser.ParseAsync(stream);
+        var async = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         foreach (var report in new[]
         {
             sync,

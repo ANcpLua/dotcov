@@ -11,7 +11,7 @@ namespace DotCov.Tests;
 /// and the per-document character cap.
 /// </summary>
 [TestClass]
-public sealed class ParserContractTests : IDisposable
+public sealed class ParserContractTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-contract-");
     public void Dispose() => _ws.Dispose();
@@ -46,7 +46,7 @@ public sealed class ParserContractTests : IDisposable
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
         var viaStream = CoberturaParser.Parse(syncStream);
-        var viaAsync = await CoberturaParser.ParseAsync(asyncStream);
+        var viaAsync = await CoberturaParser.ParseAsync(asyncStream, ct: testContext.CancellationToken);
         var viaBytes = CoberturaParser.Parse(ReportInput.FromBytes(name, bytes));
         var viaFile = CoberturaParser.Parse(ReportInput.FromFile(path));
         var viaResolver = CoberturaParser.Parse(ReportResolver.Resolve(path));
@@ -55,7 +55,7 @@ public sealed class ParserContractTests : IDisposable
         Assert.AreEqual(expected, Canonical(viaBytes), message: $"{name}: bytes");
         Assert.AreEqual(expected, Canonical(viaFile), message: $"{name}: file");
         Assert.AreEqual(expected, Canonical(viaResolver), message: $"{name}: resolver");
-        Assert.AreEqual(viaFile.Warnings.Count, viaStream.Warnings.Count);
+        Assert.HasCount(viaFile.Warnings.Count, viaStream.Warnings);
         // A bare stream has no name; every ReportInput is named by its source.
         Assert.IsEmpty(viaStream.Inputs);
         Assert.IsEmpty(viaAsync.Inputs);
@@ -106,8 +106,8 @@ public sealed class ParserContractTests : IDisposable
         var second = ReportInput.FromBytes("r2", Cobertura.NewDoc().AddClass("a.cs", c => c.Line(2, 1).Line(3, 0)).ToBytes());
         var third = ReportInput.FromBytes("r3", Cobertura.NewDoc().AddClass("b.cs", c => c.Line(1, 1)).ToBytes());
         var report = CoberturaParser.Parse([first, second, third]);
-        Assert.AreEqual(2, report.Files.Count);
-        var a = report.Files.Single(f => f.Path == "a.cs");
+        Assert.HasCount(2, report.Files);
+        var a = Assert.ContainsSingle(f => f.Path == "a.cs", report.Files);
         Assert.AreEqual(3, a.LinesTotal);
         Assert.AreEqual(2, a.LinesHit);
         Assert.AreEqual("a.cs", report.Files[0].Path); // first-seen order survives the merge
@@ -135,7 +135,7 @@ public sealed class ParserContractTests : IDisposable
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
         CoberturaParser.Parse(sync);
-        await CoberturaParser.ParseAsync(async);
+        await CoberturaParser.ParseAsync(async, ct: testContext.CancellationToken);
         CoberturaParser.ParseMethods(methods);
         Assert.IsTrue(sync.CanRead);
         Assert.IsTrue(async.CanRead);
@@ -199,7 +199,10 @@ public sealed class ParserContractTests : IDisposable
         // The assertion executes and completes within the captured resource lifetime.
         // ReSharper disable once AccessToDisposedClosure
         Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(stream));
-        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseMethods(new MemoryStream("<x>"u8.ToArray())));
+        using var methodsStream = new MemoryStream("<x>"u8.ToArray());
+        // MSTest invokes the action synchronously, before this stream is disposed.
+        // ReSharper disable once AccessToDisposedClosure
+        Assert.ThrowsExactly<XmlException>(() => CoberturaParser.ParseMethods(methodsStream));
     }
 
     // ── Character cap ─────────────────────────────────────────────────────────
@@ -249,7 +252,7 @@ public sealed class ParserContractTests : IDisposable
         // The assertion executes and completes within the captured resource lifetime.
         // ReSharper disable once AccessToDisposedClosure
         var syncEx = Assert.ThrowsExactly<XmlException>(() => CoberturaParser.Parse(sync));
-        var asyncEx = (await Assert.ThrowsExactlyAsync<XmlException>(async () => await CoberturaParser.ParseAsync(async)));
+        var asyncEx = (await Assert.ThrowsExactlyAsync<XmlException>(async () => await CoberturaParser.ParseAsync(async, ct: testContext.CancellationToken)));
         Assert.AreEqual(syncEx.LineNumber, asyncEx.LineNumber);
         Assert.AreEqual(syncEx.LinePosition, asyncEx.LinePosition);
     }

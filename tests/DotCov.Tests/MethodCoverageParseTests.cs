@@ -9,7 +9,7 @@ namespace DotCov.Tests;
 /// summary attributes.
 /// </summary>
 [TestClass]
-public sealed class MethodCoverageParseTests
+public sealed class MethodCoverageParseTests(TestContext testContext)
 {
     private const string Corpus = "Fixtures/Corpus";
     // ── Real emitter files ────────────────────────────────────────────────────
@@ -20,8 +20,8 @@ public sealed class MethodCoverageParseTests
         // Div (lines 20,21,22 hit + 24 missed, complexity 2) under one class. The class-level
         // parse fuses all six lines into one file; THIS parse must keep two distinct entries.
         var methods = CoberturaParser.ParseMethods(ReportInput.FromFile($"{Corpus}/reportgenerator/Cobertura.xml")).Methods;
-        Assert.AreEqual(2, methods.Count);
-        var add = methods.Single(m => m.MethodName == "Add");
+        Assert.HasCount(2, methods);
+        var add = Assert.ContainsSingle(m => m.MethodName == "Add", methods);
         Assert.AreEqual("MyApp.Calculator", add.ClassName);
         Assert.AreEqual("(System.Int32,System.Int32)", add.Signature);
         Assert.AreEqual("/home/runner/work/app/src/MyApp/Calculator.cs", add.File); // <source> root applied
@@ -31,7 +31,7 @@ public sealed class MethodCoverageParseTests
         Assert.AreEqual(2, add.LinesTotal);
         Assert.AreEqual(1, add.Complexity);
         Assert.AreEqual(1.0, add.LineRate);
-        var div = methods.Single(m => m.MethodName == "Div");
+        var div = Assert.ContainsSingle(m => m.MethodName == "Div", methods);
         Assert.AreEqual(20, div.StartLine);
         Assert.AreEqual(24, div.EndLine);
         Assert.AreEqual(3, div.LinesHit);
@@ -53,7 +53,7 @@ public sealed class MethodCoverageParseTests
         Assert.AreEqual(2, add.Complexity); // coverlet's real per-method complexity
         Assert.AreEqual(2, add.LinesHit); // lines 10,11 hit; 12 missed
         Assert.AreEqual(3, add.LinesTotal);
-        Assert.AreEqual(report.Files.Single().Path, add.File);
+        Assert.AreEqual(Assert.ContainsSingle(report.Files).Path, add.File);
     }
 
     [TestMethod]
@@ -64,7 +64,7 @@ public sealed class MethodCoverageParseTests
         // C/C++ method would CRAP-score 0 and the gate would wave through anything.
         var methods = CoberturaParser.ParseMethods(ReportInput.FromFile($"{Corpus}/gcovr/coverage.xml")).Methods;
         Assert.IsNotEmpty(methods);
-        Assert.IsTrue((methods).All(m => m.Complexity == null));
+        Assert.DoesNotContain(m => m.Complexity is not null, methods);
     }
 
     [TestMethod]
@@ -72,7 +72,7 @@ public sealed class MethodCoverageParseTests
     {
         var methods = CoberturaParser.ParseMethods(ReportInput.FromFile($"{Corpus}/reference/cobertura-dtd-example.xml")).Methods;
         Assert.IsNotEmpty(methods);
-        Assert.IsTrue((methods).All(m => m.Complexity == null));
+        Assert.DoesNotContain(m => m.Complexity is not null, methods);
     }
 
     [TestMethod]
@@ -91,7 +91,7 @@ public sealed class MethodCoverageParseTests
         var methods = Cobertura.NewDoc().AddClass("src/A.cs", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1)).Line(1, hits: 1).Line(50, hits: 0)).ParseMethods();
         var m = Assert.ContainsSingle(methods);
         Assert.AreEqual(1, m.LinesTotal);
-        Assert.IsFalse(m.LineHits.ContainsKey(50));
+        Assert.DoesNotContain(50, m.LineHits.Keys);
     }
 
     [TestMethod]
@@ -111,15 +111,18 @@ public sealed class MethodCoverageParseTests
     public void DifferentSignatures_StayDistinctEntries()
     {
         var methods = Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "(System.Int32)", "1", m => m.Line(1, hits: 1)).Method("M", "(System.Int32,System.Int32)", "3", m => m.Line(5, hits: 0))).ParseMethods();
-        Assert.AreEqual(2, methods.Count);
-        Assert.AreEqual(2, methods.Select(m => m.Signature).Distinct().Count());
+        Assert.HasCount(2, methods);
+        Assert.HasCount(2, methods.Select(m => m.Signature).Distinct());
     }
 
     [TestMethod]
     public void MalformedComplexity_NaNOrText_IsNull()
     {
         var methods = Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("N", "()", "NaN", m => m.Line(1, hits: 1)).Method("T", "()", "abc", m => m.Line(2, hits: 1))).ParseMethods();
-        Assert.IsTrue((methods).All(m => m.Complexity == null));
+        Assert.AreSequenceEqual(
+            [("N", null), ("T", null)],
+            methods.Select(m => (m.MethodName, m.Complexity)),
+            SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]
@@ -151,8 +154,8 @@ public sealed class MethodCoverageParseTests
     public async Task ParseMethodsDirectory_MergesSameMethodAcrossFiles()
     {
         using var temp = TempWorkspace.Create("dotcov-methods-dir-");
-        await File.WriteAllBytesAsync(temp.PrepareFile("a.cobertura.xml"), Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1).Line(2, hits: 0))).ToBytes());
-        await File.WriteAllBytesAsync(temp.PrepareFile("b.cobertura.xml"), Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0).Line(2, hits: 4))).ToBytes());
+        await File.WriteAllBytesAsync(temp.PrepareFile("a.cobertura.xml"), Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 1).Line(2, hits: 0))).ToBytes(), cancellationToken: testContext.CancellationToken);
+        await File.WriteAllBytesAsync(temp.PrepareFile("b.cobertura.xml"), Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "2", m => m.Line(1, hits: 0).Line(2, hits: 4))).ToBytes(), cancellationToken: testContext.CancellationToken);
         var methods = CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Parse("*.cobertura.xml"))).Methods;
         var m = Assert.ContainsSingle(methods);
         Assert.AreEqual(2, m.LinesHit); // union-with-max: both lines covered across the two runs
@@ -199,7 +202,7 @@ public sealed class MethodCoverageParseTests
         var report = CoberturaParser.ParseMethods([first, second]);
         Assert.AreSequenceEqual([(CoverageWarningKind.FileIdentityAmbiguous, "/a/x.cs", 0), (CoverageWarningKind.MalformedHits, "/a/x.cs", 3), (CoverageWarningKind.MalformedHits, "y.cs", 4), ], report.Warnings.Select(w => (w.Kind, w.File, w.Line)), SequenceOrder.InOrder);
         Assert.AreSequenceEqual(["/a/x.cs"], report.AmbiguousFiles.Select(a => a.Path), SequenceOrder.InAnyOrder);
-        Assert.AreSequenceEqual([0, 0], report.Methods.Select(m => m.LineHits.Values.Single()), SequenceOrder.InOrder);
+        Assert.AreSequenceEqual([0, 0], report.Methods.Select(m => Assert.ContainsSingle(m.LineHits.Values)), SequenceOrder.InOrder);
     }
 
     [TestMethod]
@@ -209,7 +212,7 @@ public sealed class MethodCoverageParseTests
         // name the malformed report.
         using var temp = TempWorkspace.Create("dotcov-methods-bad-");
         var path = temp.PrepareFile("bad.cobertura.xml");
-        await File.WriteAllTextAsync(path, "<coverage><unclosed>");
+        await File.WriteAllTextAsync(path, "<coverage><unclosed>", cancellationToken: testContext.CancellationToken);
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseMethods(ReportInput.FromFile(path)));
         Assert.AreEqual(path, ex.SourceName);
     }
@@ -219,9 +222,9 @@ public sealed class MethodCoverageParseTests
     {
         using var temp = TempWorkspace.Create("dotcov-methods-dir-bad-");
         var good = temp.PrepareFile("a.cobertura.xml");
-        await File.WriteAllBytesAsync(good, Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes());
+        await File.WriteAllBytesAsync(good, Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1))).ToBytes(), cancellationToken: testContext.CancellationToken);
         var bad = temp.PrepareFile("b.cobertura.xml");
-        await File.WriteAllTextAsync(bad, "<coverage><packages>");
+        await File.WriteAllTextAsync(bad, "<coverage><packages>", cancellationToken: testContext.CancellationToken);
         // The assertion executes and completes within the captured resource lifetime.
         // ReSharper disable once AccessToDisposedClosure
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.ParseMethods(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Parse("*.cobertura.xml"))));

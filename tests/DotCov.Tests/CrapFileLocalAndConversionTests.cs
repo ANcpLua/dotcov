@@ -17,7 +17,7 @@ public sealed class CrapFileLocalAndConversionTests
         using var input = new MemoryStream(doc.ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "Worker", m => m.Method("void Worker.M(Worker value)", 2, 1).Method("void Worker.M(Worker value)", 3, 1)).Select((m, i) => m with { File = i is 0 ? "src/First.cs" : "src/Second.cs" }).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(missing ? 1 : 0, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(missing ? 1 : 0, report.UnmatchedMetricsMembers);
         Assert.AreEqual(missing ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
@@ -54,7 +54,7 @@ public sealed class CrapFileLocalAndConversionTests
         using var input = new MemoryStream(doc.ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("A.implicit operator int(A value)", 2, 1).Method("A.implicit operator string(A value)", 3, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(2, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(2, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -80,7 +80,7 @@ public sealed class CrapFileLocalAndConversionTests
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"void A.M({parameter})", 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
-        Assert.AreEqual(2, report.Methods.Single().Complexity);
+        Assert.AreEqual(2, Assert.ContainsSingle(report.Methods).Complexity);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
@@ -126,13 +126,14 @@ public sealed class CrapFileLocalAndConversionTests
         });
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
         // Which body is which overload is unknown: every body carries the largest complexity.
-        Assert.IsTrue((report.Methods.Select(m => m.Complexity)).All(static c => c == 3));
-        Assert.AreEqual(shape switch
+        Assert.HasCount(shape is "missing body" ? 1 : 2, report.Methods);
+        Assert.DoesNotContain(static m => m.Complexity != 3, report.Methods);
+        Assert.HasCount(shape switch
         {
             "complete" => 0,
             "missing body" => 2,
             _ => 3
-        }, report.UnmatchedMetricsMembers.Count);
+        }, report.UnmatchedMetricsMembers);
         Assert.AreEqual(shape is "complete" ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -154,7 +155,7 @@ public sealed class CrapFileLocalAndConversionTests
         using var input = new MemoryStream(doc.ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("Task A.M(int value)", 2, 1).Method("Task A.M(string value)", 3, 1).Method("Task A.M(long value)", 2, 1).Method("Task A.M(bool value)", 3, 1)).Select((m, i) => rowsNameTheirFile ? m with { File = i < 2 ? "src/A.cs" : "src/A.Part.cs" } : m).Take(rowsNameTheirFile ? 4 : 2).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(rowsNameTheirFile ? 0 : 2, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(rowsNameTheirFile ? 0 : 2, report.UnmatchedMetricsMembers);
         Assert.AreEqual(rowsNameTheirFile ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 

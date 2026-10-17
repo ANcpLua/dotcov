@@ -10,7 +10,7 @@ namespace DotCov.Tests;
 /// elements, Accessors nesting, and the display-string → coverage-name normalization.
 /// </summary>
 [TestClass]
-public sealed class CodeMetricsReaderTests
+public sealed class CodeMetricsReaderTests(TestContext testContext)
 {
     private static IReadOnlyList<CodeMetricsMember> Parse(string membersXml, string ns = "MyApp", string type = "Calculator")
     {
@@ -46,7 +46,8 @@ public sealed class CodeMetricsReaderTests
               </Targets>
             </CodeMetricsReport>
             """;
-        return CodeMetricsReader.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        return CodeMetricsReader.Parse(stream);
     }
 
     private static string Method(string name, int complexity) => $"""
@@ -89,7 +90,7 @@ public sealed class CodeMetricsReaderTests
         // Assembly (999), namespace (888), and type (777) CyclomaticComplexity nodes surround
         // the member — only the member's own value may be recorded.
         var members = Parse(Method("void Calculator.M()", 3));
-        Assert.AreEqual(3, members.Single().CyclomaticComplexity);
+        Assert.AreEqual(3, Assert.ContainsSingle(members).CyclomaticComplexity);
     }
 
     [TestMethod]
@@ -105,14 +106,14 @@ public sealed class CodeMetricsReaderTests
     public void GenericParameter_WithComma_CountsAsOneParameter()
     {
         var members = Parse(Method("void Calculator.Store(Dictionary&lt;string, int&gt; map)", 1));
-        Assert.AreEqual(1, members.Single().Arity);
+        Assert.AreEqual(1, Assert.ContainsSingle(members).Arity);
     }
 
     [TestMethod]
     public void ParameterlessMethod_ArityZero()
     {
         var members = Parse(Method("void Calculator.Reset()", 1));
-        Assert.AreEqual(0, members.Single().Arity);
+        Assert.AreEqual(0, Assert.ContainsSingle(members).Arity);
     }
 
     [TestMethod]
@@ -129,14 +130,14 @@ public sealed class CodeMetricsReaderTests
     public void GenericMethod_TypeArgumentsStripped()
     {
         var members = Parse(Method("T Calculator.Identity&lt;T&gt;(T value)", 1));
-        Assert.AreEqual("Identity", members.Single().MemberName);
+        Assert.AreEqual("Identity", Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
     public void GenericNamedType_ParametersStrippedFromTypeName()
     {
         var members = Parse(Method("void Stack&lt;T&gt;.Push(T item)", 1), type: "Stack&lt;T&gt;");
-        Assert.AreEqual("MyApp.Stack", members.Single().TypeName);
+        Assert.AreEqual("MyApp.Stack", Assert.ContainsSingle(members).TypeName);
     }
 
     [TestMethod]
@@ -144,7 +145,7 @@ public sealed class CodeMetricsReaderTests
     {
         // The writer prepends containing types with dots: <NamedType Name="Outer.Inner">.
         var members = Parse(Method("void Inner.M()", 1), type: "Outer.Inner");
-        Assert.AreEqual("MyApp.Outer.Inner", members.Single().TypeName);
+        Assert.AreEqual("MyApp.Outer.Inner", Assert.ContainsSingle(members).TypeName);
     }
 
     [TestMethod]
@@ -171,13 +172,13 @@ public sealed class CodeMetricsReaderTests
               </Accessors>
             </Property>
             """);
-        Assert.AreEqual(3, members.Count);
-        var getter = members.Single(m => m.MemberName == "get_Value");
+        Assert.HasCount(3, members);
+        var getter = Assert.ContainsSingle(m => m.MemberName == "get_Value", members);
         Assert.AreEqual(CodeMetricsMemberKind.Accessor, getter.Kind);
         Assert.AreEqual(1, getter.CyclomaticComplexity); // the accessor's own metric, not the aggregate
-        var setter = members.Single(m => m.MemberName == "set_Value");
+        var setter = Assert.ContainsSingle(m => m.MemberName == "set_Value", members);
         Assert.AreEqual(1, setter.CyclomaticComplexity);
-        var aggregate = members.Single(m => m.Kind == CodeMetricsMemberKind.Property);
+        var aggregate = Assert.ContainsSingle(m => m.Kind == CodeMetricsMemberKind.Property, members);
         Assert.AreEqual("Value", aggregate.MemberName);
         Assert.AreEqual(2, aggregate.CyclomaticComplexity);
     }
@@ -192,7 +193,7 @@ public sealed class CodeMetricsReaderTests
               </Metrics>
             </Property>
             """);
-        Assert.AreEqual("Item", members.Single().MemberName);
+        Assert.AreEqual("Item", Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
@@ -244,7 +245,7 @@ public sealed class CodeMetricsReaderTests
               </Accessors>
             </Property>
             """);
-        var init = members.Single(m => m.Kind == CodeMetricsMemberKind.Accessor);
+        var init = Assert.ContainsSingle(m => m.Kind == CodeMetricsMemberKind.Accessor, members);
         Assert.AreEqual("set_Value", init.MemberName);
     }
 
@@ -278,7 +279,7 @@ public sealed class CodeMetricsReaderTests
     public void EqualityOperator_NormalizesToOpEquality()
     {
         var members = Parse(Method("bool Calculator.operator ==(Calculator a, Calculator b)", 1));
-        Assert.AreEqual("op_Equality", members.Single().MemberName);
+        Assert.AreEqual("op_Equality", Assert.ContainsSingle(members).MemberName);
     }
 
     /// <summary>
@@ -313,7 +314,7 @@ public sealed class CodeMetricsReaderTests
     public void OperatorTokens_NormalizeToClsOpNames(string display, string expected)
     {
         var members = Parse(Method(display, 1));
-        Assert.AreEqual(expected, members.Single().MemberName);
+        Assert.AreEqual(expected, Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
@@ -322,7 +323,7 @@ public sealed class CodeMetricsReaderTests
         // `operator checked -` compiles to op_CheckedSubtraction (C# 11 checked operators);
         // the raw spelling could never match the coverage method.
         var members = Parse(Method("Calculator Calculator.operator checked -(Calculator a, Calculator b)", 1));
-        Assert.AreEqual("op_CheckedSubtraction", members.Single().MemberName);
+        Assert.AreEqual("op_CheckedSubtraction", Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
@@ -337,14 +338,14 @@ public sealed class CodeMetricsReaderTests
     public void ImplicitConversion_NormalizesToOpImplicit()
     {
         var members = Parse(Method("Calculator.implicit operator int(Calculator c)", 1));
-        Assert.AreEqual("op_Implicit", members.Single().MemberName);
+        Assert.AreEqual("op_Implicit", Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
     public void ExplicitConversion_NormalizesToOpExplicit()
     {
         var members = Parse(Method("Calculator.explicit operator int(Calculator c)", 1));
-        Assert.AreEqual("op_Explicit", members.Single().MemberName);
+        Assert.AreEqual("op_Explicit", Assert.ContainsSingle(members).MemberName);
     }
 
     [TestMethod]
@@ -366,7 +367,7 @@ public sealed class CodeMetricsReaderTests
     {
         using var temp = TempWorkspace.Create("dotcov-metrics-");
         var path = temp.PrepareFile("bad.xml");
-        await File.WriteAllTextAsync(path, "<CodeMetricsReport><unclosed>");
+        await File.WriteAllTextAsync(path, "<CodeMetricsReport><unclosed>", cancellationToken: testContext.CancellationToken);
         var ex = Assert.ThrowsExactly<XmlException>(() => CodeMetricsReader.ParseFile(path));
         Assert.StartsWith(path, ex.Message);
     }

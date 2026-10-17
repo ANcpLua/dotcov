@@ -24,7 +24,9 @@ public sealed class CrapFormatterTests
         var worst = output.IndexOf("MyApp.A.Worst", StringComparison.Ordinal);
         var mid = output.IndexOf("MyApp.A.Mid", StringComparison.Ordinal);
         var low = output.IndexOf("MyApp.A.Low", StringComparison.Ordinal);
-        Assert.IsTrue(worst < mid && mid < low, message: $"expected worst-first ordering in:\n{output}");
+        Assert.IsGreaterThanOrEqualTo(0, worst, message: output);
+        Assert.IsGreaterThan(worst, mid, message: output);
+        Assert.IsGreaterThan(mid, low, message: output);
     }
 
     [TestMethod]
@@ -119,7 +121,7 @@ public sealed class CrapFormatterTests
         Assert.AreEqual(1, gate.GetProperty("aboveThreshold").GetInt32());
         Assert.AreEqual(30.0, gate.GetProperty("worstScore").GetDouble());
         var methods = root.GetProperty("methods").EnumerateArray().ToList();
-        Assert.AreEqual(3, methods.Count);
+        Assert.HasCount(3, methods);
         var worst = methods[0]; // worst-first in JSON too
         Assert.AreEqual("MyApp.A.Worst", worst.GetProperty("method").GetString());
         Assert.AreEqual(5, worst.GetProperty("complexity").GetInt32());

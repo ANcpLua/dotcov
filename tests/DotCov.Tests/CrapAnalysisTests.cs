@@ -136,14 +136,14 @@ public sealed class CrapAnalysisTests
     public void GenericType_AritySuffixStripped()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.Stack`1", "Push", "(T)", complexity: 1, lines: [(1, 1)])]);
-        Assert.AreEqual("MyApp.Stack.Push", report.Methods.Single().Method);
+        Assert.AreEqual("MyApp.Stack.Push", Assert.ContainsSingle(report.Methods).Method);
     }
 
     [TestMethod]
     public void NestedType_SlashBecomesDot()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.Outer/Inner", "M", "()", complexity: 1, lines: [(1, 1)])]);
-        Assert.AreEqual("MyApp.Outer.Inner.M", report.Methods.Single().Method);
+        Assert.AreEqual("MyApp.Outer.Inner.M", Assert.ContainsSingle(report.Methods).Method);
     }
 
     // ── Nested mangled names: async lambdas, top-level statements, local fns ──
@@ -179,7 +179,7 @@ public sealed class CrapAnalysisTests
     {
         // A capturing async lambda nests its state machine inside <>c__DisplayClass…, not <>c.
         var sm = Method("MyApp.C/<>c__DisplayClass3_0/<<M>b__0>d", "MoveNext", "()", complexity: 2, lines: [(7, 1)]);
-        Assert.AreEqual("MyApp.C.M", CrapAnalysis.Analyze([sm]).Methods.Single().Method);
+        Assert.AreEqual("MyApp.C.M", Assert.ContainsSingle(CrapAnalysis.Analyze([sm]).Methods).Method);
     }
 
     [TestMethod]
@@ -220,14 +220,14 @@ public sealed class CrapAnalysisTests
     public void TopLevelStatements_SyncEntryPoint_NormalizesToProgramMain()
     {
         var mc = Method("Program", "<Main>$", "(System.String[])", complexity: 1, lines: [(1, 1)]);
-        Assert.AreEqual("Program.Main", CrapAnalysis.Analyze([mc]).Methods.Single().Method);
+        Assert.AreEqual("Program.Main", Assert.ContainsSingle(CrapAnalysis.Analyze([mc]).Methods).Method);
     }
 
     [TestMethod]
     public void AsyncLocalFunction_StateMachine_FoldsToContainingMethod()
     {
         var sm = Method("MyApp.C/<<M>g__Local|0_0>d", "MoveNext", "()", complexity: 2, lines: [(3, 1)]);
-        Assert.AreEqual("MyApp.C.M", CrapAnalysis.Analyze([sm]).Methods.Single().Method);
+        Assert.AreEqual("MyApp.C.M", Assert.ContainsSingle(CrapAnalysis.Analyze([sm]).Methods).Method);
     }
 
     // ── Same-arity overloads stay distinct ────────────────────────────────────
@@ -239,7 +239,7 @@ public sealed class CrapAnalysisTests
         var risky = Method("MyApp.Svc", "Frob", "(System.Int32)", complexity: 20, lines: [(10, 0), (11, 0), (12, 0), (13, 0), (14, 0)]);
         var covered = Method("MyApp.Svc", "Frob", "(System.String)", complexity: 1, lines: [..Enumerable.Range(30, 20).Select(l => (l, 1))]);
         var report = CrapAnalysis.Analyze([risky, covered]);
-        Assert.AreEqual(2, report.Methods.Count);
+        Assert.HasCount(2, report.Methods);
         Assert.Contains(m => m is { Complexity: 20, Score: 420.0 }, report.Methods);
         Assert.AreEqual(GateOutcome.Fail, report.Evaluate(30).Outcome);
     }
@@ -253,7 +253,7 @@ public sealed class CrapAnalysisTests
         var b = Method("MyApp.Calc", "Run", "(System.String)", complexity: 1, lines: [(20, 1)]);
         var sm = Method("MyApp.Calc/<Run>d__2", "MoveNext", "()", complexity: 5, lines: [(30, 0), (31, 0)]);
         var report = CrapAnalysis.Analyze([a, b, sm]);
-        Assert.AreEqual(3, report.Methods.Count);
+        Assert.HasCount(3, report.Methods);
         Assert.Contains(m => m is { Complexity: 5, Coverage: 0.0, Score: 30.0 }, report.Methods);
         Assert.AreEqual(GateOutcome.Fail, report.Evaluate(6).Outcome);
     }
@@ -344,7 +344,7 @@ public sealed class CrapAnalysisTests
             Member("MyApp.A", "M", CodeMetricsMemberKind.Method, arity: 2, complexity: 7),
         };
         var report = CrapAnalysis.Analyze([oneArg, twoArg], metrics);
-        Assert.AreEqual(2, report.Methods.Count);
+        Assert.HasCount(2, report.Methods);
         Assert.Contains(m => m.Complexity == 2, report.Methods);
         Assert.Contains(m => m.Complexity == 7, report.Methods);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
@@ -413,7 +413,7 @@ public sealed class CrapAnalysisTests
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.A", "Empty", "()", complexity: 3, lines: [])]);
         Assert.IsEmpty(report.Methods);
-        Assert.Contains("no line data", report.Unscored.Single().Reason);
+        Assert.Contains("no line data", Assert.ContainsSingle(report.Unscored).Reason);
     }
 
     [TestMethod]
@@ -449,7 +449,7 @@ public sealed class CrapAnalysisTests
         var methods = new MethodCoverageReport([Method("MyApp.A", "M", "()", complexity: 1, lines: [(1, 1)], file: "src/A.cs"), Method("MyApp.Migrations.X", "Up", "()", complexity: 1, lines: [(1, 1)], file: "src/Migrations/X.cs"), Method("MyApp.Migrations.X", "Down", "()", complexity: 1, lines: [(2, 1)], file: "src/Migrations/X.cs"), Method("MyApp.Program", "Main", "()", complexity: 1, lines: [(1, 1)], file: "Program.cs"), ], [], []);
         var filtered = methods.Exclude(ExclusionRules.WellKnown, keep: ["Program.cs"]);
         var report = CrapAnalysis.Analyze(filtered);
-        Assert.AreEqual(2, filtered.Methods.Count);
+        Assert.HasCount(2, filtered.Methods);
         Assert.DoesNotContain(m => m.File.Contains("Migrations"), filtered.Methods);
         Assert.Contains(m => m.File == "Program.cs", filtered.Methods); // keep wins, incl. the virtual-root anchor
         Assert.AreSequenceEqual(["src/Migrations/X.cs"], report.Exclusion.ExcludedFiles, SequenceOrder.InAnyOrder); // once per file

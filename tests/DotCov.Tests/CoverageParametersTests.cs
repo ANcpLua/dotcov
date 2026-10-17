@@ -164,7 +164,7 @@ public sealed class CoverageParametersTests
 }
 
 [TestClass]
-public sealed class GitHubStepSummaryTests : IDisposable
+public sealed class GitHubStepSummaryTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-summary-");
     public void Dispose() => _ws.Dispose();
@@ -174,7 +174,7 @@ public sealed class GitHubStepSummaryTests : IDisposable
         var path = _ws.PathOf("summary.md");
         Assert.IsTrue(GitHubStepSummary.TryAppend(path, "one"));
         Assert.IsTrue(GitHubStepSummary.TryAppend(path, "two"));
-        Assert.AreEqual("onetwo", await File.ReadAllTextAsync(path));
+        Assert.AreEqual("onetwo", await File.ReadAllTextAsync(path, cancellationToken: testContext.CancellationToken));
     }
 
     [TestMethod]

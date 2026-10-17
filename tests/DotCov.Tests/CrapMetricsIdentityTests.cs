@@ -57,7 +57,7 @@ public sealed class CrapMetricsIdentityTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", type, c => c.Method(method, signature, null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 2, 1)).Select(m => m with { File = "src/A.cs" }).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(matched ? 0 : 1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(matched ? 0 : 1, report.UnmatchedMetricsMembers);
         Assert.AreEqual(matched ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -66,7 +66,7 @@ public sealed class CrapMetricsIdentityTests
     {
         CodeMetricsMember[] metrics = [new("App.Absent", "M", CodeMetricsMemberKind.Method, 0, 2, "void Absent.M()"), new("App.Absent", "P", CodeMetricsMemberKind.Property, null, 2, "int Absent.P")];
         var report = CrapAnalysis.Analyze(Array.Empty<MethodCoverage>(), metrics);
-        Assert.AreEqual(1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(1, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -126,8 +126,8 @@ public sealed class CrapMetricsIdentityTests
         using var input = new MemoryStream(doc.ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(1, report.Unscored.Count);
-        Assert.AreEqual(includeMatch ? 0 : 1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(1, report.Unscored);
+        Assert.HasCount(includeMatch ? 0 : 1, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -141,7 +141,7 @@ public sealed class CrapMetricsIdentityTests
         var second = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 7, 1)).Select(m => m with { File = "other/A.cs" });
         var metrics = (includeSecondMetrics ? first.Concat(second) : first).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(includeSecondMetrics ? 0 : 1, report.Unscored.Count);
+        Assert.HasCount(includeSecondMetrics ? 0 : 1, report.Unscored);
         Assert.AreSequenceEqual(includeSecondMetrics ? [7, 2] : [2], report.Methods.Select(m => m.Complexity), SequenceOrder.InAnyOrder);
         Assert.AreEqual(includeSecondMetrics ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -184,7 +184,7 @@ public sealed class CrapMetricsIdentityTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("get_Missing", "()", null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1)).Select(m => m with { File = "src/A.cs" }).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(1, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -199,7 +199,7 @@ public sealed class CrapMetricsIdentityTests
         using var input = new MemoryStream(doc.ToBytes());
         CodeMetricsMember[] metrics = [new("App.Result", "M", CodeMetricsMemberKind.Method, 0, 2, "void Result.M()")];
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(ambiguous ? 1 : 0, report.Unscored.Count);
+        Assert.HasCount(ambiguous ? 1 : 0, report.Unscored);
         Assert.AreEqual(ambiguous ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 }

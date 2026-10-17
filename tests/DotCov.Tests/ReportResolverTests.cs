@@ -127,7 +127,7 @@ public sealed class ReportResolverTests : IDisposable
     public async Task Resolve_DirectoryInputs_OpenIndependentStreams()
     {
         var path = _ws.Write("coverage.cobertura.xml", Doc("a.cs"));
-        var input = ReportResolver.Resolve(_ws.Root).Single();
+        var input = Assert.ContainsSingle(ReportResolver.Resolve(_ws.Root));
         await using var first = input.OpenStream();
         await using var second = input.OpenStream();
         Assert.AreEqual(path, input.SourceName);

@@ -59,7 +59,7 @@ public sealed class GateAwareTableWiringTests : IDisposable
     {
         var cancellationToken = _testContext.CancellationToken;
         var dotnet = FakeDotnet.Write(_ws, _ws.Write("fixture/nearly-full.xml", NearlyFull()));
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "100");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "100");
         Assert.AreEqual(1, run.ExitCode, message: run.Output);
         Assert.Contains("19999/20000     99.9%", TotalRow(run.StdOut));
         Assert.DoesNotContain("100.0%", run.StdOut);
@@ -72,14 +72,14 @@ public sealed class GateAwareTableWiringTests : IDisposable
     {
         var cancellationToken = _testContext.CancellationToken;
         var dotnet = FakeDotnet.Write(_ws, _ws.Write("fixture/nearly-full.xml", NearlyFull()));
-        var run = await DotcovTest(cancellationToken, dotnet, "--min-line", "99");
+        var run = await DotcovTest(dotnet, cancellationToken, "--min-line", "99");
         Assert.AreEqual(0, run.ExitCode, message: run.Output);
         Assert.Contains("19999/20000    100.0%", TotalRow(run.StdOut));
         Assert.StartsWith("PASS: line 100.0% (min 99%)", run.StdErr);
     }
 
-    private static string TotalRow(string output) => output.Split('\n').Single(static line => line.TrimStart().StartsWith("TOTAL", StringComparison.Ordinal));
-    private async Task<ChildRun> DotcovTest(CancellationToken cancellationToken, string dotnet, params string[] args)
+    private static string TotalRow(string output) => Assert.ContainsSingle(static line => line.TrimStart().StartsWith("TOTAL", StringComparison.Ordinal), output.Split('\n'));
+    private async Task<ChildRun> DotcovTest(string dotnet, CancellationToken cancellationToken, params string[] args)
     {
         var directory = AppContext.BaseDirectory;
         var start = new ProcessStartInfo("dotnet")

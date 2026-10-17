@@ -47,14 +47,16 @@ public sealed class TableFormatterTests
         var unusedRow = Array.FindIndex(lines, l => l.Contains("Unused.cs"));
         var parserRow = Array.FindIndex(lines, l => l.Contains("Parser.cs"));
         var calcRow = Array.FindIndex(lines, l => l.Contains("Calculator.cs"));
-        Assert.IsTrue(unusedRow < parserRow && parserRow < calcRow, message: "Files should be sorted worst-to-best by line rate");
+        Assert.IsGreaterThanOrEqualTo(0, unusedRow);
+        Assert.IsGreaterThan(unusedRow, parserRow);
+        Assert.IsGreaterThan(parserRow, calcRow);
     }
 
     [TestMethod]
     public void Format_NoBranchData_RendersDashInsteadOfHundredPercent()
     {
         var output = TableFormatter.Format(Reports.LinesOnly);
-        var row = output.Split('\n').Single(l => l.Contains("App.cs")).TrimEnd();
+        var row = Assert.ContainsSingle(l => l.Contains("App.cs"), output.Split('\n')).TrimEnd();
         // Anchored to the file's own row: line columns populated, both branch columns dashed.
         Assert.MatchesRegex(@"^src/App\.cs\s+410/769\s+53\.3%\s+-\s+-$", row);
     }
@@ -71,7 +73,7 @@ public sealed class TableFormatterTests
     public void Format_FileWithBranches_PopulatesBranchCell()
     {
         var output = TableFormatter.Format(Reports.Mixed);
-        var calcRow = output.Split('\n').Single(l => l.Contains("Calculator.cs"));
+        var calcRow = Assert.ContainsSingle(l => l.Contains("Calculator.cs"), output.Split('\n'));
         Assert.Contains("2/2", calcRow);
     }
 
@@ -80,7 +82,7 @@ public sealed class TableFormatterTests
     {
         // TOTAL branch cell is the branch aggregate (2+1+0)/(2+4+0), not the lines cell.
         var output = TableFormatter.Format(Reports.Mixed);
-        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL"));
+        var totalRow = Assert.ContainsSingle(l => l.Contains("TOTAL"), output.Split('\n'));
         Assert.Contains("3/6", totalRow);
     }
 
@@ -88,7 +90,7 @@ public sealed class TableFormatterTests
     public void Format_NoBranchData_TotalRowRendersDashInBranchColumns()
     {
         var output = TableFormatter.Format(Reports.LinesOnly);
-        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+        var totalRow = Assert.ContainsSingle(l => l.Contains("TOTAL"), output.Split('\n')).TrimEnd();
         // Anchored to the TOTAL row itself: line columns populated, both branch columns dashed.
         Assert.MatchesRegex(@"^TOTAL\s+410/769\s+53\.3%\s+-\s+-$", totalRow);
     }
@@ -118,7 +120,7 @@ public sealed class TableFormatterTests
     public void Format_ColorEnabled_BoldsTotalRow()
     {
         var output = TableFormatter.Format(Reports.Mixed, color: true);
-        var totalLine = output.Split('\n').Single(l => l.Contains("TOTAL"));
+        var totalLine = Assert.ContainsSingle(l => l.Contains("TOTAL"), output.Split('\n'));
         Assert.Contains(Open(Pen.Bold), totalLine);
     }
 
@@ -162,7 +164,7 @@ public sealed class TableFormatterTests
     {
         var diff = CoverageDiff.Compare(new CoverageReport([new FileCoverage("gone.cs", 4, 5, 0, 0)]), CoverageReport.Empty);
         var output = TableFormatter.FormatDiff(diff, color: true);
-        var row = AnsiStrip.From(output).Split('\n').Single(l => l.Contains("gone.cs")).TrimEnd();
+        var row = Assert.ContainsSingle(l => l.Contains("gone.cs"), AnsiStrip.From(output).Split('\n')).TrimEnd();
         // Before populated, after dashed, delta -before — pinned on the file's own row so
         // a dash elsewhere (TOTAL row, other columns) cannot satisfy the assertion.
         Assert.MatchesRegex(@"^gone\.cs\s+80\.0%\s+-\s+-80\.0%\s+Removed$", row);
@@ -173,7 +175,7 @@ public sealed class TableFormatterTests
     {
         var diff = CoverageDiff.Compare(CoverageReport.Empty, new CoverageReport([new FileCoverage("fresh.cs", 7, 10, 0, 0)]));
         var output = TableFormatter.FormatDiff(diff);
-        var row = output.Split('\n').Single(l => l.Contains("fresh.cs")).TrimEnd();
+        var row = Assert.ContainsSingle(l => l.Contains("fresh.cs"), output.Split('\n')).TrimEnd();
         // The '+' sign is attached to its digits — never a detached "+  70.0%".
         Assert.MatchesRegex(@"^fresh\.cs\s+-\s+70\.0%\s+\+70\.0%\s+Added$", row);
     }
@@ -187,7 +189,7 @@ public sealed class TableFormatterTests
         // Contains would otherwise be satisfied by a per-file cell.
         var diff = CoverageDiff.Compare(new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("b.cs", 5, 10, 0, 0)]), new CoverageReport([new FileCoverage("a.cs", 8, 10, 0, 0), new FileCoverage("b.cs", 7, 10, 0, 0)]));
         var output = TableFormatter.FormatDiff(diff);
-        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+        var totalRow = Assert.ContainsSingle(l => l.Contains("TOTAL"), output.Split('\n')).TrimEnd();
         Assert.MatchesRegex(@"^TOTAL\s+50\.0%\s+75\.0%\s+\+25\.0%$", totalRow);
         Assert.Contains("  +25.0%", totalRow); // full 8-char cell: sign never detaches
     }
@@ -199,8 +201,8 @@ public sealed class TableFormatterTests
         // listed file moves by zero only when it was added at 0%.
         var added = CoverageDiff.Compare(Reports.Single("a.cs", hit: 5, total: 10), new CoverageReport([new FileCoverage("a.cs", 5, 10, 0, 0), new FileCoverage("zero.cs", 0, 10, 0, 0)]));
         var still = CoverageDiff.Compare(Reports.Single("same.cs", hit: 5, total: 10), Reports.Single("same.cs", hit: 5, total: 10));
-        var fileRow = TableFormatter.FormatDiff(added).Split('\n').Single(l => l.Contains("zero.cs")).TrimEnd();
-        var totalRow = TableFormatter.FormatDiff(still).Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+        var fileRow = Assert.ContainsSingle(l => l.Contains("zero.cs"), TableFormatter.FormatDiff(added).Split('\n')).TrimEnd();
+        var totalRow = Assert.ContainsSingle(l => l.Contains("TOTAL"), TableFormatter.FormatDiff(still).Split('\n')).TrimEnd();
         Assert.Contains("   +0.0%", fileRow);
         Assert.Contains("   +0.0%", totalRow);
     }
@@ -210,8 +212,8 @@ public sealed class TableFormatterTests
     {
         var diff = CoverageDiff.Compare(Reports.Single("down.cs", hit: 9, total: 10), Reports.Single("down.cs", hit: 6, total: 10));
         var output = TableFormatter.FormatDiff(diff);
-        var fileRow = output.Split('\n').Single(l => l.Contains("down.cs")).TrimEnd();
-        var totalRow = output.Split('\n').Single(l => l.Contains("TOTAL")).TrimEnd();
+        var fileRow = Assert.ContainsSingle(l => l.Contains("down.cs"), output.Split('\n')).TrimEnd();
+        var totalRow = Assert.ContainsSingle(l => l.Contains("TOTAL"), output.Split('\n')).TrimEnd();
         // Negative cells align with every other delta state: 8 chars, no '+' anywhere.
         Assert.Contains("  -30.0%", fileRow);
         Assert.Contains("  -30.0%", totalRow);
@@ -224,7 +226,7 @@ public sealed class TableFormatterTests
         // An added 0/0 file has no rate on either side → null delta → the 8-char dash cell.
         var diff = CoverageDiff.Compare(CoverageReport.Empty, new CoverageReport([new FileCoverage("empty.cs", 0, 0, 0, 0)]));
         var output = TableFormatter.FormatDiff(diff);
-        var fileRow = output.Split('\n').Single(l => l.Contains("empty.cs")).TrimEnd();
+        var fileRow = Assert.ContainsSingle(l => l.Contains("empty.cs"), output.Split('\n')).TrimEnd();
         Assert.MatchesRegex(@"^empty\.cs\s+-\s+-\s+-\s+Added$", fileRow);
         Assert.Contains("       -", fileRow); // dash keeps the 8-char cell width
     }
@@ -298,7 +300,7 @@ public sealed class TableFormatterTests
         var lines = output.Split('\n');
         Assert.Contains("very/long/nested/path/to/some/source.cs", output);
         var dividerLength = lines.First(l => l.StartsWith("-")).Length;
-        Assert.IsTrue(dividerLength > "very/long/nested/path/to/some/source.cs".Length);
+        Assert.IsGreaterThan("very/long/nested/path/to/some/source.cs".Length, dividerLength);
     }
 
     [TestMethod]
@@ -310,8 +312,8 @@ public sealed class TableFormatterTests
         const string longPath = "very/long/nested/path/to/source.cs";
         var report = new CoverageReport([new FileCoverage("short.cs", 1, 2, 0, 0), new FileCoverage(longPath, 2, 2, 0, 0)]);
         var lines = TableFormatter.Format(report).Split(Environment.NewLine);
-        var shortRow = lines.Single(l => l.StartsWith("short.cs", StringComparison.Ordinal));
-        var longRow = lines.Single(l => l.StartsWith("very/", StringComparison.Ordinal));
+        var shortRow = Assert.ContainsSingle(l => l.StartsWith("short.cs", StringComparison.Ordinal), lines);
+        var longRow = Assert.ContainsSingle(l => l.StartsWith("very/", StringComparison.Ordinal), lines);
         // The path cell is padded to the longest path, so the short row carries the padding…
         Assert.StartsWith("short.cs" + new string (' ', longPath.Length - "short.cs".Length) + "  ", shortRow);
         // …and the right-aligned Lines cells start at the same absolute column in both rows.
@@ -327,8 +329,8 @@ public sealed class TableFormatterTests
         var before = new CoverageReport([new FileCoverage("short.cs", 1, 2, 0, 0), new FileCoverage(longPath, 1, 2, 0, 0)]);
         var after = new CoverageReport([new FileCoverage("short.cs", 2, 2, 0, 0), new FileCoverage(longPath, 2, 2, 0, 0)]);
         var lines = TableFormatter.FormatDiff(CoverageDiff.Compare(before, after)).Split(Environment.NewLine);
-        var shortRow = lines.Single(l => l.StartsWith("short.cs", StringComparison.Ordinal));
-        var longRow = lines.Single(l => l.StartsWith("very/", StringComparison.Ordinal));
+        var shortRow = Assert.ContainsSingle(l => l.StartsWith("short.cs", StringComparison.Ordinal), lines);
+        var longRow = Assert.ContainsSingle(l => l.StartsWith("very/", StringComparison.Ordinal), lines);
         Assert.StartsWith("short.cs" + new string (' ', longPath.Length - "short.cs".Length) + "  ", shortRow);
         // Before cells (8 wide, right-aligned "   50.0%"/"  100.0%") start at the same column.
         Assert.AreEqual(longPath.Length + 2, shortRow.IndexOf("   50.0%", StringComparison.Ordinal));
@@ -370,7 +372,8 @@ public sealed class TableFormatterTests
         Assert.Contains("Warnings: 2", output);
         var totalIdx = Array.FindIndex(lines, l => l.Contains("TOTAL"));
         var warnIdx = Array.FindIndex(lines, l => l.Contains("Warnings:"));
-        Assert.IsTrue(totalIdx < warnIdx, message: "Warnings trailer must follow TOTAL row");
+        Assert.IsGreaterThanOrEqualTo(0, totalIdx);
+        Assert.IsGreaterThan(totalIdx, warnIdx, message: "Warnings trailer must follow TOTAL row");
     }
 
     [TestMethod]
@@ -383,7 +386,7 @@ public sealed class TableFormatterTests
             Warnings = [new CoverageWarning(CoverageWarningKind.BranchTotalMismatch, "src/A.cs", 1, "x")]
         };
         var output = TableFormatter.Format(report, color: true);
-        var trailerLine = output.Split('\n').Single(l => l.Contains("Warnings:")).TrimEnd();
+        var trailerLine = Assert.ContainsSingle(l => l.Contains("Warnings:"), output.Split('\n')).TrimEnd();
         Assert.AreEqual(Pen.Dim("Warnings: 1"), trailerLine);
     }
 }

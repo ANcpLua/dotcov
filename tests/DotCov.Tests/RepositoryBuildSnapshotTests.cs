@@ -53,7 +53,7 @@ public sealed class RepositoryBuildSnapshotTests : IDisposable
         var run = await Build(cancellationToken, "Snapshot", "--reports", report);
         Assert.AreEqual(0, run.ExitCode, message: run.Output);
         var snapshot = Directory.GetFiles(_workspace.PathOf("artifacts"), "snapshot.json", SearchOption.AllDirectories);
-        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(snapshot.Single(), cancellationToken));
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Assert.ContainsSingle(snapshot), cancellationToken));
         Assert.AreEqual("feature/x", json.RootElement.GetProperty("branch").GetString());
         Assert.DoesNotContain("not provided", run.Output);
     }

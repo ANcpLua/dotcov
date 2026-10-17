@@ -48,7 +48,7 @@ public sealed class JsonFormatterTests
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
-        var unused = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Unused.cs");
+        var unused = Assert.ContainsSingle(f => f.GetProperty("path").GetString() == "src/Unused.cs", files.EnumerateArray());
         Assert.IsFalse(unused.TryGetProperty("branchRate", out _));
     }
 
@@ -104,7 +104,7 @@ public sealed class JsonFormatterTests
     {
         var json = JsonFormatter.Format(Reports.Mixed);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
-        var parser = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Parser.cs");
+        var parser = Assert.ContainsSingle(f => f.GetProperty("path").GetString() == "src/Parser.cs", files.EnumerateArray());
         Assert.AreEqual(3, parser.GetProperty("linesHit").GetInt32());
         Assert.AreEqual(5, parser.GetProperty("linesTotal").GetInt32());
         Assert.AreEqual(1, parser.GetProperty("branchesHit").GetInt32());
@@ -245,7 +245,7 @@ public sealed class JsonFormatterTests
         var json = JsonFormatter.FormatSnapshot(snapshot);
         var files = JsonDocument.Parse(json).RootElement.GetProperty("files");
         Assert.AreEqual(3, files.GetArrayLength());
-        var calc = files.EnumerateArray().Single(f => f.GetProperty("path").GetString() == "src/Calculator.cs");
+        var calc = Assert.ContainsSingle(f => f.GetProperty("path").GetString() == "src/Calculator.cs", files.EnumerateArray());
         Assert.AreEqual(4, calc.GetProperty("linesHit").GetInt32());
         Assert.AreEqual(4, calc.GetProperty("linesTotal").GetInt32());
         Assert.AreEqual(2, calc.GetProperty("branchesHit").GetInt32());
@@ -335,7 +335,7 @@ public sealed class JsonFormatterTests
         };
         var json = JsonFormatter.Format(report);
         var warnings = JsonDocument.Parse(json).RootElement.GetProperty("warnings").EnumerateArray().ToList();
-        Assert.AreEqual(2, warnings.Count);
+        Assert.HasCount(2, warnings);
         Assert.AreEqual("BranchTotalMismatch", warnings[0].GetProperty("kind").GetString());
         Assert.AreEqual("src/A.cs", warnings[0].GetProperty("file").GetString());
         Assert.AreEqual(12, warnings[0].GetProperty("line").GetInt32());

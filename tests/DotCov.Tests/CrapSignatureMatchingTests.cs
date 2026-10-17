@@ -66,7 +66,7 @@ public sealed class CrapSignatureMatchingTests
         var report = CrapAnalysis.Analyze(coverage, metrics);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
-        Assert.AreEqual(exclude ? 1 : 3, report.Methods.Count);
+        Assert.HasCount(exclude ? 1 : 3, report.Methods);
     }
 
     [TestMethod]
@@ -112,7 +112,7 @@ public sealed class CrapSignatureMatchingTests
         }).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method($"string A.this[int x].{accessor}", 2, 1).Method($"string A.this[string x].{accessor}", 7, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(missing ? 1 : 0, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(missing ? 1 : 0, report.UnmatchedMetricsMembers);
         Assert.AreSequenceEqual(missing ? [2] : [2, 7], report.Methods.Select(m => m.Complexity), SequenceOrder.InAnyOrder);
         Assert.AreEqual(missing ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
@@ -157,8 +157,8 @@ public sealed class CrapSignatureMatchingTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "()", embedded ? "2" : null, m => m.Line(1, 1))).AddClass("other/A.cs", "App.A", c => c.Method("M", "()", embedded ? "7" : null, m => m.Line(2, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M()", 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(embedded ? 2 : 1, report.Methods.Count);
-        Assert.AreEqual(embedded ? 0 : 1, report.Unscored.Count);
+        Assert.HasCount(embedded ? 2 : 1, report.Methods);
+        Assert.HasCount(embedded ? 0 : 1, report.Unscored);
         Assert.AreEqual(embedded ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -168,8 +168,8 @@ public sealed class CrapSignatureMatchingTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(1, 1)).Method("set_Value", "(System.Int32)", null, m => m.Line(2, 1))).AddClass("other/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(3, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Property("int A.Value", 2));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(2, report.Methods.Count);
-        Assert.AreEqual("other/A.cs", report.Unscored.Single().File);
+        Assert.HasCount(2, report.Methods);
+        Assert.AreEqual("other/A.cs", Assert.ContainsSingle(report.Unscored).File);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 }

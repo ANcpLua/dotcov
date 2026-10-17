@@ -22,7 +22,7 @@ public sealed class CrapAnalysisEdgeTests
         var plain = Method("MyApp.Result", "Map", "(System.Int32)", complexity: 1, lines: [(10, 1), (11, 1)], file: "src/Result.cs");
         var generic = Method("MyApp.Result`1", "Map", "(System.Int32)", complexity: 8, lines: [(10, 0), (11, 0), (12, 0)], file: "src/ResultOfT.cs");
         var report = CrapAnalysis.Analyze([plain, generic]);
-        Assert.AreEqual(2, report.Methods.Count);
+        Assert.HasCount(2, report.Methods);
         Assert.Contains(m => m is { File: "src/Result.cs", Complexity: 1, Coverage: 1.0 }, report.Methods);
         Assert.Contains(m => m is { File: "src/ResultOfT.cs", Complexity: 8, Coverage: 0.0, Score: 72.0 }, report.Methods);
         Assert.AreEqual(GateOutcome.Fail, report.Evaluate(30).Outcome);
@@ -35,7 +35,7 @@ public sealed class CrapAnalysisEdgeTests
         var generic = Method("MyApp.Result`1", "Map", "()", complexity: 1, lines: [(20, 1)], file: "src/ResultOfT.cs");
         var lambda = Method("MyApp.Result`1/<>c", "<Map>b__3_0", "(System.Int32)", complexity: 4, lines: [(21, 0)], file: "src/ResultOfT.cs");
         var report = CrapAnalysis.Analyze([plain, generic, lambda]);
-        Assert.AreEqual(2, report.Methods.Count);
+        Assert.HasCount(2, report.Methods);
         Assert.Contains(m => m is { File: "src/ResultOfT.cs", Complexity: 4, Coverage: 0.5 }, report.Methods);
         Assert.Contains(m => m is { File: "src/Result.cs", Complexity: 1, Coverage: 1.0 }, report.Methods);
     }
@@ -211,7 +211,7 @@ public sealed class CrapAnalysisEdgeTests
             var report = CrapAnalysis.Analyze([Method("MyApp.A", "M", signature, complexity: null, lines: [(1, 1)])], metrics);
             var m = Assert.ContainsSingle(report.Methods);
             Assert.AreEqual(7, m.Complexity);
-            Assert.AreEqual(2, report.UnmatchedMetricsMembers.Count);
+            Assert.HasCount(2, report.UnmatchedMetricsMembers);
             Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
         }
     }
@@ -258,7 +258,7 @@ public sealed class CrapAnalysisEdgeTests
     public void BracketedMethodNameThatIsNoLambda_IsNotFolded()
     {
         var report = CrapAnalysis.Analyze([Method("MyApp.C", "Run", "()", complexity: 1, lines: [(1, 1)]), Method("MyApp.C", "<Run>x__0", "()", complexity: 5, lines: [(2, 0)]), ]);
-        Assert.AreEqual(2, report.Methods.Count);
+        Assert.HasCount(2, report.Methods);
         Assert.Contains(m => m is { Method: "MyApp.C.<Run>x__0", Complexity: 5 }, report.Methods);
     }
 

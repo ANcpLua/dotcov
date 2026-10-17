@@ -4,14 +4,14 @@ using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
 [TestClass]
-public sealed class CoberturaParserTests
+public sealed class CoberturaParserTests(TestContext testContext)
 {
     private const string FixturePath = "Fixtures/sample.cobertura.xml";
     [TestMethod]
     public void Parse_FullyCoveredClass_ReportsAllLinesHit()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
+        var calculator = Assert.ContainsSingle(f => f.Path == "src/Calculator.cs", report.Files);
         Assert.AreEqual(4, calculator.LinesTotal);
         Assert.AreEqual(4, calculator.LinesHit);
         Assert.AreEqual(1.0, calculator.LineRate);
@@ -21,7 +21,7 @@ public sealed class CoberturaParserTests
     public void Parse_PartiallyCoveredClass_ReportsCorrectHitCount()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
+        var parser = Assert.ContainsSingle(f => f.Path == "src/Parser.cs", report.Files);
         Assert.AreEqual(5, parser.LinesTotal);
         Assert.AreEqual(3, parser.LinesHit);
         Assert.AreEqual(0.6, parser.LineRate);
@@ -31,7 +31,7 @@ public sealed class CoberturaParserTests
     public void Parse_UncoveredClass_ReportsZeroLineRate()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
+        var unused = Assert.ContainsSingle(f => f.Path == "src/Unused.cs", report.Files);
         Assert.AreEqual(3, unused.LinesTotal);
         Assert.AreEqual(0, unused.LinesHit);
         Assert.AreEqual(0.0, unused.LineRate);
@@ -41,7 +41,7 @@ public sealed class CoberturaParserTests
     public void Parse_FullBranchCoverage_ReportsAllBranchesHit()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var calculator = report.Files.Single(f => f.Path == "src/Calculator.cs");
+        var calculator = Assert.ContainsSingle(f => f.Path == "src/Calculator.cs", report.Files);
         Assert.AreEqual(2, calculator.BranchesTotal);
         Assert.AreEqual(2, calculator.BranchesHit);
         Assert.AreEqual(1.0, calculator.BranchRate);
@@ -51,7 +51,7 @@ public sealed class CoberturaParserTests
     public void Parse_PartialBranches_ExtractsConditionCoverageCorrectly()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var parser = report.Files.Single(f => f.Path == "src/Parser.cs");
+        var parser = Assert.ContainsSingle(f => f.Path == "src/Parser.cs", report.Files);
         Assert.AreEqual(4, parser.BranchesTotal);
         Assert.AreEqual(1, parser.BranchesHit);
         Assert.AreEqual(0.25, parser.BranchRate);
@@ -61,7 +61,7 @@ public sealed class CoberturaParserTests
     public void Parse_NoBranches_ReportsNoBranchRate()
     {
         var report = CoberturaParser.Parse(ReportInput.FromFile(FixturePath));
-        var unused = report.Files.Single(f => f.Path == "src/Unused.cs");
+        var unused = Assert.ContainsSingle(f => f.Path == "src/Unused.cs", report.Files);
         Assert.AreEqual(0, unused.BranchesTotal);
         // Not 1.0. A file with no branches has no branch rate - reporting "100%" for absent
         // data would let a --min-branch gate pass on reports carrying no branch data at all.
@@ -149,7 +149,7 @@ public sealed class CoberturaParserTests
                                  </classes></package></packages></coverage>
                                  """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(canonical));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(2, file.LinesTotal);
         Assert.AreEqual(1, file.LinesHit);
@@ -164,7 +164,7 @@ public sealed class CoberturaParserTests
                            <coverage><packages></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         Assert.IsEmpty(report.Files);
         Assert.IsNull(report.LineRate);
         Assert.IsFalse(report.HasLineData);
@@ -207,7 +207,7 @@ public sealed class CoberturaParserTests
                            </coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(4, file.LinesTotal);
         Assert.AreEqual(2, file.LinesHit);
@@ -240,7 +240,7 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var file = CoberturaParser.Parse(stream).Files.Single();
+        var file = Assert.ContainsSingle(CoberturaParser.Parse(stream).Files);
         Assert.AreEqual(2, file.LinesTotal);
         Assert.AreEqual(1, file.LinesHit);
         Assert.AreSequenceEqual([5], file.UncoveredLines, SequenceOrder.InOrder);
@@ -271,7 +271,7 @@ public sealed class CoberturaParserTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var file = CoberturaParser.Parse(stream).Files.Single();
+        var file = Assert.ContainsSingle(CoberturaParser.Parse(stream).Files);
         Assert.AreEqual(2, file.LinesTotal);
         Assert.AreEqual(2, file.LinesHit);
         Assert.AreEqual((1, 2), file.BranchesByLine[11]);
@@ -294,11 +294,11 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream)).Files);
-        Assert.AreEqual(2, file.BranchesByLine.Count);
+        var file = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken)).Files);
+        Assert.HasCount(2, file.BranchesByLine);
         Assert.AreEqual((1, 2), file.BranchesByLine[10]);
         Assert.AreEqual((4, 4), file.BranchesByLine[20]);
-        Assert.IsFalse(file.BranchesByLine.ContainsKey(30));
+        Assert.DoesNotContain(30, file.BranchesByLine.Keys);
         Assert.AreEqual(LineStatus.Partial, file.GetLineStatus(10));
         Assert.AreEqual(LineStatus.Hit, file.GetLineStatus(20));
         Assert.AreEqual(LineStatus.Hit, file.GetLineStatus(30));
@@ -320,7 +320,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(1, file.LinesTotal);
         Assert.AreEqual(0, file.LinesHit);
@@ -347,7 +347,7 @@ public sealed class CoberturaParserTests
                    </classes></package></packages></coverage>
                    """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(1, file.LinesTotal);
         Assert.AreEqual(0, file.LinesHit);
@@ -366,7 +366,8 @@ public sealed class CoberturaParserTests
         var document = Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.MalformedLine("7", "lots")).MalformedLine("7", "lots"));
         var fileWarning = Assert.ContainsSingle(document.Parse().Warnings);
         Assert.AreEqual(7, fileWarning.Line);
-        Assert.ContainsSingle(CoberturaParser.ParseMethods(document.ToStream()).Warnings);
+        using var stream = document.ToStream();
+        Assert.ContainsSingle(CoberturaParser.ParseMethods(stream).Warnings);
     }
 
     [TestMethod]
@@ -388,7 +389,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(2, file.LinesTotal);
         Assert.AreEqual(2, file.LinesHit);
@@ -414,7 +415,7 @@ public sealed class CoberturaParserTests
                    </classes></package></packages></coverage>
                    """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         Assert.AreEqual(2, report.TotalBranches);
         Assert.AreEqual(1, report.TotalBranchesHit);
     }
@@ -430,7 +431,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         Assert.ContainsSingle(report.Files);
         Assert.AreEqual(0, report.Files[0].LinesTotal);
         // A class the emitter listed but recorded no lines for is unmeasured, not fully covered.
@@ -443,7 +444,7 @@ public sealed class CoberturaParserTests
         var a = new CoverageReport([new FileCoverage("a.cs", 3, 10, 0, 0)]);
         var b = new CoverageReport([new FileCoverage("b.cs", 5, 10, 0, 0)]);
         var merged = CoverageReport.Merge(a, b);
-        Assert.AreEqual(2, merged.Files.Count);
+        Assert.HasCount(2, merged.Files);
     }
 
     [TestMethod]
@@ -559,7 +560,7 @@ public sealed class CoberturaParserTests
         var a = Cobertura.NewDoc().AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "25% (1/4)", (1, "50%"), (2, "0%"))).Parse();
         var b = Cobertura.NewDoc().AddClass("src/Foo.cs", c => c.Branch(10, "50% (2/4)")).Parse();
         var f = CoverageReport.Merge(a, b).Files[0];
-        Assert.IsTrue(f.ConditionsByLine.ContainsKey(10)); // detail survives for future merges
+        Assert.Contains(10, f.ConditionsByLine.Keys); // detail survives for future merges
         Assert.AreEqual(1, f.ConditionsByLine[10][1]);
         Assert.AreEqual(0, f.ConditionsByLine[10][2]);
         Assert.AreEqual(2, f.BranchesHit); // b's line-level (2/4) not regressed
@@ -603,7 +604,7 @@ public sealed class CoberturaParserTests
         // BranchesHit past BranchesTotal.
         var again = Cobertura.NewDoc().AddClass("src/Foo.cs", c => c.BranchWithConditions(10, "100% (2/2)", (1, coverage))).Parse();
         var merged = CoverageReport.Merge(report, again).Files[0];
-        Assert.IsTrue(merged.BranchesHit <= merged.BranchesTotal);
+        Assert.IsLessThanOrEqualTo(merged.BranchesTotal, merged.BranchesHit);
         Assert.AreEqual(2, merged.BranchesHit);
         Assert.AreEqual(2, merged.BranchesTotal);
     }
@@ -633,7 +634,9 @@ public sealed class CoberturaParserTests
               </classes></package></packages>
             </coverage>
             """;
-        var f = (await CoberturaParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)))).Files[0];
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
+        var f = Assert.ContainsSingle(report.Files);
         Assert.AreEqual(2, f.BranchesHit); // line-level aggregate (2/4) preserved
         Assert.AreEqual(4, f.BranchesTotal);
         Assert.IsEmpty(f.ConditionsByLine); // stray / non-numeric / coverage-less conditions all dropped
@@ -653,7 +656,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -671,7 +674,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         Assert.AreEqual(0, report.Files[0].BranchesTotal);
         var w = Assert.ContainsSingle(report.Warnings);
         Assert.AreEqual(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
@@ -696,7 +699,7 @@ public sealed class CoberturaParserTests
                    </classes></package></packages></coverage>
                    """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         // The overflowing branch entry is dropped (not silently zeroed INTO the totals)...
         Assert.AreEqual(0, report.Files[0].BranchesTotal);
         // ...and the drop is observable as a structured warning.
@@ -719,7 +722,7 @@ public sealed class CoberturaParserTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var w = Assert.ContainsSingle(report.Warnings);
         Assert.AreEqual(CoverageWarningKind.MalformedConditionCoverage, w.Kind);
         Assert.AreEqual(3, w.Line);
@@ -748,7 +751,7 @@ public sealed class CoberturaParserTests
                            </coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var file = (await CoberturaParser.ParseAsync(stream)).Files.Single();
+        var file = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken)).Files);
         Assert.AreEqual("src/Dto.cs", file.Path);
         Assert.AreEqual(3, file.LinesTotal);
         Assert.AreEqual(2, file.LinesHit);
@@ -791,11 +794,11 @@ public sealed class CoberturaParserTests
         // OrdinalIgnoreCase keying would fuse such pairs via Math.Max, silently erasing the
         // fully-uncovered file's misses and reporting 100% where the truth is 50%.
         var report = Cobertura.NewDoc().AddClass("net/netfilter/xt_TCPMSS.c", c => c.Line(1, hits: 1).Line(2, hits: 1)).AddClass("net/netfilter/xt_tcpmss.c", c => c.Line(1, hits: 0).Line(2, hits: 0)).Parse();
-        Assert.AreEqual(2, report.Files.Count);
+        Assert.HasCount(2, report.Files);
         Assert.AreEqual(4, report.TotalLines);
         Assert.AreEqual(2, report.TotalLinesHit);
         Assert.AreEqual(0.5, report.LineRate);
-        var uncoveredFile = report.Files.Single(f => f.Path == "net/netfilter/xt_tcpmss.c");
+        var uncoveredFile = Assert.ContainsSingle(f => f.Path == "net/netfilter/xt_tcpmss.c", report.Files);
         Assert.AreEqual(0.0, uncoveredFile.LineRate);
     }
 }

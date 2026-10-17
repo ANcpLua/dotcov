@@ -106,7 +106,7 @@ public sealed class ExclusionAndReportTests
         var report = Reports.Mixed;
         var originalCount = report.Files.Count;
         _ = report.Exclude(["Unused"]);
-        Assert.AreEqual(originalCount, report.Files.Count);
+        Assert.HasCount(originalCount, report.Files);
     }
 
     [TestMethod]
@@ -153,7 +153,7 @@ public sealed class ExclusionAndReportTests
         var b = Reports.ClassifiedFile("a.cs", linesHit: 2, linesTotal: 3, branchesHit: 0, branchesTotal: 2, lineHits: new Dictionary<int, int> { [20] = 1, [25] = 0, [30] = 1 }, branchesByLine: new Dictionary<int, (int Covered, int Total)> { [25] = (0, 2) });
         var(merged, _) = a.MergeWith(b);
         Assert.AreSequenceEqual([10, 25], merged.UncoveredLines, SequenceOrder.InOrder);
-        Assert.AreEqual(2, merged.PartialBranches.Count);
+        Assert.HasCount(2, merged.PartialBranches);
         Assert.AreEqual(3, merged.LinesHit); // 5, 20, 30
         Assert.AreEqual(5, merged.LinesTotal); // 5, 10, 20, 25, 30
         Assert.AreEqual(1, merged.BranchesHit); // 1 (line 15) + 0 (line 25)
@@ -320,7 +320,7 @@ public sealed class ExclusionAndReportTests
         var diff = CoverageDiff.Compare(new CoverageReport([new FileCoverage("up.cs", 5, 10, 0, 0), new FileCoverage("down.cs", 9, 10, 0, 0)]), new CoverageReport([new FileCoverage("up.cs", 9, 10, 0, 0), new FileCoverage("down.cs", 5, 10, 0, 0)]));
         Assert.ContainsSingle(diff.Improvements);
         Assert.ContainsSingle(diff.Regressions);
-        Assert.AreEqual("up.cs", diff.Improvements.Single().Path);
+        Assert.AreEqual("up.cs", Assert.ContainsSingle(diff.Improvements).Path);
     }
 
     // ── Single-pass classification: precomputed counts agree with GetLineStatus ──
@@ -522,7 +522,7 @@ public sealed class ExclusionAndReportTests
             Warnings = [new CoverageWarning(CoverageWarningKind.MalformedConditionCoverage, "y.cs", 2, "from-b")]
         };
         var merged = CoverageReport.Merge(a, b);
-        Assert.AreEqual(3, merged.Warnings.Count);
+        Assert.HasCount(3, merged.Warnings);
         Assert.AreEqual("from-a", merged.Warnings[0].Detail);
         Assert.AreEqual("from-b", merged.Warnings[1].Detail);
         Assert.AreEqual(CoverageWarningKind.BranchTotalMismatch, merged.Warnings[2].Kind);

@@ -24,8 +24,8 @@ public sealed class ParserSourceTests
     public void Parse_EmptySourceElement_DoesNotSwallowTheFollowingRoot()
     {
         var report = ParseXml(Doc("<sources><source/><source>/repo</source></sources>", "app/main.py"));
-        Assert.AreEqual("/repo", report.SourceRoots.Single());
-        Assert.AreEqual("/repo/app/main.py", report.Files.Single().Path);
+        Assert.AreEqual("/repo", Assert.ContainsSingle(report.SourceRoots));
+        Assert.AreEqual("/repo/app/main.py", Assert.ContainsSingle(report.Files).Path);
     }
 
     [TestMethod]
@@ -33,7 +33,7 @@ public sealed class ParserSourceTests
     {
         var report = ParseXml(Doc("<sources><source><!--ci checkout--></source></sources>", "app/main.py"));
         Assert.IsEmpty(report.SourceRoots);
-        Assert.AreEqual("app/main.py", report.Files.Single().Path);
+        Assert.AreEqual("app/main.py", Assert.ContainsSingle(report.Files).Path);
     }
 
     [TestMethod]
@@ -73,7 +73,7 @@ public sealed class ParserSourceTests
         ws.Write("a/x.py", "");
         ws.Write("b/x.py", "");
         var report = ParseXml(Doc($"<sources><source>{a}</source><source>{b}</source></sources>", "x.py"), FileIdentity.ProbeSources);
-        Assert.AreEqual($"{a}/x.py", report.Files.Single().Path);
+        Assert.AreEqual($"{a}/x.py", Assert.ContainsSingle(report.Files).Path);
         var w = Assert.ContainsSingle(report.Warnings);
         Assert.AreEqual(CoverageWarningKind.FileIdentityAmbiguous, w.Kind);
         Assert.Contains($"'{a}'", w.Detail);
@@ -86,7 +86,7 @@ public sealed class ParserSourceTests
         var src = RootOf(ws, "src");
         ws.Write("src/pkg/app.py", "");
         var report = ParseXml(Doc($"<sources><source>.</source><source>{src}</source></sources>", "pkg/app.py"), FileIdentity.ProbeSources);
-        Assert.AreEqual($"{src}/pkg/app.py", report.Files.Single().Path);
+        Assert.AreEqual($"{src}/pkg/app.py", Assert.ContainsSingle(report.Files).Path);
         Assert.IsEmpty(report.Warnings);
     }
 }

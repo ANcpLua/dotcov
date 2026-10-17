@@ -9,7 +9,7 @@ namespace DotCov.Tests;
 /// itself, an empty class summary, and redundant <c>.</c> segments in file names.
 /// </summary>
 [TestClass]
-public sealed class ParserIntegrityTests : IDisposable
+public sealed class ParserIntegrityTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-integrity-");
     public void Dispose() => _ws.Dispose();
@@ -21,7 +21,11 @@ public sealed class ParserIntegrityTests : IDisposable
         return (code, stdout.ToString(), stderr.ToString());
     }
 
-    private static CoverageReport ParseXml(string xml) => CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+    private static CoverageReport ParseXml(string xml)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        return CoberturaParser.Parse(stream);
+    }
     // ── A4: condition identity does not depend on XML packaging ───────────────
     private static void BlockWithCondition5(Cobertura.ClassBuilder c) => c.Line(9, hits: 1).BranchWithConditions(10, "50% (1/2)", (5, "50%"));
     private static void BlockWithCondition9(Cobertura.ClassBuilder c) => c.BranchWithConditions(10, "50% (1/2)", (9, "50%"));
@@ -41,7 +45,7 @@ public sealed class ParserIntegrityTests : IDisposable
 
         )
         {
-            var file = report.Files.Single();
+            var file = Assert.ContainsSingle(report.Files);
             Assert.AreEqual((1, 2), (file.BranchesHit, file.BranchesTotal));
             Assert.AreEqual((2, 2), (file.LinesHit, file.LinesTotal));
             Assert.IsEmpty(file.ConditionsByLine[10]); // poisoned: raw aggregate only
@@ -63,8 +67,8 @@ public sealed class ParserIntegrityTests : IDisposable
         static void Second(Cobertura.ClassBuilder c) => c.BranchWithConditions(10, "25% (1/4)", (5, "0%"), (7, "50%"));
         var oneDocument = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).AddClass("src/X.cs", "Ns.X", Second).Parse();
         var twoDocuments = CoverageReport.Merge(Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", First).Parse(), Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", Second).Parse());
-        Assert.AreEqual((2, 4), oneDocument.Files.Single().BranchesByLine[10]);
-        Assert.AreEqual((2, 4), twoDocuments.Files.Single().BranchesByLine[10]);
+        Assert.AreEqual((2, 4), Assert.ContainsSingle(oneDocument.Files).BranchesByLine[10]);
+        Assert.AreEqual((2, 4), Assert.ContainsSingle(twoDocuments.Files).BranchesByLine[10]);
         Assert.IsEmpty(oneDocument.Warnings);
     }
 
@@ -74,10 +78,10 @@ public sealed class ParserIntegrityTests : IDisposable
         // A third block that agrees with the first cannot resurrect the detail: the poison is
         // absorbing, so the result does not depend on block order.
         var report = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", BlockWithCondition5).AddClass("src/X.cs", "Ns.X", BlockWithCondition9).AddClass("src/X.cs", "Ns.X", c => c.BranchWithConditions(10, "100% (2/2)", (5, "100%"))).Parse();
-        var file = report.Files.Single();
+        var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual((2, 2), file.BranchesByLine[10]); // raw Math.Max aggregate
         Assert.IsEmpty(file.ConditionsByLine[10]);
-        Assert.AreEqual(1, report.Warnings.Count(static w => w.Kind is CoverageWarningKind.ConditionIdentityMismatch));
+        Assert.ContainsSingle(static w => w.Kind is CoverageWarningKind.ConditionIdentityMismatch, report.Warnings);
     }
 
     [TestMethod]
@@ -86,10 +90,10 @@ public sealed class ParserIntegrityTests : IDisposable
         // The two classes own independent branches. Their counts add; integer condition
         // numbers alone cannot represent both owners in ConditionsByLine.
         var report = Cobertura.NewDoc().AddClass("src/X.cs", "Ns.X", c => c.BranchWithConditions(10, "50% (1/2)", (5, "50%"))).AddClass("src/X.cs", "Ns.X/<>c", c => c.Branch(10, "50% (2/4)")).Parse();
-        var file = report.Files.Single();
+        var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual((3, 6), file.BranchesByLine[10]);
-        Assert.AreEqual(2, file.BranchesByOrigin.Count);
-        Assert.IsFalse(file.ConditionsByLine.ContainsKey(10));
+        Assert.HasCount(2, file.BranchesByOrigin);
+        Assert.DoesNotContain(10, file.ConditionsByLine.Keys);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -115,7 +119,7 @@ public sealed class ParserIntegrityTests : IDisposable
             </classes></package></packages></coverage>
             """;
         var report = ParseXml(xml);
-        Assert.AreSequenceEqual(new Dictionary<int, int> { [5] = 1 }, report.Files.Single().ConditionsByLine[10], SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(new Dictionary<int, int> { [5] = 1 }, Assert.ContainsSingle(report.Files).ConditionsByLine[10], SequenceOrder.InAnyOrder);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -139,7 +143,7 @@ public sealed class ParserIntegrityTests : IDisposable
             </classes></package></packages></coverage>
             """;
         var report = ParseXml(xml);
-        Assert.AreEqual((2, 4), report.Files.Single().BranchesByLine[10]);
+        Assert.AreEqual((2, 4), Assert.ContainsSingle(report.Files).BranchesByLine[10]);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -176,7 +180,7 @@ public sealed class ParserIntegrityTests : IDisposable
         // 100% branch PASS from a report that says no branch outcome was taken.
         var doc = Cobertura.NewDoc().AddClass("src/X.cs", c => c.BranchWithConditions(4, "0% (0/2)", (11, "100%")));
         var report = doc.Parse();
-        var file = report.Files.Single();
+        var file = Assert.ContainsSingle(report.Files);
         Assert.AreEqual((0, 2), (file.BranchesHit, file.BranchesTotal));
         Assert.IsEmpty(file.ConditionsByLine);
         var warning = Assert.ContainsSingle(report.Warnings);
@@ -202,8 +206,8 @@ public sealed class ParserIntegrityTests : IDisposable
               </lines></class>
             </classes></package></packages></coverage>
             """);
-        Assert.AreEqual((1, 2), report.Files.Single().BranchesByLine[4]);
-        Assert.IsEmpty(report.Files.Single().ConditionsByLine);
+        Assert.AreEqual((1, 2), Assert.ContainsSingle(report.Files).BranchesByLine[4]);
+        Assert.IsEmpty(Assert.ContainsSingle(report.Files).ConditionsByLine);
         var warning = Assert.ContainsSingle(report.Warnings);
         Assert.AreEqual("a <condition> could not be parsed - using the line aggregate", warning.Detail);
     }
@@ -212,7 +216,7 @@ public sealed class ParserIntegrityTests : IDisposable
     public void ConditionNumberRepeatedWithinALine_UnionsWithMax()
     {
         var report = Cobertura.NewDoc().AddClass("src/X.cs", c => c.BranchWithConditions(4, "50% (1/2)", (5, "0%"), (5, "50%"), (5, "0%"))).Parse();
-        Assert.AreSequenceEqual(new Dictionary<int, int> { [5] = 1 }, report.Files.Single().ConditionsByLine[4], SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(new Dictionary<int, int> { [5] = 1 }, Assert.ContainsSingle(report.Files).ConditionsByLine[4], SequenceOrder.InAnyOrder);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -221,8 +225,8 @@ public sealed class ParserIntegrityTests : IDisposable
     {
         // Coverlet's switch: one condition for three outcomes. Not malformed, just not 2-way.
         var report = Cobertura.NewDoc().AddClass("src/X.cs", c => c.BranchWithConditions(4, "66% (2/3)", (7, "66.67%"))).Parse();
-        Assert.AreEqual((2, 3), report.Files.Single().BranchesByLine[4]);
-        Assert.IsEmpty(report.Files.Single().ConditionsByLine);
+        Assert.AreEqual((2, 3), Assert.ContainsSingle(report.Files).BranchesByLine[4]);
+        Assert.IsEmpty(Assert.ContainsSingle(report.Files).ConditionsByLine);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -245,7 +249,8 @@ public sealed class ParserIntegrityTests : IDisposable
             </classes></package></packages></coverage>
             """;
         var sync = ParseXml(xml);
-        var async = await CoberturaParser.ParseAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var async = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         foreach (var report in new[]
         {
             sync,
@@ -254,7 +259,7 @@ public sealed class ParserIntegrityTests : IDisposable
 
         )
         {
-            Assert.AreEqual(0, report.Files.Single().LinesTotal);
+            Assert.AreEqual(0, Assert.ContainsSingle(report.Files).LinesTotal);
             Assert.AreEqual(GateOutcome.NoData, report.Evaluate(80).Outcome);
         }
 
@@ -289,6 +294,6 @@ public sealed class ParserIntegrityTests : IDisposable
     public void DotSegments_RootOfOnlyDots_IsTheNoOpOrTheFilesystemRoot(string root)
     {
         var report = Cobertura.NewDoc().WithSource(root).AddClass("app/C.cs", "C", c => c.Line(1, hits: 1)).Parse();
-        Assert.AreEqual(root is "/." ? "/app/C.cs" : "app/C.cs", report.Files.Single().Path);
+        Assert.AreEqual(root is "/." ? "/app/C.cs" : "app/C.cs", Assert.ContainsSingle(report.Files).Path);
     }
 }

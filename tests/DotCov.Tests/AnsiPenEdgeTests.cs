@@ -35,8 +35,8 @@ public sealed class AnsiPenEdgeTests
     {
         var report = new CoverageReport([new FileCoverage("src/Untested.cs", 0, 3, 0, 4), new FileCoverage("src/Empty.cs", 0, 0, 0, 0)]);
         var output = TableFormatter.Format(report, color: true);
-        var untested = output.Split(Environment.NewLine).Single(l => l.Contains("Untested.cs", StringComparison.Ordinal));
-        var empty = output.Split(Environment.NewLine).Single(l => l.Contains("Empty.cs", StringComparison.Ordinal));
+        var untested = Assert.ContainsSingle(l => l.Contains("Untested.cs", StringComparison.Ordinal), output.Split(Environment.NewLine));
+        var empty = Assert.ContainsSingle(l => l.Contains("Empty.cs", StringComparison.Ordinal), output.Split(Environment.NewLine));
         Assert.Contains(Pen.Red("    0.0%"), untested);
         Assert.Contains(Pen.Red($"{"0/4", 10}"), untested);
         Assert.Contains(Pen.Dim("       -"), empty);

@@ -52,7 +52,7 @@ public sealed class CrapFoldingTests
         // The shape the folded key used to average: two named overloads AND both state
         // machines. No name proves which machine belongs to which overload, so nothing attaches.
         var report = CrapAnalysis.Analyze([Method("Ns.T", "M", "(System.Int32)", 1, [(4, 1)]), Method("Ns.T", "M", "(System.String)", 1, [(10, 1)]), Method("Ns.T/<M>d__0", "MoveNext", "()", 2, [(5, 1)]), Method("Ns.T/<M>d__1", "MoveNext", "()", 4, [(11, 0)]), ]);
-        Assert.AreEqual(4, report.Methods.Count);
+        Assert.HasCount(4, report.Methods);
         Assert.Contains(static m => m is { StartLine: 11, Score: 20.0 }, report.Methods);
     }
 
@@ -73,7 +73,7 @@ public sealed class CrapFoldingTests
         // named M there is no telling which is #0, so both lambdas stand as their own rows —
         // never one row averaging both.
         var report = CrapAnalysis.Analyze([Method("Ns.T", "M", "(System.Int32)", 1, [(4, 1)]), Method("Ns.T", "M", "(System.String)", 1, [(10, 1)]), Method("Ns.T/<>c", "<M>b__0_0", "(System.Int32)", 3, [(5, 1)]), Method("Ns.T/<>c", "<M>b__1_0", "(System.Int32)", 3, [(11, 0)]), ]);
-        Assert.AreEqual(4, report.Methods.Count);
+        Assert.HasCount(4, report.Methods);
         Assert.Contains(static m => m is { StartLine: 5, Coverage: 1.0 }, report.Methods);
         Assert.Contains(static m => m is { StartLine: 11, Coverage: 0.0 }, report.Methods);
     }
@@ -129,8 +129,8 @@ public sealed class CrapFoldingTests
     public void SyntheticEntries_GroupByTheirOriginsMethodOrdinal(string classA, string methodA, string classB, string methodB, int rows)
     {
         var report = CrapAnalysis.Analyze([Method(classA, methodA, "()", 1, [(5, 1)]), Method(classB, methodB, "()", 1, [(9, 0)]), ]);
-        Assert.AreEqual(rows, report.Methods.Count);
-        Assert.IsTrue((report.Methods).All(static m => m.Method == "Ns.T.M"));
+        Assert.HasCount(rows, report.Methods);
+        Assert.DoesNotContain(static m => m.Method != "Ns.T.M", report.Methods);
     }
 
     private static MethodCoverage Method(string className, string methodName, string signature, int complexity, (int Line, int Hits)[] lines, string file = "src/T.cs")

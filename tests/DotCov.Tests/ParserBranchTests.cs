@@ -3,7 +3,7 @@ using DotCov.Tests.Infrastructure;
 
 namespace DotCov.Tests;
 [TestClass]
-public sealed class ParserBranchTests
+public sealed class ParserBranchTests(TestContext testContext)
 {
     [TestMethod]
     public void Parse_RepeatedBranchLineWithDifferingValues_ReconcilesPerComponentMax()
@@ -50,7 +50,7 @@ public sealed class ParserBranchTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var report = await CoberturaParser.ParseAsync(stream);
+        var report = await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken);
         var f = Assert.ContainsSingle(report.Files);
         Assert.IsEmpty(f.ConditionsByLine);
         Assert.AreEqual(1, f.LinesHit);
@@ -74,7 +74,7 @@ public sealed class ParserBranchTests
                            </classes></package></packages></coverage>
                            """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-        var f = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream)).Files);
+        var f = Assert.ContainsSingle((await CoberturaParser.ParseAsync(stream, ct: testContext.CancellationToken)).Files);
         Assert.IsEmpty(f.ConditionsByLine); // aggregate-only fallback
         Assert.AreEqual(1, f.BranchesHit); // line aggregate (1/2) preserved
         Assert.AreEqual(2, f.BranchesTotal);
@@ -86,7 +86,7 @@ public sealed class ParserBranchTests
         var f = Cobertura.NewDoc().AddClass("z.cs", c => c.BranchWithConditions(0, "50% (1/2)", (0, "50%"))).Parse().Files[0];
         Assert.AreEqual((1, 2), f.BranchesByLine[0]);
         Assert.ContainsSingle(f.ConditionsByLine);
-        var conds = f.ConditionsByLine.Single().Value;
+        var conds = Assert.ContainsSingle(f.ConditionsByLine).Value;
         Assert.AreEqual(1, conds[0]);
     }
 }

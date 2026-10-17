@@ -10,8 +10,10 @@ namespace DotCov.Tests.Infrastructure;
 internal static class DotcovProcess
 {
     public static Task<ChildRun> RunAsync(
-        CancellationToken cancellationToken, string workingDirectory,
-        IReadOnlyDictionary<string, string?> environment, params string[] args)
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?> environment,
+        CancellationToken cancellationToken,
+        params string[] args)
     {
         var directory = AppContext.BaseDirectory;
         var start = new ProcessStartInfo("dotnet")

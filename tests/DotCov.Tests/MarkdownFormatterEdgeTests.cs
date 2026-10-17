@@ -88,7 +88,7 @@ public sealed class MarkdownFormatterEdgeTests
         var md = MarkdownFormatter.Format(report);
         var row = Line(md, "src/a");
         Assert.AreEqual(@"| `src/a\|b.cs` | 1/2 | 50.0% | - | - |", row);
-        Assert.AreEqual(Cells(Line(md, "| File |")).Count, Cells(row).Count);
+        Assert.HasCount(Cells(Line(md, "| File |")).Count, Cells(row));
     }
 
     [TestMethod]
@@ -128,7 +128,7 @@ public sealed class MarkdownFormatterEdgeTests
         var md = MarkdownFormatter.FormatDiff(CoverageDiff.Compare(before, after));
         var row = Line(md, "| `src/a");
         Assert.AreEqual(@"| `src/a\|b.cs` | 50.0% | 100.0% | +50.0% | Modified |", row);
-        Assert.AreEqual(Cells(Line(md, "| File |")).Count, Cells(row).Count);
+        Assert.HasCount(Cells(Line(md, "| File |")).Count, Cells(row));
         // Outside a table a pipe needs no escape, and a backslash would render literally.
         Assert.Contains("- `src/a|b.cs`: 1 newly hit", md);
     }
@@ -148,7 +148,7 @@ public sealed class MarkdownFormatterEdgeTests
         var md = MarkdownFormatter.FormatDiff(diff);
         Assert.AreEqual($"## Coverage Diff {icon}", md.Split(Environment.NewLine)[0]);
         var expectedKind = icon is "➡️" ? FileChangeKind.Unchanged : FileChangeKind.Modified;
-        Assert.AreEqual(expectedKind, diff.Files.Single().Change);
+        Assert.AreEqual(expectedKind, Assert.ContainsSingle(diff.Files).Change);
     }
 
     private static string Line(string md, string marker) => md.Split(Environment.NewLine).First(l => l.Contains(marker, StringComparison.Ordinal));

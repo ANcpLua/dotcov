@@ -11,7 +11,7 @@ namespace DotCov.Tests;
 /// <see cref = "ParserContractTests"/>.
 /// </summary>
 [TestClass]
-public sealed class CoreParserRobustnessTests
+public sealed class CoreParserRobustnessTests(TestContext testContext)
 {
     [TestMethod]
     public void Parse_Sync_EnforcesCharacterCap()
@@ -69,7 +69,7 @@ public sealed class CoreParserRobustnessTests
         // build adapters get attribution without re-discovering the file.
         using var temp = TempWorkspace.Create("dotcov-attr-");
         var path = temp.PrepareFile("bad.xml");
-        await File.WriteAllTextAsync(path, "<coverage><packa");
+        await File.WriteAllTextAsync(path, "<coverage><packa", cancellationToken: testContext.CancellationToken);
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
         Assert.AreEqual(path, ex.SourceName);
         Assert.DoesNotContain(path, ex.Message); // the message is the reader's, unmodified
@@ -83,7 +83,7 @@ public sealed class CoreParserRobustnessTests
         // exception: LineNumber/LinePosition carry over from the inner XmlException.
         using var temp = TempWorkspace.Create("dotcov-coords-");
         var path = temp.PrepareFile("bad.xml");
-        await File.WriteAllTextAsync(path, "<coverage><packa");
+        await File.WriteAllTextAsync(path, "<coverage><packa", cancellationToken: testContext.CancellationToken);
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportInput.FromFile(path)));
         var inner = ex.InnerException;
         Assert.AreNotEqual(0, inner.LineNumber);
@@ -95,9 +95,9 @@ public sealed class CoreParserRobustnessTests
     public async Task ParseDirectory_MalformedFileAmongSeveral_ExceptionMessageNamesTheOffender()
     {
         using var temp = TempWorkspace.Create("dotcov-attr-dir-");
-        await File.WriteAllBytesAsync(temp.PrepareFile("good/coverage.cobertura.xml"), Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes());
+        await File.WriteAllBytesAsync(temp.PrepareFile("good/coverage.cobertura.xml"), Cobertura.NewDoc().AddClass("a.cs", c => c.Line(1, 1)).ToBytes(), cancellationToken: testContext.CancellationToken);
         var badPath = temp.PrepareFile("bad/coverage.cobertura.xml");
-        await File.WriteAllTextAsync(badPath, "<coverage><packages>");
+        await File.WriteAllTextAsync(badPath, "<coverage><packages>", cancellationToken: testContext.CancellationToken);
         // The assertion executes and completes within the captured resource lifetime.
         // ReSharper disable once AccessToDisposedClosure
         var ex = Assert.ThrowsExactly<ReportParseException>(() => CoberturaParser.Parse(ReportResolver.ResolveDirectory(temp.Root, ReportPattern.Default)));

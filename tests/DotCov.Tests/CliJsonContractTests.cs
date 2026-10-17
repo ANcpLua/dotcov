@@ -11,7 +11,7 @@ namespace DotCov.Tests;
 /// document plus a <c>gate</c> object that answers what to fix next.
 /// </summary>
 [TestClass]
-public sealed class CliJsonContractTests : IDisposable
+public sealed class CliJsonContractTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-json-");
     public void Dispose() => _ws.Dispose();
@@ -66,7 +66,7 @@ public sealed class CliJsonContractTests : IDisposable
         Assert.AreSequenceEqual(["schemaVersion", "command", "inputs", "warnings"], Keys(root).Take(4), SequenceOrder.InOrder);
         Assert.AreEqual("diff", root.GetProperty("command").GetString());
         Assert.AreSequenceEqual([before, after], root.GetProperty("inputs").EnumerateArray().Select(static i => i.GetString()!), SequenceOrder.InOrder);
-        var warning = root.GetProperty("warnings").EnumerateArray().Single();
+        var warning = Assert.ContainsSingle(root.GetProperty("warnings").EnumerateArray());
         Assert.AreEqual("MalformedHits", warning.GetProperty("kind").GetString());
         var detail = warning.GetProperty("detail").GetString();
         Assert.IsNotNull(detail);
@@ -91,7 +91,7 @@ public sealed class CliJsonContractTests : IDisposable
     {
         var report = _ws.Write("w.cobertura.xml", Cobertura.NewDoc().AddClass("src/A.cs", "MyApp.A", c => c.Method("M", "()", "1", m => m.Line(1, hits: 1).MalformedLine("2", "lots"))));
         var(_, stdout, _) = await Run("crap", report, "--format", "json");
-        var warning = Parse(stdout).GetProperty("warnings").EnumerateArray().Single();
+        var warning = Assert.ContainsSingle(Parse(stdout).GetProperty("warnings").EnumerateArray());
         Assert.AreEqual("MalformedHits", warning.GetProperty("kind").GetString());
         Assert.AreEqual("src/A.cs", warning.GetProperty("file").GetString());
     }
@@ -324,7 +324,7 @@ public sealed class CliJsonContractTests : IDisposable
         {
             for (var i = 1; i <= 25_000; i++)
                 c.Line(i, hits: i <= 19_999 ? 1 : 0);
-        }).ToBytes());
+        }).ToBytes(), cancellationToken: testContext.CancellationToken);
         try
         {
             var(failCode, failing, _) = await Run("check", path, "--min-line", "80", "--format", "json");
@@ -348,7 +348,7 @@ public sealed class CliJsonContractTests : IDisposable
     {
         var path = Path.Combine(Path.GetTempPath(), $"dotcov-width-{Guid.NewGuid():N}.xml");
         var hidden = "src/" + new string ('x', 400) + ".cs";
-        await File.WriteAllBytesAsync(path, Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 0)).AddClass(hidden, c => c.Line(1, hits: 1)).ToBytes());
+        await File.WriteAllBytesAsync(path, Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 0)).AddClass(hidden, c => c.Line(1, hits: 1)).ToBytes(), cancellationToken: testContext.CancellationToken);
         try
         {
             var(code, stdout, _) = await Run("report", path, "--top", "1");

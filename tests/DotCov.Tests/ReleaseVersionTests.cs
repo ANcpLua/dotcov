@@ -9,22 +9,22 @@ namespace DotCov.Tests;
 /// previous dotcov from the new tag.
 /// </summary>
 [TestClass]
-public sealed partial class ReleaseVersionTests
+public sealed partial class ReleaseVersionTests(TestContext testContext)
 {
     private static readonly string Root = FindRoot(AppContext.BaseDirectory);
-    private static string VersionPrefix => XDocument.Load(Path.Combine(Root, "Directory.Build.props")).Descendants("VersionPrefix").Single().Value;
+    private static string VersionPrefix => Assert.ContainsSingle(XDocument.Load(Path.Combine(Root, "Directory.Build.props")).Descendants("VersionPrefix")).Value;
 
     [TestMethod]
     public async Task BadgeAction_InstallsTheReleaseVersion()
     {
-        var action = await File.ReadAllTextAsync(Path.Combine(Root, ".github", "actions", "badge", "action.yml"));
+        var action = await File.ReadAllTextAsync(Path.Combine(Root, ".github", "actions", "badge", "action.yml"), cancellationToken: testContext.CancellationToken);
         Assert.AreEqual(VersionPrefix, ActionVersionDefault().Match(action).Groups[1].Value);
     }
 
     [TestMethod]
     public async Task Readme_PointsAtTheReleaseVersion()
     {
-        var readme = await File.ReadAllTextAsync(Path.Combine(Root, "README.md"));
+        var readme = await File.ReadAllTextAsync(Path.Combine(Root, "README.md"), cancellationToken: testContext.CancellationToken);
         // Every match names the release, and there is at least one of each.
         Assert.AreEqual(VersionPrefix, Versions(ActionReference(), readme));
         Assert.AreEqual(VersionPrefix, Versions(ReleaseNotesLink(), readme));

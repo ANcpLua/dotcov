@@ -26,7 +26,7 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
     }
 
     public void Dispose() => _ws.Dispose();
-    private async Task<ChildRun> RunBuild(CancellationToken cancellationToken, IReadOnlyDictionary<string, string?>? environment, params string[] args)
+    private async Task<ChildRun> RunBuild(IReadOnlyDictionary<string, string?>? environment, CancellationToken cancellationToken, params string[] args)
     {
         var testsDir = AppContext.BaseDirectory;
         var psi = new ProcessStartInfo("dotnet")
@@ -85,7 +85,7 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
         // CLI's grammar, so it fails on the parameter instead of reading the reports and issuing
         // a verdict about a threshold that does not exist.
         WriteHalfCovered();
-        var run = await RunBuild(cancellationToken, null, "--coverage-min-line", "40", flag, value);
+        var run = await RunBuild(null, cancellationToken, "--coverage-min-line", "40", flag, value);
         Assert.AreNotEqual(0, run.ExitCode);
         Assert.Contains(expected, run.Output);
         Assert.DoesNotContain("src/A.cs", run.Output);
@@ -104,7 +104,7 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
         {
             ["COVERAGE_MIN_BRANCH"] = "-NaN"
         };
-        var run = await RunBuild(cancellationToken, env, "--coverage-min-line", "40");
+        var run = await RunBuild(env, cancellationToken, "--coverage-min-line", "40");
         Assert.AreNotEqual(0, run.ExitCode);
         Assert.Contains("Invalid Coverage MinBranch: '-NaN'", run.Output);
         Assert.DoesNotContain("Coverage below threshold", run.Output);
@@ -137,7 +137,7 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
         var cliRejects = stderr.ToString().StartsWith("error: Invalid --min-line value:", StringComparison.Ordinal);
         // Bound through the environment, so values Fallout's command line would not bind as a
         // value ("-0", " 80 ") still reach the component's parser.
-        var run = await RunBuild(cancellationToken, new Dictionary<string, string?> { ["COVERAGE_MIN_LINE"] = value });
+        var run = await RunBuild(new Dictionary<string, string?> { ["COVERAGE_MIN_LINE"] = value }, cancellationToken);
         var componentRejects = run.Output.Contains("Invalid Coverage MinLine:", StringComparison.Ordinal);
         Assert.AreEqual(cliRejects, componentRejects, message: string.Create(CultureInfo.InvariantCulture, $"CLI stderr: {stderr}; component output: {run.Output}"));
         if (componentRejects)
@@ -156,7 +156,7 @@ public sealed class CoverageReportComponentEdgeTests : IDisposable
         {
             ["GITHUB_STEP_SUMMARY"] = ""
         };
-        var run = await RunBuild(cancellationToken, env, "--coverage-min-line", "40");
+        var run = await RunBuild(env, cancellationToken, "--coverage-min-line", "40");
         Assert.AreEqual(0, run.ExitCode, message: run.Output);
         Assert.Contains("Coverage gate passed: PASS: line 50.0% (min 40%)", run.Output);
         Assert.DoesNotContain("Could not write GitHub step summary", run.Output);

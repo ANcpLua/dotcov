@@ -22,7 +22,7 @@ public sealed class CrapMetricsScopeTests
         }).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Property("string A.this[int x]", 2, a => a.Method("string A.this[int x].get", 1, 1).Method("void A.this[int x].set", 1, 1)).Property("string A.this[int x, int y]", 2, a => a.Method("string A.this[int x, int y].get", 1, 1).Method("void A.this[int x, int y].set", 1, 1)));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(missingSetter ? 3 : 4, report.Methods.Count);
+        Assert.HasCount(missingSetter ? 3 : 4, report.Methods);
         Assert.IsEmpty(report.Unscored);
         Assert.AreSequenceEqual(missingSetter ? ["void A.this[int x, int y].set"] : Array.Empty<string>(), report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
         Assert.AreEqual(missingSetter ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
@@ -38,11 +38,11 @@ public sealed class CrapMetricsScopeTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M", 7, unknownLines).Method("void A.M(int x)", 9, exactLines));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(unknownLines + exactLines == 0 ? 0 : 1, report.Methods.Count);
+        Assert.HasCount(unknownLines + exactLines == 0 ? 0 : 1, report.Methods);
         if (report.Methods.Count > 0)
-            Assert.AreEqual(exactLines > 0 ? 9 : 7, report.Methods.Single().Complexity);
+            Assert.AreEqual(exactLines > 0 ? 9 : 7, Assert.ContainsSingle(report.Methods).Complexity);
         Assert.AreEqual(expected, report.Evaluate(30).Outcome);
-        Assert.AreEqual(unknownLines + exactLines == 2 ? 2 : 0, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(unknownLines + exactLines == 2 ? 2 : 0, report.UnmatchedMetricsMembers);
     }
 
     [TestMethod]
@@ -67,9 +67,9 @@ public sealed class CrapMetricsScopeTests
             }
         }).ToBytes());
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(count, report.Methods.Count);
+        Assert.HasCount(count, report.Methods);
         Assert.AreSequenceEqual([9], report.Methods.Select(m => m.Complexity).Distinct(), SequenceOrder.InAnyOrder);
-        Assert.AreEqual(count, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(count, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -91,7 +91,7 @@ public sealed class CrapMetricsScopeTests
             m.Method("void A.M(int x, int y, int z)", 1, 1);
         });
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []), metrics);
-        Assert.AreEqual(1, report.Methods.Count);
+        Assert.HasCount(1, report.Methods);
         Assert.AreSequenceEqual(["void A.M(int x, int y, int z)"], report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -105,7 +105,7 @@ public sealed class CrapMetricsScopeTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32,System.Int32)", embeddedComplexity ? "1" : null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 9, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(embeddedComplexity ? 1 : 9, report.Methods.Single().Complexity);
+        Assert.AreEqual(embeddedComplexity ? 1 : 9, Assert.ContainsSingle(report.Methods).Complexity);
         Assert.AreSequenceEqual([display], report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -124,8 +124,8 @@ public sealed class CrapMetricsScopeTests
         var extension = generic ? "extension<T>(T)" : "extension(string)";
         var metrics = CodeMetricsReportBuilder.ParseType("App", $"Ext.{extension}", m => m.Method($"int {extension}.M(int x)", 1, 1));
         var report = CrapAnalysis.Analyze(coverage, metrics);
-        Assert.AreEqual(1, report.UnmatchedMetricsMembers.Count);
-        Assert.AreEqual(exclude ? 1 : 2, report.Methods.Count);
+        Assert.HasCount(1, report.UnmatchedMetricsMembers);
+        Assert.HasCount(exclude ? 1 : 2, report.Methods);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -137,7 +137,7 @@ public sealed class CrapMetricsScopeTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("M", "(System.Int32)", embeddedComplexity ? "1" : null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 1, 1).Method("void A.M(string x)", 9, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(1, report.Methods.Single().Complexity);
+        Assert.AreEqual(1, Assert.ContainsSingle(report.Methods).Complexity);
         Assert.AreSequenceEqual(["void A.M(string x)"], report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -154,7 +154,7 @@ public sealed class CrapMetricsScopeTests
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.M(int x)", 1, 0).Method("void A.M(string x)", 9, 1));
         var report = CrapAnalysis.Analyze(coverage, metrics);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
-        Assert.AreEqual(exclude ? 1 : 2, report.Methods.Count);
+        Assert.HasCount(exclude ? 1 : 2, report.Methods);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
     }
 
@@ -185,10 +185,10 @@ public sealed class CrapMetricsScopeTests
         var filtered = CoberturaParser.ParseMethods(input).Exclude([".g.cs"], []);
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(first, 1, 1).Method(second, 9, 1));
         var report = CrapAnalysis.Analyze(filtered, metrics);
-        Assert.AreEqual(unmatched, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(unmatched, report.UnmatchedMetricsMembers);
         Assert.Contains(second, report.UnmatchedMetricsMembers);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
-        Assert.AreEqual(1, report.Methods.Count);
+        Assert.HasCount(1, report.Methods);
     }
 
     [TestMethod]
@@ -234,7 +234,7 @@ public sealed class CrapMetricsScopeTests
             """;
         using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var metrics = CodeMetricsReader.Parse(input);
-        Assert.AreEqual(expected, metrics.Single().ExecutableLines);
+        Assert.AreEqual(expected, Assert.ContainsSingle(metrics).ExecutableLines);
         var report = CrapAnalysis.Analyze(KeptCoverage(), metrics);
         Assert.AreEqual(expected is 0 ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -260,7 +260,7 @@ public sealed class CrapMetricsScopeTests
         using var coverage = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("Kept", "()", null, m => m.Line(1, 1))).ToBytes());
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(coverage), metrics);
         Assert.IsEmpty(report.Methods);
-        Assert.AreEqual(1, report.Unscored.Count);
+        Assert.HasCount(1, report.Unscored);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -294,11 +294,11 @@ public sealed class CrapMetricsScopeTests
     public void ExecutableLines_StayOnTheirOwnMember_AndDoNotEraseMeasuredBodies()
     {
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method("void A.Kept()", 6, 0).Method("void A.InterfaceMethod()", 1, 0).Property("int A.AbstractValue", 2, a => a.Method("int A.AbstractValue.get", 1, 0).Method("void A.AbstractValue.set", 1, 0)).Method("void A.Unknown()", 1));
-        Assert.IsNull(metrics.Single(m => m.MemberName == "AbstractValue").ExecutableLines);
-        Assert.IsNull(metrics.Single(m => m.MemberName == "Unknown").ExecutableLines);
+        Assert.IsNull(Assert.ContainsSingle(m => m.MemberName == "AbstractValue", metrics).ExecutableLines);
+        Assert.IsNull(Assert.ContainsSingle(m => m.MemberName == "Unknown", metrics).ExecutableLines);
         var report = CrapAnalysis.Analyze(KeptCoverage(), metrics);
         Assert.AreSequenceEqual(["void A.Unknown()"], report.UnmatchedMetricsMembers, SequenceOrder.InAnyOrder);
-        Assert.AreEqual("App.A.Kept", report.Methods.Single().Method);
+        Assert.AreEqual("App.A.Kept", Assert.ContainsSingle(report.Methods).Method);
     }
 
     [TestMethod]
@@ -315,10 +315,10 @@ public sealed class CrapMetricsScopeTests
         var metrics = CodeMetricsReportBuilder.Create().Namespace("App", t => t.Type("A", m => m.Method("void A.Kept()", 1)).Type("Program", m => m.Method("void Program.Main()", 9)).Type("Test", m => m.Method("void Test.Run()", 9))).Parse();
         var report = CrapAnalysis.Analyze(filtered, withMetrics ? metrics : null);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(30).Outcome);
-        Assert.AreEqual(1, report.Methods.Count);
+        Assert.HasCount(1, report.Methods);
         Assert.IsEmpty(report.Unscored);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
-        Assert.AreEqual(4, original.Methods.Count);
+        Assert.HasCount(4, original.Methods);
         Assert.IsEmpty(original.Exclusion.ExcludedFiles);
     }
 
@@ -354,7 +354,7 @@ public sealed class CrapMetricsScopeTests
         var metrics = CodeMetricsReportBuilder.ParseType("App", "Ext.extension(string)", m => m.Method("string extension(string).Make()", 1, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
         Assert.AreEqual(expected, report.Evaluate(30).Outcome);
-        Assert.AreEqual(expected is GateOutcome.Pass ? 0 : 1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(expected is GateOutcome.Pass ? 0 : 1, report.UnmatchedMetricsMembers);
     }
 
     [TestMethod]
@@ -373,8 +373,8 @@ public sealed class CrapMetricsScopeTests
                 m.Method("void A.M()", 1, 0);
         });
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(embedded ? 1 : 0, report.Methods.Count);
-        Assert.AreEqual(embedded ? 0 : 1, report.Unscored.Count);
+        Assert.HasCount(embedded ? 1 : 0, report.Methods);
+        Assert.HasCount(embedded ? 0 : 1, report.Unscored);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
         Assert.AreEqual(embedded ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
@@ -385,7 +385,7 @@ public sealed class CrapMetricsScopeTests
         using var input = new MemoryStream(Cobertura.NewDoc().AddClass("src/A.cs", "App.A", c => c.Method("get_Value", "()", null, m => m.Line(1, 1))).ToBytes());
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Property("int A.Value", 1)).Select(m => m with { ExecutableLines = 0 }).ToArray();
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
-        Assert.AreEqual(1, report.Unscored.Count);
+        Assert.HasCount(1, report.Unscored);
         Assert.AreEqual(GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 
@@ -407,10 +407,10 @@ public sealed class CrapMetricsScopeTests
         if (excludeAgain)
             filtered = filtered.Exclude([".g.cs"], []);
         var report = CrapAnalysis.Analyze(filtered, metrics);
-        Assert.AreEqual(missing ? 2 : 0, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(missing ? 2 : 0, report.UnmatchedMetricsMembers);
         Assert.AreEqual(missing ? GateOutcome.NoData : GateOutcome.Pass, report.Evaluate(30).Outcome);
-        Assert.AreEqual(missing ? 0 : 1, report.Exclusion.ExcludedFiles.Count);
-        Assert.AreEqual(2, CrapAnalysis.Analyze(original, metrics).UnmatchedMetricsMembers.Count);
+        Assert.HasCount(missing ? 0 : 1, report.Exclusion.ExcludedFiles);
+        Assert.HasCount(2, CrapAnalysis.Analyze(original, metrics).UnmatchedMetricsMembers);
     }
 
     [TestMethod]
@@ -438,7 +438,7 @@ public sealed class CrapMetricsScopeTests
             </Members></NamedType></Namespace></CodeMetricsReport>
             """;
         var metrics = ws.Write("metrics.xml", Encoding.UTF8.GetBytes(xml));
-        Assert.AreEqual("src/Generated.g.cs", CodeMetricsReader.ParseFile(metrics).Single().File);
+        Assert.AreEqual("src/Generated.g.cs", Assert.ContainsSingle(CodeMetricsReader.ParseFile(metrics)).File);
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         List<string> args = ["crap", coverage, "--metrics", metrics, "--exclude-generated", "--format", "json"];
@@ -487,9 +487,9 @@ public sealed class CrapMetricsScopeTests
             """;
         using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
         var metrics = CodeMetricsReader.Parse(input);
-        Assert.AreEqual(expected, metrics.Single().ExecutableLines);
+        Assert.AreEqual(expected, Assert.ContainsSingle(metrics).ExecutableLines);
         var report = CrapAnalysis.Analyze(KeptCoverage(), metrics);
-        Assert.AreEqual(expected is 0 ? 0 : 1, report.UnmatchedMetricsMembers.Count);
+        Assert.HasCount(expected is 0 ? 0 : 1, report.UnmatchedMetricsMembers);
         Assert.AreEqual(expected is 0 ? GateOutcome.Pass : GateOutcome.NoData, report.Evaluate(30).Outcome);
     }
 

@@ -166,8 +166,8 @@ public sealed class RepositoryBuildTests : IDisposable
     /// <summary>Both files, relative to the build root, with the verdict in the SVG's title.</summary>
     private async Task AssertBadge(string directory, string message, string color, string verdict)
     {
-        var svg = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.svg"));
-        var json = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.json"));
+        var svg = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.svg"), cancellationToken: _testContext.CancellationToken);
+        var json = await File.ReadAllTextAsync(_workspace.PathOf($"{directory}/coverage-badge.json"), cancellationToken: _testContext.CancellationToken);
         Assert.Contains($"<title>Coverage: {verdict}", svg);
         Assert.AreEqual($$"""{"schemaVersion":1,"label":"Coverage","message":"{{message}}","color":"{{color}}"}""", json);
     }

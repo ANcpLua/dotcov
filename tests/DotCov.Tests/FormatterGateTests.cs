@@ -162,7 +162,7 @@ public sealed class FormatterGateTests
         var gate = CoverageReport.Empty.Evaluate(80);
         var md = MarkdownFormatter.Format(CoverageReport.Empty, gate);
         var quoted = md.Split(Environment.NewLine).Where(l => l.StartsWith("> ", StringComparison.Ordinal));
-        Assert.AreEqual("> **No verdict:** report carries no line data - nothing was measured.", quoted.Single());
+        Assert.AreEqual("> **No verdict:** report carries no line data - nothing was measured.", Assert.ContainsSingle(quoted));
     }
 
     [TestMethod]

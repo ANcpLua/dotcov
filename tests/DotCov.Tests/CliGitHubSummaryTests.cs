@@ -10,7 +10,7 @@ namespace DotCov.Tests;
 /// </summary>
 [TestClass]
 [ResourceLock(ProcessState.Environment)]
-public sealed class CliGitHubSummaryTests : IDisposable
+public sealed class CliGitHubSummaryTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-summary-");
     public void Dispose() => _ws.Dispose();
@@ -35,7 +35,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
         var(code, _, _) = await Run("check", BranchHalf(), "--min-line", "50", "--min-branch", "90", "--github-summary");
         Assert.AreEqual(1, code);
-        var summary = await File.ReadAllTextAsync(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken);
         Assert.Contains("## Coverage Report ❌", summary);
         // Verdict line comes from MarkdownFormatter.Format(report, gate) — backticked and
         // built from the same GateResult as the exit code.
@@ -49,7 +49,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
         var(code, _, _) = await Run("check", HalfCovered(), "--min-line", "40", "--github-summary");
         Assert.AreEqual(0, code);
-        var summary = await File.ReadAllTextAsync(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken);
         Assert.Contains("## Coverage Report ✅", summary);
         Assert.Contains("`PASS:", summary);
     }
@@ -61,7 +61,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var empty = _ws.CreateDirectory("empty");
         var(code, _, _) = await Run("check", empty, "--min-line", "80", "--github-summary");
         Assert.AreEqual(3, code);
-        Assert.Contains("## Coverage Report ⚠️", await File.ReadAllTextAsync(SummaryPath));
+        Assert.Contains("## Coverage Report ⚠️", await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken));
     }
 
     [TestMethod]
@@ -74,7 +74,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var path = _ws.Write("nearly80.cobertura.xml", CoberturaSamples.JustBelowEightyPercent());
         var(code, _, _) = await Run("check", path, "--min-line", "80", "--github-summary");
         Assert.AreEqual(1, code);
-        var summary = await File.ReadAllTextAsync(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken);
         Assert.Contains("## Coverage Report ❌", summary);
         Assert.Contains("FAIL", summary);
         Assert.Contains("**Line coverage:** 79.9% (1999/2500)", summary);
@@ -92,7 +92,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var path = _ws.Write("crap.cobertura.xml", Cobertura.NewDoc().AddClass("src/R.cs", "MyApp.R", c => c.Method("Risky", "()", "6", m => m.Line(1, hits: 0))));
         var(code, _, _) = await Run("crap", path, "--github-summary");
         Assert.AreEqual(1, code);
-        var summary = await File.ReadAllTextAsync(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken);
         Assert.Contains("## CRAP Report ❌", summary);
         Assert.Contains("`FAIL: worst CRAP 42.0 (max 30)", summary);
     }
@@ -104,7 +104,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         var path = _ws.Write("crap-pass.cobertura.xml", Cobertura.NewDoc().AddClass("src/S.cs", "MyApp.S", c => c.Method("Safe", "()", "1", m => m.Line(1, hits: 1))));
         var(code, _, _) = await Run("crap", path, "--github-summary");
         Assert.AreEqual(0, code);
-        var summary = await File.ReadAllTextAsync(SummaryPath);
+        var summary = await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken);
         Assert.Contains("## CRAP Report ✅", summary);
         Assert.Contains("`PASS:", summary);
     }
@@ -115,7 +115,7 @@ public sealed class CliGitHubSummaryTests : IDisposable
         using var env = new EnvScope(("GITHUB_STEP_SUMMARY", SummaryPath));
         var(code, _, _) = await Run("report", HalfCovered(), "--github-summary");
         Assert.AreEqual(0, code);
-        Assert.Contains("## Coverage Report", await File.ReadAllTextAsync(SummaryPath));
+        Assert.Contains("## Coverage Report", await File.ReadAllTextAsync(SummaryPath, cancellationToken: testContext.CancellationToken));
     }
 
     [TestMethod]

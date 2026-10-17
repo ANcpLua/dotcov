@@ -104,5 +104,5 @@ public sealed class TableFormatterEdgeTests
         Assert.DoesNotContain("100.0%", AnsiStrip.From(table));
     }
 
-    private static string Row(string table, string start) => table.Split(Environment.NewLine).Single(l => l.StartsWith(start, StringComparison.Ordinal));
+    private static string Row(string table, string start) => Assert.ContainsSingle(l => l.StartsWith(start, StringComparison.Ordinal), table.Split(Environment.NewLine));
 }

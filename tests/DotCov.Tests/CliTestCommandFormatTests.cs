@@ -18,7 +18,7 @@ public sealed class CliTestCommandFormatTests(TestContext testContext) : IDispos
     private Task<ChildRun> DotcovTest(CancellationToken cancellationToken, params string[] args)
     {
         var report = _ws.Write("fixture/report.xml", Cobertura.NewDoc().AddClass("src/A.cs", c => c.Line(1, hits: 1).Line(2, hits: 0).Line(3, hits: 0).Branch(4, "50% (1/2)")));
-        return DotcovProcess.RunAsync(cancellationToken, _ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = FakeDotnet.Write(_ws, report) }, ["test", ..args]);
+        return DotcovProcess.RunAsync(_ws.Root, new Dictionary<string, string?> { ["DOTNET_HOST_PATH"] = FakeDotnet.Write(_ws, report) }, cancellationToken, ["test", ..args]);
     }
 
     [TestMethod]
@@ -34,13 +34,13 @@ public sealed class CliTestCommandFormatTests(TestContext testContext) : IDispos
         var gate = root.GetProperty("gate");
         Assert.AreEqual("fail", gate.GetProperty("outcome").GetString());
         Assert.AreEqual(1, gate.GetProperty("exitCode").GetInt32());
-        var offender = gate.GetProperty("offenders").EnumerateArray().Single();
+        var offender = Assert.ContainsSingle(gate.GetProperty("offenders").EnumerateArray());
         Assert.AreEqual("2-3", offender.GetProperty("uncovered").GetString());
         Assert.StartsWith("FAIL: line 50.0% (min 80%)", run.StdErr);
         Assert.DoesNotContain("> ", run.StdErr);
         // The held-back log stays in the run directory for whoever wants it.
         var log = Directory.GetFiles(Path.Combine(_ws.Root, "TestResults"), "dotnet-test.log", SearchOption.AllDirectories);
-        Assert.StartsWith("> ", await File.ReadAllTextAsync(log.Single(), cancellationToken));
+        Assert.StartsWith("> ", await File.ReadAllTextAsync(Assert.ContainsSingle(log), cancellationToken));
         Assert.DoesNotContain("files below", run.StdErr);
     }
 

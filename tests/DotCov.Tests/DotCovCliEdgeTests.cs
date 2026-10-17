@@ -195,7 +195,7 @@ public sealed class DotCovCliEdgeTests : IDisposable
     }
 
     [TestMethod]
-    [OSCondition(OperatingSystems.Linux | OperatingSystems.OSX)]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
     [UnsupportedOSPlatform("windows")]
     public async Task Report_FileThatCannotBeRead_IsAnError_NotACrash()
     {

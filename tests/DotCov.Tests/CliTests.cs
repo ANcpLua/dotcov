@@ -702,7 +702,7 @@ public sealed class CliTests : IDisposable
         var(code, stdout, _) = await Run("help");
         Assert.AreEqual(0, code);
         // One table, every code once and in order.
-        Assert.AreEqual(2, stdout.Split("Exit codes:").Length);
+        Assert.HasCount(2, stdout.Split("Exit codes:"));
         var table = stdout[stdout.IndexOf("Exit codes:", StringComparison.Ordinal)..];
         var at = 0;
         foreach (var row in new[]

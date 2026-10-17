@@ -23,7 +23,11 @@ public sealed class ExternalSourcesTests : IDisposable
         return $"<coverage>{sources}<packages><package name=\"p\"><classes>{classes}</classes></package></packages></coverage>";
     }
 
-    private static CoverageReport Parse(string xml) => CoberturaParser.Parse(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+    private static CoverageReport Parse(string xml)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        return CoberturaParser.Parse(stream);
+    }
     [TestMethod]
     public void DependencyFiles_AreNamedInOneWarning_AndAnExclusionRemovesThemAndIt()
     {
@@ -44,7 +48,7 @@ public sealed class ExternalSourcesTests : IDisposable
     public void AReportBuiltDeterministicallyItself_OwnsItsDeterministicPaths()
     {
         var report = Parse(Doc("/_/", ("src/App.cs", 1)));
-        Assert.StartsWith("/_/", report.Files.Single().Path);
+        Assert.StartsWith("/_/", Assert.ContainsSingle(report.Files).Path);
         Assert.IsEmpty(report.Warnings);
     }
 
@@ -53,7 +57,7 @@ public sealed class ExternalSourcesTests : IDisposable
     {
         var report = Parse(Doc(null, ("/repo/_/Owned.cs", 0), (External, 0)));
         var own = report.Exclude(ExclusionRules.External, []);
-        Assert.StartsWith("1 files have SourceLink paths", report.Warnings.Single().Detail);
+        Assert.StartsWith("1 files have SourceLink paths", Assert.ContainsSingle(report.Warnings).Detail);
         Assert.AreSequenceEqual(["/repo/_/Owned.cs"], own.Files.Select(static f => f.Path), SequenceOrder.InAnyOrder);
     }
 
@@ -62,7 +66,7 @@ public sealed class ExternalSourcesTests : IDisposable
     {
         var report = Parse(Doc("/_/", ("src/App.cs", 0)));
         var excluded = report.Exclude(ExclusionRules.External, []);
-        Assert.AreEqual(1, excluded.Files.Count);
+        Assert.HasCount(1, excluded.Files);
         Assert.IsFalse(excluded.Exclusion.IsActive);
     }
 
@@ -70,7 +74,7 @@ public sealed class ExternalSourcesTests : IDisposable
     public void MergingWithADeterministicReport_KeepsTheOtherReportsWarning()
     {
         var merged = CoverageReport.Merge(Parse(Doc("/_/", ("src/App.cs", 1))), Parse(Doc(null, (External, 0))));
-        Assert.IsTrue(merged.SourceRoots.Any(static r => r.TrimEnd('/') == "/_"));
+        Assert.Contains(static r => r.TrimEnd('/') == "/_", merged.SourceRoots);
         var warning = Assert.ContainsSingle(merged.Warnings);
         Assert.AreEqual(CoverageWarningKind.ExternalSources, warning.Kind);
     }
@@ -91,7 +95,7 @@ public sealed class ExternalSourcesTests : IDisposable
         Assert.AreEqual(CoverageWarningKind.ExternalSources, (Assert.ContainsSingle(methods.Warnings)).Kind);
         var own = methods.Exclude(ExclusionRules.External, []);
         Assert.IsEmpty(own.Warnings);
-        Assert.AreEqual("App.A.Kept", CrapAnalysis.Analyze(own).Methods.Single().Method);
+        Assert.AreEqual("App.A.Kept", Assert.ContainsSingle(CrapAnalysis.Analyze(own).Methods).Method);
     }
 
     [TestMethod]
@@ -129,7 +133,7 @@ public sealed class ExternalSourcesTests : IDisposable
         var(code, stdout, _) = await Run("report", report, "--format", "json");
         Assert.AreEqual(0, code);
         using var json = JsonDocument.Parse(stdout);
-        var warning = json.RootElement.GetProperty("warnings").EnumerateArray().Single();
+        var warning = Assert.ContainsSingle(json.RootElement.GetProperty("warnings").EnumerateArray());
         Assert.AreEqual("ExternalSources", warning.GetProperty("kind").GetString());
         Assert.AreEqual(External, warning.GetProperty("file").GetString());
     }

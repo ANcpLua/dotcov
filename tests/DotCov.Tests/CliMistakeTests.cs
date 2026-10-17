@@ -7,7 +7,7 @@ namespace DotCov.Tests;
 /// and nothing on stdout. Each is rejected before any report is read or test is run.
 /// </summary>
 [TestClass]
-public sealed class CliMistakeTests
+public sealed class CliMistakeTests(TestContext testContext)
 {
     private static async Task<(int Code, string StdOut, string StdErr)> Run(params string[] args)
     {
@@ -99,7 +99,7 @@ public sealed class CliMistakeTests
         // check prints verdict lines and snapshot JSON: nothing to turn off, but a script that
         // passes --no-color to every command must not get a usage error.
         var report = Path.Combine(Path.GetTempPath(), $"dotcov-nocolor-{Guid.NewGuid():N}.xml");
-        await File.WriteAllTextAsync(report, """<coverage><packages><package name="p"><classes><class name="A" filename="src/A.cs"><lines><line number="1" hits="1"/></lines></class></classes></package></packages></coverage>""");
+        await File.WriteAllTextAsync(report, """<coverage><packages><package name="p"><classes><class name="A" filename="src/A.cs"><lines><line number="1" hits="1"/></lines></class></classes></package></packages></coverage>""", cancellationToken: testContext.CancellationToken);
         try
         {
             string[] args = command is "check" ? [command, report, "--no-color", "--min-line", "40"] : [command, report, "--no-color"];

@@ -9,7 +9,7 @@ namespace DotCov.Tests;
 /// an explicit root resolves the ambiguity on any machine.
 /// </summary>
 [TestClass]
-public sealed class FileIdentityTests : IDisposable
+public sealed class FileIdentityTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-identity-");
     public void Dispose() => _ws.Dispose();
@@ -32,7 +32,7 @@ public sealed class FileIdentityTests : IDisposable
         var tests = Root("tests");
         _ws.Write("tests/test_app.py", "");
         var report = TwoRoots(src, tests, "test_app.py").Parse();
-        Assert.AreEqual($"{src}/test_app.py", report.Files.Single().Path);
+        Assert.AreEqual($"{src}/test_app.py", Assert.ContainsSingle(report.Files).Path);
         var ambiguous = Assert.ContainsSingle(report.AmbiguousFiles);
         Assert.AreEqual($"{src}/test_app.py", ambiguous.Path);
         Assert.AreSequenceEqual([src, tests], ambiguous.CandidateRoots, SequenceOrder.InOrder);
@@ -40,10 +40,11 @@ public sealed class FileIdentityTests : IDisposable
         Assert.AreEqual(CoverageWarningKind.FileIdentityAmbiguous, warning.Kind);
         Assert.AreEqual($"{src}/test_app.py", warning.File);
         Assert.AreEqual($"relative filename 'test_app.py' could belong to any of 2 <source> roots ('{src}', '{tests}') - keyed under the first, identity unresolved", warning.Detail);
+        using var stream = TwoRoots(src, tests, "test_app.py").ToStream();
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var probed = CoberturaParser.Parse(TwoRoots(src, tests, "test_app.py").ToStream(), identity: FileIdentity.ProbeSources);
-        Assert.AreEqual($"{tests}/test_app.py", probed.Files.Single().Path);
+        var probed = CoberturaParser.Parse(stream, identity: FileIdentity.ProbeSources);
+        Assert.AreEqual($"{tests}/test_app.py", Assert.ContainsSingle(probed.Files).Path);
         Assert.IsEmpty(probed.AmbiguousFiles);
     }
 
@@ -66,7 +67,7 @@ public sealed class FileIdentityTests : IDisposable
     {
         var report = Cobertura.NewDoc().WithSource("/a").WithSource("/b").AddClass("x.cs", "C", c => c.Line(1, 1)).AddClass("x.cs", "C/<M>d__0", c => c.Line(2, 0)).Parse();
         Assert.AreSequenceEqual(["/a/x.cs"], report.AmbiguousFiles.Select(static a => a.Path), SequenceOrder.InAnyOrder);
-        Assert.AreEqual(1, report.Warnings.Count);
+        Assert.HasCount(1, report.Warnings);
     }
 
     [TestMethod]
@@ -84,10 +85,11 @@ public sealed class FileIdentityTests : IDisposable
     public void SourceRoot_ResolvesAgainstTheChosenRoot_WithoutWarnings()
     {
         // Compared after normalization: a Windows spelling of a declared root matches it.
+        using var stream = TwoRoots("C:/repo/src", "C:/repo/tests", "x.cs").ToStream();
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var report = CoberturaParser.Parse(TwoRoots("C:/repo/src", "C:/repo/tests", "x.cs").ToStream(), identity: FileIdentity.FromSourceRoot(@"c:\repo\tests\"));
-        Assert.AreEqual("C:/repo/tests/x.cs", report.Files.Single().Path);
+        var report = CoberturaParser.Parse(stream, identity: FileIdentity.FromSourceRoot(@"c:\repo\tests\"));
+        Assert.AreEqual("C:/repo/tests/x.cs", Assert.ContainsSingle(report.Files).Path);
         Assert.IsEmpty(report.Warnings);
         Assert.IsEmpty(report.AmbiguousFiles);
         Assert.AreEqual(GateOutcome.Pass, report.Evaluate(10).Outcome);
@@ -96,10 +98,11 @@ public sealed class FileIdentityTests : IDisposable
     [TestMethod]
     public void SourceRoot_TheNoOpRoot_LeavesRelativeNamesUnprefixed()
     {
+        using var stream = TwoRoots(".", "/real", "app/main.py").ToStream();
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var report = CoberturaParser.Parse(TwoRoots(".", "/real", "app/main.py").ToStream(), identity: FileIdentity.FromSourceRoot("."));
-        Assert.AreEqual("app/main.py", report.Files.Single().Path);
+        var report = CoberturaParser.Parse(stream, identity: FileIdentity.FromSourceRoot("."));
+        Assert.AreEqual("app/main.py", Assert.ContainsSingle(report.Files).Path);
         Assert.IsEmpty(report.AmbiguousFiles);
     }
 
@@ -108,7 +111,10 @@ public sealed class FileIdentityTests : IDisposable
     {
         var input = ReportInput.FromBytes("job-a.xml", TwoRoots("/a", "/b", "x.cs").ToBytes());
         var fromInput = Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.Parse(input, identity: FileIdentity.FromSourceRoot("/c")));
-        var fromStream = Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.Parse(TwoRoots(".", "/b", "x.cs").ToStream(), identity: FileIdentity.FromSourceRoot("/c")));
+        using var stream = TwoRoots(".", "/b", "x.cs").ToStream();
+        // MSTest invokes the action synchronously, before this stream is disposed.
+        // ReSharper disable once AccessToDisposedClosure
+        var fromStream = Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.Parse(stream, identity: FileIdentity.FromSourceRoot("/c")));
         Assert.AreEqual("source root '/c' is not declared by job-a.xml (declared: '/a', '/b').", fromInput.Message);
         Assert.AreEqual("/c", fromInput.SourceRoot);
         Assert.AreSequenceEqual(["/a", "/b"], fromInput.DeclaredRoots, SequenceOrder.InAnyOrder);
@@ -164,26 +170,32 @@ public sealed class FileIdentityTests : IDisposable
         Assert.AreEqual("/x", FileIdentity.FromSourceRoot("/x/").SourceRoot);
         // Two parses with different modes, interleaved, each get their own resolution.
         var xml = TwoRoots("/a", "/b", "x.cs");
+        using var explicitStream = xml.ToStream();
+        using var lexicalStream = xml.ToStream();
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var explicitRoot = CoberturaParser.Parse(xml.ToStream(), identity: FileIdentity.FromSourceRoot("/b"));
+        var explicitRoot = CoberturaParser.Parse(explicitStream, identity: FileIdentity.FromSourceRoot("/b"));
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var lexical = CoberturaParser.Parse(xml.ToStream());
-        Assert.AreEqual("/b/x.cs", explicitRoot.Files.Single().Path);
-        Assert.AreEqual("/a/x.cs", lexical.Files.Single().Path);
+        var lexical = CoberturaParser.Parse(lexicalStream);
+        Assert.AreEqual("/b/x.cs", Assert.ContainsSingle(explicitRoot.Files).Path);
+        Assert.AreEqual("/a/x.cs", Assert.ContainsSingle(lexical.Files).Path);
     }
 
     [TestMethod]
     public async Task ParseAsync_FollowsTheSameModes()
     {
         var xml = TwoRoots("/a", "/b", "x.cs");
-        var lexical = await CoberturaParser.ParseAsync(xml.ToStream());
-        var chosen = await CoberturaParser.ParseAsync(xml.ToStream(), identity: FileIdentity.FromSourceRoot("/b"));
-        Assert.AreEqual("/a/x.cs", lexical.AmbiguousFiles.Single().Path);
-        Assert.AreEqual("/b/x.cs", chosen.Files.Single().Path);
-        await Assert.ThrowsExactlyAsync<UndeclaredSourceRootException>(async () => await CoberturaParser.ParseAsync(xml.ToStream(), identity: FileIdentity.FromSourceRoot("/c")));
-        await Assert.ThrowsExactlyAsync<UndeclaredSourceRootException>(async () => await CoberturaParser.ParseAsync(Cobertura.NewDoc().WithSource("/a").AddClass("x.cs", c => c.Line(1, 1)).ToStream(), identity: FileIdentity.FromSourceRoot("/c")));
+        await using var lexicalStream = xml.ToStream();
+        await using var chosenStream = xml.ToStream();
+        await using var undeclaredStream = xml.ToStream();
+        await using var singleRootStream = Cobertura.NewDoc().WithSource("/a").AddClass("x.cs", c => c.Line(1, 1)).ToStream();
+        var lexical = await CoberturaParser.ParseAsync(lexicalStream, ct: testContext.CancellationToken);
+        var chosen = await CoberturaParser.ParseAsync(chosenStream, identity: FileIdentity.FromSourceRoot("/b"), ct: testContext.CancellationToken);
+        Assert.AreEqual("/a/x.cs", Assert.ContainsSingle(lexical.AmbiguousFiles).Path);
+        Assert.AreEqual("/b/x.cs", Assert.ContainsSingle(chosen.Files).Path);
+        await Assert.ThrowsExactlyAsync<UndeclaredSourceRootException>(() => CoberturaParser.ParseAsync(undeclaredStream, identity: FileIdentity.FromSourceRoot("/c"), ct: testContext.CancellationToken));
+        await Assert.ThrowsExactlyAsync<UndeclaredSourceRootException>(() => CoberturaParser.ParseAsync(singleRootStream, identity: FileIdentity.FromSourceRoot("/c"), ct: testContext.CancellationToken));
     }
 
     [TestMethod]
@@ -194,7 +206,7 @@ public sealed class FileIdentityTests : IDisposable
         var merged = CoverageReport.Merge(first, second);
         var excluded = merged.Exclude(ExclusionRules.WellKnown);
         Assert.AreSequenceEqual(["/a/x.cs", "/a/obj/G.g.cs"], merged.AmbiguousFiles.Select(static a => a.Path), SequenceOrder.InAnyOrder);
-        Assert.AreSequenceEqual(["/a", "/b", "/c"], merged.AmbiguousFiles.Single(static a => a.Path == "/a/x.cs").CandidateRoots, SequenceOrder.InOrder);
+        Assert.AreSequenceEqual(["/a", "/b", "/c"], Assert.ContainsSingle(static a => a.Path == "/a/x.cs", merged.AmbiguousFiles).CandidateRoots, SequenceOrder.InOrder);
         Assert.AreSequenceEqual(["/a/x.cs"], excluded.AmbiguousFiles.Select(static a => a.Path), SequenceOrder.InAnyOrder);
         Assert.StartsWith("1 file has ambiguous identity across 3 source roots;", excluded.Evaluate(10).Reason);
     }
@@ -204,9 +216,10 @@ public sealed class FileIdentityTests : IDisposable
     [TestMethod]
     public void ParseMethods_Lexical_ListsTheFile_AndTheCrapGateIsNoData()
     {
-        var methods = CoberturaParser.ParseMethods(TwoRootsWithMethods("x.cs").ToStream());
-        Assert.AreEqual("/a/x.cs", methods.Methods.Single().File);
-        Assert.AreEqual("/a/x.cs", methods.AmbiguousFiles.Single().Path);
+        using var stream = TwoRootsWithMethods("x.cs").ToStream();
+        var methods = CoberturaParser.ParseMethods(stream);
+        Assert.AreEqual("/a/x.cs", Assert.ContainsSingle(methods.Methods).File);
+        Assert.AreEqual("/a/x.cs", Assert.ContainsSingle(methods.AmbiguousFiles).Path);
         var gate = CrapAnalysis.Analyze(methods).Evaluate(30);
         Assert.AreEqual(GateOutcome.NoData, gate.Outcome);
         Assert.StartsWith("1 file has ambiguous identity across 2 source roots;", gate.Reason);
@@ -219,10 +232,15 @@ public sealed class FileIdentityTests : IDisposable
     {
         var input = ReportInput.FromBytes("methods.xml", TwoRootsWithMethods("x.cs").ToBytes());
         var methods = CoberturaParser.ParseMethods(input, identity: FileIdentity.FromSourceRoot("/b"));
-        Assert.AreEqual("/b/x.cs", methods.Methods.Single().File);
+        Assert.AreEqual("/b/x.cs", Assert.ContainsSingle(methods.Methods).File);
         Assert.AreEqual(GateOutcome.Pass, CrapAnalysis.Analyze(methods).Evaluate(30).Outcome);
-        Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.ParseMethods(TwoRootsWithMethods("x.cs").ToStream(), identity: FileIdentity.FromSourceRoot("/z")));
-        Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.ParseMethods(Cobertura.NewDoc().WithSource("/a").AddClass("x.cs", "C", c => c.Method("M", "()", "1", m => m.Line(1, 1))).ToStream(), identity: FileIdentity.FromSourceRoot("/z")));
+        using var multipleRoots = TwoRootsWithMethods("x.cs").ToStream();
+        using var singleRoot = Cobertura.NewDoc().WithSource("/a").AddClass("x.cs", "C", c => c.Method("M", "()", "1", m => m.Line(1, 1))).ToStream();
+        // MSTest invokes each action synchronously, before its stream is disposed.
+        // ReSharper disable once AccessToDisposedClosure
+        Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.ParseMethods(multipleRoots, identity: FileIdentity.FromSourceRoot("/z")));
+        // ReSharper disable once AccessToDisposedClosure
+        Assert.ThrowsExactly<UndeclaredSourceRootException>(() => CoberturaParser.ParseMethods(singleRoot, identity: FileIdentity.FromSourceRoot("/z")));
     }
 
     [TestMethod]
@@ -252,14 +270,16 @@ public sealed class FileIdentityTests : IDisposable
             <packages><package><classes><class name="C" filename="x.cs"><lines><line number="1" hits="1"/></lines></class>
             </classes></package></packages></coverage>
             """);
+        using var firstStream = new MemoryStream(xml);
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var probed = CoberturaParser.Parse(new MemoryStream(xml), identity: FileIdentity.ProbeSources);
+        var probed = CoberturaParser.Parse(firstStream, identity: FileIdentity.ProbeSources);
         Directory.Delete(holder, recursive: true);
+        using var secondStream = new MemoryStream(xml);
         // Exercise the synchronous parser contract alongside awaited assertions.
         // ReSharper disable once MethodHasAsyncOverload
-        var probedElsewhere = CoberturaParser.Parse(new MemoryStream(xml), identity: FileIdentity.ProbeSources);
-        Assert.AreEqual($"{holder}/x.cs", probed.Files.Single().Path);
-        Assert.AreEqual($"{holderA}/x.cs", probedElsewhere.Files.Single().Path);
+        var probedElsewhere = CoberturaParser.Parse(secondStream, identity: FileIdentity.ProbeSources);
+        Assert.AreEqual($"{holder}/x.cs", Assert.ContainsSingle(probed.Files).Path);
+        Assert.AreEqual($"{holderA}/x.cs", Assert.ContainsSingle(probedElsewhere.Files).Path);
     }
 }

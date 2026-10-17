@@ -11,12 +11,16 @@ namespace DotCov.Tests;
 [TestClass]
 public sealed class MethodCoverageEdgeTests
 {
-    private static MethodCoverageReport ParseMethods(string classes) => CoberturaParser.ParseMethods(new MemoryStream(Encoding.UTF8.GetBytes($"""
+    private static MethodCoverageReport ParseMethods(string classes)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes($"""
              <?xml version="1.0"?>
              <coverage><packages><package name="P"><classes>
              {classes}
              </classes></package></packages></coverage>
-             """)));
+             """));
+        return CoberturaParser.ParseMethods(stream);
+    }
     // ── Line range ────────────────────────────────────────────────────────────
     [TestMethod]
     public void ParseMethods_MethodStartingAtLineZero_ReportsZeroAsItsStartLine()

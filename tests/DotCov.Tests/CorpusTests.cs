@@ -40,13 +40,13 @@ public sealed class CorpusTests
         // module.py: lines 1-5,7,8 hits 1,1,1,1,0,1,0 → 5/7; branches 3:(1/2) + 7:(2/2) → 3/4.
         // __init__.py: 1/1. Report totals: 6/8 lines = 0.75, 3/4 branches.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/coveragepy/coverage.xml"));
-        Assert.AreEqual(2, report.Files.Count);
-        var module = report.Files.Single(f => f.Path == "/home/runner/work/myproj/myproj/src/mypkg/module.py");
+        Assert.HasCount(2, report.Files);
+        var module = Assert.ContainsSingle(f => f.Path == "/home/runner/work/myproj/myproj/src/mypkg/module.py", report.Files);
         Assert.AreEqual(7, module.LinesTotal);
         Assert.AreEqual(5, module.LinesHit);
         Assert.AreEqual(4, module.BranchesTotal);
         Assert.AreEqual(3, module.BranchesHit);
-        var init = report.Files.Single(f => f.Path == "/home/runner/work/myproj/myproj/src/mypkg/__init__.py");
+        var init = Assert.ContainsSingle(f => f.Path == "/home/runner/work/myproj/myproj/src/mypkg/__init__.py", report.Files);
         Assert.AreEqual(1, init.LinesTotal);
         Assert.AreEqual(1, init.LinesHit);
         Assert.IsFalse(init.HasBranchData);
@@ -90,7 +90,7 @@ public sealed class CorpusTests
         // grcov writes <condition coverage="1"/> as a COUNT, not a percentage; read as 1% both
         // conditions derive 0 covered, so the 2-outcome consistency gate (2 conditions × 2 ≠
         // line total 2) must drop the per-condition detail and keep the honest 1/2 aggregate.
-        Assert.IsFalse(main.ConditionsByLine.ContainsKey(7));
+        Assert.DoesNotContain(7, main.ConditionsByLine.Keys);
         Assert.AreEqual(0.5, report.BranchRate);
         Assert.IsEmpty(report.Warnings);
     }
@@ -139,11 +139,11 @@ public sealed class CorpusTests
         // key against its report's <source> keeps them distinct: 10/16 lines = 62.5%, never
         // the silently-fused 8/10 that discarding the roots would produce.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/monorepo"));
-        Assert.AreEqual(2, report.Files.Count);
-        var svcA = report.Files.Single(f => f.Path == "/home/runner/work/mono/mono/services/svc-a/app/main.py");
+        Assert.HasCount(2, report.Files);
+        var svcA = Assert.ContainsSingle(f => f.Path == "/home/runner/work/mono/mono/services/svc-a/app/main.py", report.Files);
         Assert.AreEqual(10, svcA.LinesTotal);
         Assert.AreEqual(8, svcA.LinesHit);
-        var svcB = report.Files.Single(f => f.Path == "/home/runner/work/mono/mono/services/svc-b/app/main.py");
+        var svcB = Assert.ContainsSingle(f => f.Path == "/home/runner/work/mono/mono/services/svc-b/app/main.py", report.Files);
         Assert.AreEqual(6, svcB.LinesTotal);
         Assert.AreEqual(2, svcB.LinesHit);
         Assert.AreEqual(16, report.TotalLines);
@@ -164,14 +164,14 @@ public sealed class CorpusTests
         // filename). No root arithmetic can unify the keys, so the merge keeps both entries
         // (totals double-count: 4/6 lines, 2/4 branches) and MUST surface the ambiguity.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/pathidentity"));
-        Assert.AreEqual(2, report.Files.Count);
-        Assert.AreEqual(1, report.Files.Count(f => f.Path == "/home/runner/work/app/app/src/MyApp/Calculator.cs"));
-        Assert.AreEqual(1, report.Files.Count(f => f.Path == "/_/src/MyApp/Calculator.cs"));
+        Assert.HasCount(2, report.Files);
+        Assert.ContainsSingle(f => f.Path == "/home/runner/work/app/app/src/MyApp/Calculator.cs", report.Files);
+        Assert.ContainsSingle(f => f.Path == "/_/src/MyApp/Calculator.cs", report.Files);
         Assert.AreEqual(6, report.TotalLines);
         Assert.AreEqual(4, report.TotalLinesHit);
         Assert.AreEqual(4, report.TotalBranches);
         Assert.AreEqual(2, report.TotalBranchesHit);
-        var warning = report.Warnings.Single(w => w.Kind == CoverageWarningKind.FileIdentityAmbiguous);
+        var warning = Assert.ContainsSingle(w => w.Kind == CoverageWarningKind.FileIdentityAmbiguous, report.Warnings);
         Assert.Contains("/home/runner/work/app/app/src/MyApp/Calculator.cs", warning.Detail);
         Assert.Contains("/_/src/MyApp/Calculator.cs", warning.Detail);
     }
@@ -196,10 +196,10 @@ public sealed class CorpusTests
         // Ordinal keying keeps them apart: 4/8 = 50%, not a case-fused 4/4 that erases the
         // uncovered file's misses.
         var report = CoberturaParser.Parse(ReportResolver.Resolve($"{Corpus}/edge/gcovr-case-sensitive.xml"));
-        Assert.AreEqual(2, report.Files.Count);
-        var upper = report.Files.Single(f => f.Path == "/home/runner/linux/net/netfilter/xt_TCPMSS.c");
+        Assert.HasCount(2, report.Files);
+        var upper = Assert.ContainsSingle(f => f.Path == "/home/runner/linux/net/netfilter/xt_TCPMSS.c", report.Files);
         Assert.AreEqual(4, upper.LinesHit);
-        var lower = report.Files.Single(f => f.Path == "/home/runner/linux/net/netfilter/xt_tcpmss.c");
+        var lower = Assert.ContainsSingle(f => f.Path == "/home/runner/linux/net/netfilter/xt_tcpmss.c", report.Files);
         Assert.AreEqual(0, lower.LinesHit);
         Assert.AreEqual(0.5, report.LineRate);
     }
@@ -233,7 +233,7 @@ public sealed class CorpusTests
     [TestMethod]
     public void Corpus_ContainsAllFourteenSamples()
     {
-        Assert.AreEqual(14, Samples().Count());
+        Assert.HasCount(14, Samples());
     }
 
     [TestMethod]

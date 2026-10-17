@@ -35,7 +35,7 @@ public sealed class CoverageSnapshotTests
 }
 
 [TestClass]
-public sealed class FileHasherTests : IDisposable
+public sealed class FileHasherTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-hash-");
     private string TempFile => _ws.PathOf("content.txt");
@@ -44,7 +44,7 @@ public sealed class FileHasherTests : IDisposable
     [TestMethod]
     public async Task ComputeHash_KnownContent_MatchesExpectedSha256()
     {
-        await File.WriteAllTextAsync(TempFile, "abc");
+        await File.WriteAllTextAsync(TempFile, "abc", cancellationToken: testContext.CancellationToken);
         var hash = FileHasher.ComputeHash(TempFile);
         // SHA-256("abc")
         Assert.AreEqual("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hash);
@@ -53,7 +53,7 @@ public sealed class FileHasherTests : IDisposable
     [TestMethod]
     public async Task ComputeHash_EmptyFile_MatchesEmptySha256()
     {
-        await File.WriteAllTextAsync(TempFile, string.Empty);
+        await File.WriteAllTextAsync(TempFile, string.Empty, cancellationToken: testContext.CancellationToken);
         var hash = FileHasher.ComputeHash(TempFile);
         Assert.AreEqual("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", hash);
     }
@@ -61,9 +61,9 @@ public sealed class FileHasherTests : IDisposable
     [TestMethod]
     public async Task ComputeHash_SameContent_ProducesSameHash()
     {
-        await File.WriteAllTextAsync(TempFile, "hello world");
+        await File.WriteAllTextAsync(TempFile, "hello world", cancellationToken: testContext.CancellationToken);
         var first = FileHasher.ComputeHash(TempFile);
-        await File.WriteAllTextAsync(TempFile, "hello world");
+        await File.WriteAllTextAsync(TempFile, "hello world", cancellationToken: testContext.CancellationToken);
         var second = FileHasher.ComputeHash(TempFile);
         Assert.AreEqual(first, second);
     }
@@ -71,9 +71,9 @@ public sealed class FileHasherTests : IDisposable
     [TestMethod]
     public async Task ComputeHash_DifferentContent_ProducesDifferentHash()
     {
-        await File.WriteAllTextAsync(TempFile, "hello");
+        await File.WriteAllTextAsync(TempFile, "hello", cancellationToken: testContext.CancellationToken);
         var first = FileHasher.ComputeHash(TempFile);
-        await File.WriteAllTextAsync(TempFile, "world");
+        await File.WriteAllTextAsync(TempFile, "world", cancellationToken: testContext.CancellationToken);
         var second = FileHasher.ComputeHash(TempFile);
         Assert.AreNotEqual(first, second);
     }
@@ -81,7 +81,7 @@ public sealed class FileHasherTests : IDisposable
     [TestMethod]
     public async Task ComputeHash_OutputIsLowercaseHex()
     {
-        await File.WriteAllTextAsync(TempFile, "test");
+        await File.WriteAllTextAsync(TempFile, "test", cancellationToken: testContext.CancellationToken);
         var hash = FileHasher.ComputeHash(TempFile);
         Assert.MatchesRegex("^[0-9a-f]{64}$", hash);
     }

@@ -63,7 +63,7 @@ public sealed class CliHelpTests
         Assert.DoesNotContain("Commands:", section);
         // No other command's usage line: each starts a line with "dotcov <name> ".
         foreach (var other in Commands.Where(c => c != command))
-            Assert.IsFalse(Lines(section).Any(l => l.StartsWith($"dotcov {other} ", StringComparison.Ordinal)), message: other);
+            Assert.DoesNotContain(l => l.StartsWith($"dotcov {other} ", StringComparison.Ordinal), Lines(section), message: other);
         Assert.IsNotEmpty(Block(section, "Exit codes:"));
     }
 

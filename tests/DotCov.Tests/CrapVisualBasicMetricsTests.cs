@@ -62,8 +62,8 @@ public sealed class CrapVisualBasicMetricsTests
         var metrics = CodeMetricsReportBuilder.ParseType("App", "A", m => m.Method(display, 2, 1));
         var report = CrapAnalysis.Analyze(CoberturaParser.ParseMethods(input), metrics);
         Assert.IsEmpty(report.UnmatchedMetricsMembers);
-        Assert.AreEqual(2, report.Methods.Single().Complexity);
+        Assert.AreEqual(2, Assert.ContainsSingle(report.Methods).Complexity);
         // The raw display stays what Roslyn wrote, for unmatched listings.
-        Assert.AreEqual(display, metrics.Single().DisplayName);
+        Assert.AreEqual(display, Assert.ContainsSingle(metrics).DisplayName);
     }
 }

@@ -48,7 +48,9 @@ public sealed class MarkdownFormatterTests
         var unusedIdx = md.IndexOf("Unused.cs", StringComparison.Ordinal);
         var parserIdx = md.IndexOf("Parser.cs", StringComparison.Ordinal);
         var calcIdx = md.IndexOf("Calculator.cs", StringComparison.Ordinal);
-        Assert.IsTrue(unusedIdx < parserIdx && parserIdx < calcIdx);
+        Assert.IsGreaterThanOrEqualTo(0, unusedIdx);
+        Assert.IsGreaterThan(unusedIdx, parserIdx);
+        Assert.IsGreaterThan(parserIdx, calcIdx);
     }
 
     [TestMethod]
@@ -62,14 +64,16 @@ public sealed class MarkdownFormatterTests
         var unmeasuredIdx = md.IndexOf("`unmeasured.cs`", StringComparison.Ordinal);
         var zeroIdx = md.IndexOf("`zero.cs`", StringComparison.Ordinal);
         var coveredIdx = md.IndexOf("`covered.cs`", StringComparison.Ordinal);
-        Assert.IsTrue(unmeasuredIdx >= 0 && unmeasuredIdx < zeroIdx && zeroIdx < coveredIdx);
+        Assert.IsGreaterThanOrEqualTo(0, unmeasuredIdx);
+        Assert.IsGreaterThan(unmeasuredIdx, zeroIdx);
+        Assert.IsGreaterThan(zeroIdx, coveredIdx);
     }
 
     [TestMethod]
     public void Format_FilesWithNoBranches_RenderDashesForBranchColumns()
     {
         var md = MarkdownFormatter.Format(Reports.LinesOnly);
-        var fileRow = md.Split('\n').Single(l => l.Contains("App.cs"));
+        var fileRow = Assert.ContainsSingle(l => l.Contains("App.cs"), md.Split('\n'));
         // " - " appears in branches and branch % columns
         Assert.MatchesRegex(@"\|\s+-\s+\|\s+-\s+\|", fileRow);
     }

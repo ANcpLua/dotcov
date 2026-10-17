@@ -8,7 +8,7 @@ namespace DotCov.Tests;
 /// --metrics/--top/--format handling, and the stderr first-token discriminator.
 /// </summary>
 [TestClass]
-public sealed class CliCrapTests : IDisposable
+public sealed class CliCrapTests(TestContext testContext) : IDisposable
 {
     private readonly TempWorkspace _ws = TempWorkspace.Create("dotcov-cli-crap-");
     public void Dispose() => _ws.Dispose();
@@ -101,7 +101,7 @@ public sealed class CliCrapTests : IDisposable
         Assert.AreEqual(0, code);
         Assert.StartsWith("PASS:", stderr);
         Assert.Contains("warning: src/A.cs:1: hits='lots' could not be parsed", stderr);
-        Assert.AreEqual(1, stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Count(l => l.StartsWith("warning:")));
+        Assert.ContainsSingle(l => l.StartsWith("warning:"), stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries));
     }
 
     [TestMethod]
@@ -203,7 +203,7 @@ public sealed class CliCrapTests : IDisposable
                 </Target>
               </Targets>
             </CodeMetricsReport>
-            """);
+            """, cancellationToken: testContext.CancellationToken);
         var(code, stdout, stderr) = await Run("crap", coverage, "--metrics", metricsPath);
         Assert.AreEqual(1, code);
         Assert.Contains("FAIL: worst CRAP 42.0", stderr);
@@ -247,8 +247,8 @@ public sealed class CliCrapTests : IDisposable
         var(_, stdout, _) = await Run("crap", AboveDefaultThreshold());
         var rows = stdout.Split(Environment.NewLine);
         Assert.EndsWith("CRAP  Location", rows[0]);
-        Assert.EndsWith("  src/A.cs:1", rows.Single(static r => r.StartsWith("MyApp.A.Risky", StringComparison.Ordinal)));
-        Assert.EndsWith("  src/A.cs:5", rows.Single(static r => r.StartsWith("MyApp.A.Safe", StringComparison.Ordinal)));
+        Assert.EndsWith("  src/A.cs:1", Assert.ContainsSingle(static r => r.StartsWith("MyApp.A.Risky", StringComparison.Ordinal), rows));
+        Assert.EndsWith("  src/A.cs:5", Assert.ContainsSingle(static r => r.StartsWith("MyApp.A.Safe", StringComparison.Ordinal), rows));
     }
 
     [TestMethod]

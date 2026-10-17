@@ -358,7 +358,7 @@ public sealed class CodeMetricsReaderEdgeTests
         var bytes = CodeMetricsReportBuilder.Create().Namespace("MyApp", t => t.Type("Calc", m => m.Method("void Calc.M()", 2))).ToBytes();
         using var stream = new MemoryStream(bytes);
         var members = CodeMetricsReader.Parse(stream);
-        Assert.AreEqual(1, members.Count);
+        Assert.HasCount(1, members);
         Assert.IsTrue(stream.CanRead);
     }
 
@@ -376,7 +376,7 @@ public sealed class CodeMetricsReaderEdgeTests
             xml.Append("</NamedType>");
         xml.Append($"<Method Name=\"void A.Parent()\">{Metric3}</Method></NamedType></Namespace>");
         var members = ParseRaw(xml.ToString());
-        Assert.AreEqual(count + 1, members.Count);
+        Assert.HasCount(count + 1, members);
         Assert.AreSequenceEqual(["App." + string.Join(".", Enumerable.Repeat("A", depth))], members.Take(count).Select(m => m.TypeName).Distinct(), SequenceOrder.InAnyOrder);
         Assert.AreSequenceEqual(["App." + string.Join(".", Enumerable.Repeat("A`1", depth))], members.Take(count).Select(m => m.TypeIdentity!).Distinct(), SequenceOrder.InAnyOrder);
         Assert.AreEqual("App.A`1", members[^1].TypeIdentity);
