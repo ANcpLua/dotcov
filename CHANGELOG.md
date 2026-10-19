@@ -2,6 +2,22 @@
 
 Release entries are newest first; historical task entries retain their original order.
 
+## 4.7.1 — 2026-10-19
+
+- Pin the .NET SDK to 10.0.402 in `global.json`.
+- Update ANcpLua.Analyzers from 2.1.5 to 2.1.8; the build stays warning-free under `TreatWarningsAsErrors`.
+- Remove `TestingPlatformDotnetTestSupport` from the test project: `global.json` already selects the Microsoft.Testing.Platform runner, so the VSTest-mode bridge was redundant.
+- CLI behavior, coverage gates, exit codes and JSON output contracts are unchanged; the 100% line and branch gates still pass.
+- Full notes: [4.7.1](docs/releases/4.7.1.md).
+
+## 4.7.0 — 2026-10-16
+
+- Preserve pending Microsoft static coverage hits when a managed child terminates with an unhandled exception.
+- `dotcov test` embeds a startup hook that flushes the active collector's real counters before termination, preserving existing startup hooks, the original exception and process exit.
+- Add real MSTest startup coverage checks for the built tool and the public native package.
+- No source rewrites, exclusions, count adjustments or CLI exit-code changes.
+- Full notes: [4.7.0](docs/releases/4.7.0.md).
+
 ## 4.6.0 — 2026-10-15
 
 - Verify every runtime and library package is publicly indexed, registered and downloadable before publishing the tool pointer.

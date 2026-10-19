@@ -7,7 +7,7 @@
     <MSTestVersion>4.5.1</MSTestVersion>
     <CoverletMtpVersion>10.1.0</CoverletMtpVersion>
     <FalloutVersion>10.4.0</FalloutVersion>
-    <ANcpLuaAnalyzersVersion>2.1.5</ANcpLuaAnalyzersVersion>
+    <ANcpLuaAnalyzersVersion>2.1.8</ANcpLuaAnalyzersVersion>
   </PropertyGroup>
 
   <ItemGroup>

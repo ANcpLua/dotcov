@@ -12,7 +12,7 @@
 
   <!-- Versioning: CI passes -p:Version=x.y.z -->
   <PropertyGroup>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.7.0</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">4.7.1</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">local</VersionSuffix>
     <Version Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Version Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</Version>
@@ -29,9 +29,9 @@
     <!-- The release's contract changes first, then the fixes with the direction each number moves;
          docs/releases/$(VersionPrefix).md holds the full notes. -->
     <PackageReleaseNotes>
-DotCov 4.7.0 preserves pending Microsoft static coverage hits when a managed child terminates with an unhandled exception.
-The test command adds an embedded startup hook that flushes the active collector's real counters before termination, while preserving existing startup hooks, the original exception and process exit.
-Includes real MSTest startup coverage checks for the built tool and public native package. No source rewrites, exclusions, count adjustments or CLI exit-code changes.
+DotCov 4.7.1 is a toolchain maintenance release: it builds with .NET SDK 10.0.402 and ANcpLua.Analyzers 2.1.8.
+The test project drops the redundant VSTest bridge property; global.json already selects Microsoft.Testing.Platform.
+CLI behavior, coverage gates, exit codes and JSON output contracts are unchanged from 4.7.0.
 Full notes: https://github.com/ANcpLua/dotcov/blob/main/docs/releases/$(VersionPrefix).md
     </PackageReleaseNotes>
   </PropertyGroup>
