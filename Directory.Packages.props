@@ -5,7 +5,7 @@
          NuGet also promotes these constraints when packing DotCov.Fallout. -->
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <MSTestVersion>4.5.3</MSTestVersion>
-    <CoverletMtpVersion>10.1.0</CoverletMtpVersion>
+    <CoverletMtpVersion>10.1.1</CoverletMtpVersion>
     <FalloutVersion>10.5.0</FalloutVersion>
     <ANcpLuaAnalyzersVersion>2.1.8</ANcpLuaAnalyzersVersion>
   </PropertyGroup>
